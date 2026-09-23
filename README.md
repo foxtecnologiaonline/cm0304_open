@@ -72,7 +72,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 37 testes — inclui os invariantes de docs/08 §2
+cargo test --workspace              # 39 testes — inclui os invariantes de docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- --help

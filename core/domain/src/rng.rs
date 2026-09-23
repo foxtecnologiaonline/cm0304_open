@@ -65,18 +65,15 @@ impl DeterministicRng {
     #[must_use]
     pub fn below(&mut self, bound: u32) -> u32 {
         debug_assert!(bound > 0, "DeterministicRng::below: bound deve ser > 0");
-        let bound = u64::from(bound);
+        let threshold = rejection_threshold(bound);
+        let bound64 = u64::from(bound);
         loop {
             let r = u64::from(self.next_u32());
-            let m = r * bound;
-            let low = m & 0xFFFF_FFFF;
-            if low < bound {
-                let threshold = bound.wrapping_neg() % bound;
-                if low < threshold {
-                    continue;
-                }
+            let m = r * bound64;
+            let low = (m & 0xFFFF_FFFF) as u32;
+            if low >= threshold {
+                return (m >> 32) as u32;
             }
-            return (m >> 32) as u32;
         }
     }
 
@@ -100,6 +97,21 @@ impl DeterministicRng {
         debug_assert!(len > 0, "DeterministicRng::pick_index: len deve ser > 0");
         self.below(len as u32) as usize
     }
+}
+
+/// Limiar de rejeição do algoritmo de Lemire: `2^32 mod bound`.
+///
+/// Tem que ser calculado em aritmética de 32 bits — `bound.wrapping_neg()`
+/// aqui, com `bound: u32`, dá exatamente `2^32 - bound`. Promover `bound`
+/// para `u64` antes desta conta computaria `2^64 mod bound` por engano:
+/// ainda um valor `< bound` (então "parece" um limiar válido), mas o limiar
+/// *errado* — o suficiente para reintroduzir o viés de módulo residual que
+/// o algoritmo de Lemire existe para eliminar. A magnitude do viés é
+/// pequena demais para um teste estatístico distinguir (por isso o teste de
+/// regressão abaixo verifica a fórmula diretamente, não a distribuição —
+/// ver `limiar_de_rejeicao_bate_com_2_elevado_32_mod_bound`).
+const fn rejection_threshold(bound: u32) -> u32 {
+    bound.wrapping_neg() % bound
 }
 
 /// `splitmix64` — gerador de um passo usado só para *misturar* seeds, não
@@ -163,6 +175,23 @@ mod tests {
         let mut a = DeterministicRng::seeded(42, "match.shot", 7, 1);
         let mut b = DeterministicRng::seeded(42, "match.shot", 7, 2);
         assert_ne!(a.next_u64(), b.next_u64());
+    }
+
+    #[test]
+    fn limiar_de_rejeicao_bate_com_2_elevado_32_mod_bound() {
+        // Verifica a fórmula em si (não a distribuição — o viés de usar a
+        // base errada é pequeno demais para qualquer teste estatístico
+        // plausível pegar). `2^32 mod bound`, calculado de um jeito
+        // independente da implementação, para dois bounds que não dividem
+        // 2^32 (é exatamente onde a base errada divergiria da correta).
+        for bound in [7u32, 1000, 3, 43, 250_000] {
+            let expected = (u64::from(u32::MAX) + 1) % u64::from(bound);
+            assert_eq!(
+                u64::from(rejection_threshold(bound)),
+                expected,
+                "bound={bound}"
+            );
+        }
     }
 
     #[test]

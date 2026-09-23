@@ -46,16 +46,7 @@ impl Fixed {
     #[must_use]
     pub const fn from_ratio(num: i64, den: i64) -> Self {
         debug_assert!(den != 0, "Fixed::from_ratio: denominador zero");
-        let scaled = num * SCALE as i64;
-        // Arredondamento "banker's rounding" seria mais correto, mas
-        // round-half-away-from-zero é suficiente e mais simples de auditar.
-        let half = den / 2;
-        let rounded = if scaled >= 0 {
-            (scaled + half) / den
-        } else {
-            (scaled - half) / den
-        };
-        Self(rounded as i32)
+        Self(round_div_i64(num * SCALE as i64, den))
     }
 
     /// Valor bruto em milésimos (para serialização no save).
@@ -132,10 +123,16 @@ impl SubAssign for Fixed {
 impl Mul for Fixed {
     type Output = Fixed;
     /// Multiplicação de dois `Fixed`: usa `i64` intermediário para não
-    /// perder precisão antes de reescalar de volta para milésimos.
+    /// perder precisão antes de reescalar de volta para milésimos, e a
+    /// mesma regra de arredondamento de `from_ratio` (ver `round_div_i64`) —
+    /// sem isso, `Fixed::from_ratio(2, 3)` e
+    /// `Fixed::from_int(2) / Fixed::from_int(3)` divergiam no último dígito
+    /// (667 vs. 666) para o mesmo valor matemático.
     fn mul(self, rhs: Self) -> Self::Output {
-        let product = i64::from(self.0) * i64::from(rhs.0) / i64::from(SCALE);
-        Fixed(product as i32)
+        Fixed(round_div_i64(
+            i64::from(self.0) * i64::from(rhs.0),
+            i64::from(SCALE),
+        ))
     }
 }
 
@@ -143,9 +140,26 @@ impl Div for Fixed {
     type Output = Fixed;
     fn div(self, rhs: Self) -> Self::Output {
         debug_assert!(rhs.0 != 0, "Fixed::div: divisão por zero");
-        let scaled = i64::from(self.0) * i64::from(SCALE) / i64::from(rhs.0);
-        Fixed(scaled as i32)
+        Fixed(round_div_i64(
+            i64::from(self.0) * i64::from(SCALE),
+            i64::from(rhs.0),
+        ))
     }
+}
+
+/// Divide `num` por `den` arredondando para o mais próximo (metade afastada
+/// de zero), em aritmética inteira — a única regra de arredondamento usada
+/// em todo o tipo `Fixed` (`from_ratio`, `Mul`, `Div`), para que o mesmo
+/// valor matemático produza sempre o mesmo `raw_milli`, não importa por qual
+/// operação foi construído.
+const fn round_div_i64(num: i64, den: i64) -> i32 {
+    let half = den / 2;
+    let rounded = if num >= 0 {
+        (num + half) / den
+    } else {
+        (num - half) / den
+    };
+    rounded as i32
 }
 
 impl PartialEq<i32> for Fixed {
@@ -197,6 +211,19 @@ mod tests {
         let a = Fixed::from_int(2);
         let b = Fixed::from_ratio(1, 2); // 0.5
         assert_eq!((a * b).raw_milli(), Fixed::from_int(1).raw_milli());
+    }
+
+    #[test]
+    fn div_e_from_ratio_concordam_no_arredondamento() {
+        // Regressão: antes de `round_div_i64`, `Div` truncava enquanto
+        // `from_ratio` arredondava — o mesmo valor matemático (2/3) tinha
+        // dois `raw_milli` diferentes (666 via Div, 667 via from_ratio)
+        // dependendo de como foi construído. As duas formas de chegar ao
+        // mesmo racional precisam produzir o mesmo `Fixed`.
+        let via_div = Fixed::from_int(2) / Fixed::from_int(3);
+        let via_ratio = Fixed::from_ratio(2, 3);
+        assert_eq!(via_div, via_ratio);
+        assert_eq!(via_div.raw_milli(), 667);
     }
 
     #[test]
