@@ -1,17 +1,20 @@
-# cm0304_open — reimplementação aberta de um manager de futebol clássico
+# ManagerFC — reimplementação aberta de um manager de futebol clássico
 
 > **Codinome do repositório:** `cm0304_open`
-> **Nome público sugerido:** *Touchline* (alternativas em [`docs/05-dados-e-legal.md`](docs/05-dados-e-legal.md))
-> **Status:** 📐 fase de escopo — nenhuma linha de código de produção escrita ainda.
+> **Nome do produto:** **ManagerFC** (decisão registrada em [`docs/05-dados-e-legal.md`](docs/05-dados-e-legal.md#2-nome-do-produto); busca formal de marca ainda pendente)
+> **Status:** 🚧 fase de fundação (M0) — escopo fechado, scaffolding do núcleo em Rust iniciado.
 
-Projeto para recriar, de forma **aberta (open source)** e **legalmente limpa**, a
-experiência de jogo do *Championship Manager 03/04* — profundidade de base de dados,
-ritmo de jogo, visão 2D top-down da partida, atributos 1–20 — para **Windows 10/11**,
-**Android** e **iOS**, com o mesmo save rodando em todas as plataformas.
+**ManagerFC** recria, de forma **aberta (open source)** e **legalmente limpa**, a
+experiência de jogo dos managers de futebol clássicos do início dos anos 2000 —
+profundidade de base de dados, ritmo de jogo, visão 2D top-down da partida, atributos
+1–20 — para **Windows 10/11**, **Android** e **iOS**, com o mesmo save rodando em todas
+as plataformas. As referências de design são o *Championship Manager 03/04* e o
+*Elifoot 98* — ver [`docs/10-referencias-motores.md`](docs/10-referencias-motores.md) —
+mas nenhum código, asset ou base de dados de nenhum dos dois entra neste repositório.
 
-Este repositório contém, neste momento, **apenas o escopo de engenharia**. Ele existe
-para que a decisão de construir (ou não) seja tomada com números, riscos e trade-offs
-explícitos, e não com entusiasmo.
+O repositório está saindo da fase de **apenas escopo** para o **M0 — Fundação**: o
+scaffolding do núcleo em Rust já existe (ver [`core/`](core/)); a interface Flutter e o
+restante do pipeline de M0 seguem em construção incremental.
 
 ## Leia nesta ordem
 
@@ -27,6 +30,7 @@ explícitos, e não com entusiasmo.
 | 07 | [Roadmap](docs/07-roadmap.md) | Marcos M0–M5, estimativas, equipe, custo |
 | 08 | [Qualidade](docs/08-qualidade-e-testes.md) | Testes, golden masters, balanceamento, CI/CD |
 | 09 | [Riscos](docs/09-riscos.md) | Registro de riscos com mitigação e gatilhos |
+| 10 | [Referências: CM 03/04 e Elifoot 98](docs/10-referencias-motores.md) | O que aprendemos (e o que evitamos) dos dois motores clássicos |
 | — | [ADRs](docs/adr/) | Decisões arquiteturais registradas |
 
 ## Resumo executivo em 10 linhas
@@ -48,6 +52,34 @@ explícitos, e não com entusiasmo.
 * **Maior risco não-técnico:** direitos de personalidade e marcas sobre nomes reais de
   jogadores e clubes. Maior risco técnico: **balanceamento** do motor de partida — não a
   sua implementação.
+
+## Estrutura do repositório
+
+```
+cm0304_open/
+├─ core/                  # workspace Rust — núcleo determinístico headless
+│  ├─ domain/              # ✅ ids, ponto fixo, calendário, RNG determinístico, atributos
+│  ├─ rules/ engine/ world/ # 🚧 esqueleto compilável, regra de negócio entra em M1
+│  ├─ ai/ persist/ pack/    # 🚧 idem — ver docs/07-roadmap.md para o marco de cada um
+│  ├─ app/                 # 🚧 casos de uso (fronteira dispatch/query/events)
+│  └─ cli/                 # ✅ managerfc-cli — version funcional; demais comandos placeholder
+├─ app/                    # 🚧 interface Flutter — esqueleto de fonte, ver app/README.md
+├─ .github/workflows/      # ✅ CI do núcleo Rust (fmt, clippy -D warnings, test, cargo-deny)
+└─ docs/                   # ✅ escopo completo (00–10) + ADRs
+```
+
+## Como rodar o núcleo agora
+
+```bash
+cd core
+cargo test --workspace              # 37 testes — inclui os invariantes de docs/08 §2
+cargo clippy --workspace --all-targets -- -D warnings
+cargo run -p managerfc-cli -- version
+cargo run -p managerfc-cli -- --help
+```
+
+A interface Flutter ainda não tem SDK instalado/verificado neste repositório — ver
+[`app/README.md`](app/README.md) para os próximos passos.
 
 ## Licença
 

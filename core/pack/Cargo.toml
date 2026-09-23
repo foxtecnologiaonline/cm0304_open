@@ -1,0 +1,10 @@
+[package]
+name = "pack"
+description = "Leitura e validação de data packs (.fmpack)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain = { workspace = true }

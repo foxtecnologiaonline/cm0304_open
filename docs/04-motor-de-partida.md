@@ -3,6 +3,11 @@
 O motor é o coração do produto e a maior fonte de risco. Este documento define **o que
 ele é, o que ele não tenta ser, como é calibrado e quanto pode custar**.
 
+> Leitura complementar: [`10-referencias-motores.md`](10-referencias-motores.md) analisa,
+> a partir de material público, como o motor do Championship Manager 03/04 e o do
+> Elifoot 98 funcionavam — e, principalmente, **os dois exploits históricos** ("Diablo"
+> no CM 03/04, "5-0-5" no Elifoot) que justificam a suíte anti-exploit da §4.3.
+
 ---
 
 ## 1. Posição de projeto
@@ -134,7 +139,7 @@ motor honesto.
 
 ### 4.2 Método
 
-1. `cm0304-cli calibrate --seasons 20 --seed N` roda temporadas headless e emite CSV.
+1. `managerfc-cli calibrate --seasons 20 --seed N` roda temporadas headless e emite CSV.
 2. Comparação com dados públicos (ex.: séries históricas de resultados de ligas abertas).
 3. Ajuste **em dados** (`packs/core/engine.toml`), nunca em código.
 4. Golden masters recongelados **apenas** com bump de `sim_version` e nota de release.

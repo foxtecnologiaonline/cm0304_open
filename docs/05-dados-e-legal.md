@@ -37,17 +37,26 @@ são expressão. É por isso que o projeto pode recriar *a sensação* e não po
 
 ## 2. Nome do produto
 
-O repositório continua `cm0304_open` (codinome interno). O produto precisa de nome próprio.
+O repositório continua `cm0304_open` (codinome interno). **Decisão: `ManagerFC`.**
 
-| Candidato | Comentário |
-|---|---|
-| **Touchline** | Curto, tema claro, sem colisão óbvia com o gênero — recomendado |
-| **Boot Room** | Referência ao Liverpool clássico, tom nostálgico |
-| **Gaffer** | Coloquial britânico para "o treinador"; verificar uso prévio em apps |
-| **Prancheta** | Alternativa em PT-BR, boa para o mercado local |
+| Candidato | Status | Comentário |
+|---|---|---|
+| **ManagerFC** | ✅ escolhido | Descritivo, sem referência a *Championship*/*Football Manager*; busca informal não encontrou app ou jogo com esse nome exato |
+| Touchline | descartado | Alternativa considerada na fase inicial |
+| Boot Room | descartado | Referência ao Liverpool clássico, tom nostálgico |
+| Gaffer | descartado | Coloquial britânico para "o treinador" |
+| Prancheta | descartado | Alternativa em PT-BR |
 
-Antes de fixar: busca em INPI (BR), EUIPO/UKIPO, USPTO, Google Play e App Store, e
-verificação de domínio. **Tarefa do M0**, não do lançamento.
+**Atenção jurídica específica de `ManagerFC`**: "Football Manager" é marca registrada da
+Sports Interactive, e o gênero tem histórico de litígio de marca mesmo entre nomes de
+clube dentro do jogo (ex.: ação do Manchester United contra a Sports Interactive pelo uso
+do nome do clube na Football Manager). "ManagerFC" é suficientemente descritivo e
+distante foneticamente de "Football Manager" para reduzir risco de confusão, mas **isso é
+uma sanidade informal, não uma busca de marca formal.**
+
+**Pendente antes de qualquer publicação em loja** (tarefa do M0, bloqueante para M5):
+busca formal em INPI (BR), EUIPO/UKIPO, USPTO, verificação de disponibilidade em Google
+Play e App Store, e registro de domínio.
 
 ---
 

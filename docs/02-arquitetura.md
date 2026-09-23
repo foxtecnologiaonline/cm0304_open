@@ -300,7 +300,7 @@ exatamente o substrato de um modelo lockstep — a decisão de hoje não fecha e
 | Windows 10/11 | `.zip` portátil + MSIX | x64 e ARM64; sem exigir admin (RNF-19). Assinatura de código a definir. |
 | Android | `.aab` (loja) + `.apk` (GitHub/itch) | ARM64; `minSdk 28`; pack grande via *asset delivery* ou download em primeira execução. |
 | iOS | `.ipa` via TestFlight | Requer conta paga; **sem JIT** (Rust AOT resolve); atenção à licença (ver [`05`](05-dados-e-legal.md)). |
-| Headless | binário `cm0304-cli` | Usado por CI, balanceamento e modders. |
+| Headless | binário `managerfc-cli` | Usado por CI, balanceamento e modders. |
 
 Pipeline em todo PR: `fmt` → `clippy -D warnings` → testes unitários → testes de
 propriedade → **golden masters** → benchmarks com orçamento → build das três plataformas

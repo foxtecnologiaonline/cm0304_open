@@ -1,0 +1,10 @@
+[package]
+name = "persist"
+description = "Serialização do save binário colunar, migrações, índices SQLite."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain = { workspace = true }

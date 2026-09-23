@@ -50,10 +50,10 @@ O mecanismo central de proteção contra regressão de simulação.
 
 ```bash
 # gera a referência (só com bump intencional de sim_version)
-cm0304-cli golden record --seed 42 --seasons 3 --pack packs/core --out tests/golden/s42.json
+managerfc-cli golden record --seed 42 --seasons 3 --pack packs/core --out tests/golden/s42.json
 
 # verifica (roda em todo PR, nas 3 plataformas)
-cm0304-cli golden verify --seed 42 --pack packs/core --expect tests/golden/s42.json
+managerfc-cli golden verify --seed 42 --pack packs/core --expect tests/golden/s42.json
 ```
 
 O arquivo guarda: hash de estado por dia, tabelas finais, artilheiros, transferências
@@ -106,7 +106,7 @@ institucional do balanceamento.
 ## 6. Performance
 
 ```bash
-cm0304-cli bench --budget docs/budgets.toml   # falha se ultrapassar RNF-01..07
+managerfc-cli bench --budget docs/budgets.toml   # falha se ultrapassar RNF-01..07
 ```
 
 * Benchmarks de desktop em todo PR; **benchmarks de mobile** em *device farm* ou aparelho

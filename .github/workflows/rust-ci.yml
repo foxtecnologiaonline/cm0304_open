@@ -1,0 +1,86 @@
+# CI do núcleo em Rust (core/). Cobre a fatia real e verificável do pipeline
+# descrito em docs/02-arquitetura.md §10: fmt, clippy -D warnings, testes.
+#
+# Ainda faltam (ver docs/07-roadmap.md para o marco de cada item):
+#   - golden masters e verificação de hash de estado cruzada entre plataformas
+#     (chega com o motor v0, M1 — docs/08-qualidade-e-testes.md §3 e §8)
+#   - benchmarks contra orçamento (docs/01 §3.1)
+#   - build/lint da interface Flutter em app/ (sem SDK Flutter neste passo
+#     ainda; entra junto com a ponte flutter_rust_bridge)
+#   - build de Android/iOS (cross-compilação/toolchain, M2+)
+#
+# A matriz roda nas três famílias de OS que hospedam nossas plataformas-alvo
+# (Windows nativamente; macOS como proxy de host ARM64 até termos runners
+# Android/iOS dedicados) — é a primeira linha de defesa do determinismo
+# cross-platform exigido pelo ADR 0002.
+name: rust-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "core/**"
+      - ".github/workflows/rust-ci.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - ".github/workflows/rust-ci.yml"
+
+defaults:
+  run:
+    working-directory: core
+
+jobs:
+  fmt:
+    name: fmt (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - run: cargo test --workspace
+
+  cargo-deny:
+    name: cargo-deny (licenças e advisories — docs/05 §5.3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: core/Cargo.toml

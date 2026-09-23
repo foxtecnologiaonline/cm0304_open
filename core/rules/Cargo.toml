@@ -1,0 +1,10 @@
+[package]
+name = "rules"
+description = "Regras de competição dirigidas por dados (formato, desempate, promoção/rebaixamento)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain = { workspace = true }

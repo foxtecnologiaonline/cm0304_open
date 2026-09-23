@@ -213,7 +213,7 @@ Exemplo de regra de competição (o ponto é que **tudo** é dado):
 Regras do formato:
 
 * **Versionado por semver**; o jogo recusa pack de `major` incompatível com mensagem clara.
-* **Validador obrigatório** (`cm0304-cli pack validate`) roda também em CI dos packs oficiais.
+* **Validador obrigatório** (`managerfc-cli pack validate`) roda também em CI dos packs oficiais.
 * **Licença declarada** no `pack.toml`; packs de cosmético ficam sempre separados dos de
   regra, porque têm perfil jurídico diferente ([`05`](05-dados-e-legal.md)).
 * Conflito entre packs ativos é resolvido por ordem declarada + regra determinística de

@@ -1,0 +1,10 @@
+[package]
+name = "engine"
+description = "Motor de partida: camada tática, posse por zona (Markov), resolução de eventos."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain = { workspace = true }

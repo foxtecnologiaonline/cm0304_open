@@ -1,0 +1,30 @@
+# Rust
+/core/target/
+**/target/
+Cargo.lock.bak
+
+# Flutter / Dart
+/app/build/
+/app/.dart_tool/
+/app/.flutter-plugins
+/app/.flutter-plugins-dependencies
+/app/.packages
+/app/pubspec.lock
+# Pastas de plataforma nativa geradas por `flutter create` — não existem
+# ainda neste repositório (ver app/README.md) e não devem ser commitadas
+# como artefato de build quando forem geradas localmente.
+/app/.flutter-plugins*
+
+# Ferramentas de dados
+/tools/**/__pycache__/
+/tools/**/.venv/
+
+# IDEs e SO
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Relatórios/benchmarks locais
+/docs/_reports/

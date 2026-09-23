@@ -1,0 +1,15 @@
+[package]
+name = "managerfc-cli"
+description = "Binário headless do ManagerFC: simular, calibrar, validar packs — sem UI (docs/02 §10, docs/08)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "managerfc-cli"
+path = "src/main.rs"
+
+[dependencies]
+domain = { workspace = true }
+clap = { workspace = true }

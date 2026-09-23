@@ -53,7 +53,7 @@ trabalho da comunidade.
 * ADRs 0001–0004 aprovadas; nome do produto verificado (busca de marca)
 * Harness de benchmark com orçamentos já falhando em vermelho (metas de RNF)
 
-**Portão:** `cm0304-cli pack validate` e `cm0304-cli bench` rodando nas 3 plataformas em CI.
+**Portão:** `managerfc-cli pack validate` e `managerfc-cli bench` rodando nas 3 plataformas em CI.
 
 ### M1 — Kick-off headless (10 semanas)
 

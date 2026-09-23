@@ -1,0 +1,10 @@
+[package]
+name = "app"
+description = "Casos de uso — única fronteira pública do núcleo (dispatch/query/events)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain = { workspace = true }
