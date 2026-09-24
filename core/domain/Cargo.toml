@@ -12,3 +12,6 @@ rand_pcg = { workspace = true }
 
 [lints.clippy]
 float_arithmetic = "deny"
+
+[dev-dependencies]
+proptest = "1"

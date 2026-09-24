@@ -223,3 +223,42 @@ mod tests {
         assert_eq!(GameDate::from_ymd(2026, 4, 5).to_string(), "2026-04-05");
     }
 }
+
+/// Testes de propriedade (`docs/08-qualidade-e-testes.md §1`, camada
+/// "Propriedade"): em vez de casos fixos, geram milhares de entradas
+/// aleatórias e verificam um invariante que precisa valer para todas elas.
+/// Aqui isso significa varrer uma faixa ampla de dias — bem além de
+/// qualquer caso de calendário que o jogo vá encontrar — em vez de confiar
+/// só nas datas específicas escolhidas à mão em `mod tests`.
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Para qualquer dia representável (± ~550 anos ao redor de 1970,
+        /// bem além do horizonte de qualquer carreira do jogo), decompor em
+        /// ano/mês/dia e reconstruir tem que devolver exatamente o mesmo
+        /// dia. É a checagem mais forte possível de que `days_from_civil` e
+        /// `civil_from_days` são inversas uma da outra em toda a faixa útil
+        /// — inclusive em anos bissextos "de século" como 1900 e 2000, que
+        /// são justamente onde essa dupla de fórmulas costuma ter bugs.
+        #[test]
+        fn round_trip_por_epoch_days_arbitrario(days in -200_000i32..200_000i32) {
+            let date = GameDate::from_epoch_days(days);
+            let (y, m, d) = date.to_ymd();
+            let rebuilt = GameDate::from_ymd(y, m, d);
+            prop_assert_eq!(rebuilt.epoch_days(), days);
+        }
+
+        /// O dia da semana precisa avançar exatamente 1 (módulo 7) a cada
+        /// dia que passa, em qualquer ponto da faixa — não só nos três
+        /// exemplos manuais de `dia_da_semana_bate_com_data_conhecida`.
+        #[test]
+        fn weekday_avanca_exatamente_um_por_dia(days in -200_000i32..199_999i32) {
+            let today = GameDate::from_epoch_days(days).weekday() as i32;
+            let tomorrow = GameDate::from_epoch_days(days + 1).weekday() as i32;
+            prop_assert_eq!((tomorrow - today).rem_euclid(7), 1);
+        }
+    }
+}

@@ -224,3 +224,44 @@ mod tests {
         );
     }
 }
+
+/// Testes de propriedade — `docs/08 §1`. `mesma_seed_mesma_saida` generaliza
+/// `mesma_seed_produz_a_mesma_sequencia` (em `mod tests`) para seeds/entidade
+/// /tick arbitrários, não só o trio fixo `(42, "match.shot", 7, 100)`.
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn below_sempre_fica_no_intervalo(
+            seed: u64, entity: u64, tick: u64,
+            bound in 1u32..1_000_000u32,
+        ) {
+            let mut rng = DeterministicRng::seeded(seed, "proptest.below", entity, tick);
+            prop_assert!(rng.below(bound) < bound);
+        }
+
+        #[test]
+        fn mesma_seed_mesma_saida(seed: u64, entity: u64, tick: u64) {
+            let mut a = DeterministicRng::seeded(seed, "proptest.same", entity, tick);
+            let mut b = DeterministicRng::seeded(seed, "proptest.same", entity, tick);
+            prop_assert_eq!(a.next_u64(), b.next_u64());
+            prop_assert_eq!(a.next_u64(), b.next_u64()); // segunda chamada também bate
+        }
+
+        #[test]
+        fn chance_per_mille_nunca_estoura_probabilidade_100_por_cento(
+            seed: u64, per_mille in 0u32..=1000u32,
+        ) {
+            // Não testa convergência estatística aqui (isso já está coberto
+            // por `chance_per_mille_converge_para_a_probabilidade_pedida`,
+            // que roda 200k tentativas numa única seed) — só que a função
+            // nunca "quebra o contrato" (panic, valor fora de bool) para
+            // nenhum per_mille válido em nenhuma seed.
+            let mut rng = DeterministicRng::seeded(seed, "proptest.chance", 0, 0);
+            let _ = rng.chance_per_mille(per_mille); // não deve entrar em pânico
+        }
+    }
+}
