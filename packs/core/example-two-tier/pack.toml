@@ -1,0 +1,13 @@
+# Pack de exemplo do núcleo — nome e clubes inteiramente fictícios
+# (docs/05-dados-e-legal.md §4, "modo genérico"). Serve dois papéis:
+#
+#   1. Prova de ponta a ponta do carregador de pack (portão do M0,
+#      docs/07-roadmap.md) — 1 país, 2 divisões, com promoção/rebaixamento.
+#   2. Fixture de referência para testes de integração do crate `world`
+#      a partir do M1 (calendário, tabela, acesso/queda).
+#
+# Não é a base de dados do jogo — essa vem do pipeline de docs/05 §3.3.
+id = "example.two-tier"
+name = "Exemplo — Duas Divisões (Estrelônia)"
+version = "0.1.0"
+license = "CC0-1.0"

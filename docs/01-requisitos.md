@@ -136,6 +136,18 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 
 ### 2.9 Dados e modding (`DM`)
 
+> Nota de sequenciamento: o **carregador mínimo** (`pack` crate — nações,
+> competições, clubes, ids densos, validação referencial) já existe desde o
+> M0, porque `world`/`rules` precisam dele para ter o que quer que seja para
+> processar (`docs/07-roadmap.md#m0--fundação-6-semanas`). O que os itens
+> abaixo descrevem para o M4 é a **superfície pública e madura** de modding:
+> formato versionado e documentado para terceiros, editor visual, múltiplos
+> packs simultâneos com resolução de conflito. `RF-DM-04` (validador com
+> mensagens úteis) já está parcialmente entregue pelo CLI
+> (`managerfc-cli pack validate`); o que falta para M4 é a UI *dentro do
+> jogo* e a validação de `people/*.json` e `rules/*.toml`, que ainda não
+> existem.
+
 | ID | Requisito | Pri | Marco |
 |---|---|---|---|
 | RF-DM-01 | Formato de **data pack** aberto e versionado (ver [`03`](03-modelo-de-dados.md#7-data-packs)) | M | M4 |

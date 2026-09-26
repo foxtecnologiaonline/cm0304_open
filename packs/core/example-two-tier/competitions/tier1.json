@@ -1,0 +1,9 @@
+{
+  "id": "es.tier1",
+  "name": "Primeira Divisão de Estrelônia",
+  "nation": "es",
+  "tier": 1,
+  "format": { "type": "round_robin", "legs": 2, "teams": 8 },
+  "tiebreakers": ["points", "wins", "goal_difference", "goals_for", "head_to_head"],
+  "relegation": { "to": "es.tier2", "slots": 2 }
+}

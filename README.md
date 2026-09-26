@@ -59,10 +59,12 @@ restante do pipeline de M0 seguem em construção incremental.
 cm0304_open/
 ├─ core/                  # workspace Rust — núcleo determinístico headless
 │  ├─ domain/              # ✅ ids, ponto fixo, calendário, RNG determinístico, atributos
+│  ├─ pack/                # ✅ carregador + validador de data pack (nações, competições, clubes)
 │  ├─ rules/ engine/ world/ # 🚧 esqueleto compilável, regra de negócio entra em M1
-│  ├─ ai/ persist/ pack/    # 🚧 idem — ver docs/07-roadmap.md para o marco de cada um
+│  ├─ ai/ persist/         # 🚧 idem — ver docs/07-roadmap.md para o marco de cada um
 │  ├─ app/                 # 🚧 casos de uso (fronteira dispatch/query/events)
-│  └─ cli/                 # ✅ managerfc-cli — version funcional; demais comandos placeholder
+│  └─ cli/                 # ✅ managerfc-cli — version e pack validate funcionais
+├─ packs/core/             # ✅ pack de exemplo (1 país, 2 divisões, 16 clubes fictícios)
 ├─ app/                    # 🚧 interface Flutter — esqueleto de fonte, ver app/README.md
 ├─ .github/workflows/      # ✅ CI do núcleo Rust (fmt, clippy -D warnings, test, cargo-deny)
 └─ docs/                   # ✅ escopo completo (00–10) + ADRs
@@ -72,9 +74,10 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 50 testes (inclui property tests com proptest) — docs/08 §2
+cargo test --workspace              # 68 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
+cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
 cargo run -p managerfc-cli -- --help
 ```
 

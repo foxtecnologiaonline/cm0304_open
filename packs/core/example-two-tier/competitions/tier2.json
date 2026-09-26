@@ -1,0 +1,9 @@
+{
+  "id": "es.tier2",
+  "name": "Segunda Divisão de Estrelônia",
+  "nation": "es",
+  "tier": 2,
+  "format": { "type": "round_robin", "legs": 2, "teams": 8 },
+  "tiebreakers": ["points", "wins", "goal_difference", "goals_for", "head_to_head"],
+  "promotion": { "to": "es.tier1", "slots": 2 }
+}

@@ -2,14 +2,18 @@
 //!
 //! É o único jeito de rodar o núcleo sem UI: CI, balanceamento e modders
 //! passam por aqui, nunca pelo Flutter (RNF-13). Neste estágio (M0) a maior
-//! parte dos subcomandos é **placeholder documentado** — existem para que a
-//! forma final da CLI já apareça em `--help` desde o primeiro commit, mesmo
-//! antes de `engine`/`world`/`pack` terem regra de negócio real para expor.
-//! Cada placeholder diz explicitamente em que marco passa a funcionar
-//! (`docs/07-roadmap.md`), para não ser confundido com um comando quebrado.
+//! parte dos subcomandos ainda é **placeholder documentado** — existem para
+//! que a forma final da CLI já apareça em `--help` desde o primeiro commit,
+//! mesmo antes de `engine`/`world` terem regra de negócio real para expor.
+//! `pack validate` é a exceção: já é real, porque o carregador de data pack
+//! é entregável do próprio M0 (`docs/07-roadmap.md#m0--fundação-6-semanas`).
+//! Cada placeholder restante diz explicitamente em que marco passa a
+//! funcionar, para não ser confundido com um comando quebrado.
+
+use std::path::PathBuf;
+use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use std::process::ExitCode;
 
 #[derive(Parser)]
 #[command(
@@ -59,11 +63,12 @@ enum Command {
 
 #[derive(Subcommand)]
 enum PackAction {
-    /// Valida um data pack contra o schema e as regras de consistência.
-    /// Placeholder — chega com o crate `pack` (M4, `docs/07-roadmap.md`).
+    /// Valida um data pack contra o schema e as regras de consistência
+    /// (`docs/03 §7`). Ainda só lê diretórios — `.fmpack` zipado é trabalho
+    /// futuro (M4, `docs/07-roadmap.md`).
     Validate {
-        /// Caminho do pack (diretório ou `.fmpack`).
-        path: String,
+        /// Caminho do diretório do pack (contendo `pack.toml`).
+        path: PathBuf,
     },
 }
 
@@ -102,10 +107,7 @@ fn main() -> ExitCode {
         ),
         Command::Pack {
             action: PackAction::Validate { path },
-        } => not_yet(
-            &format!("pack validate {path}"),
-            "M4 — crate pack, docs/07-roadmap.md#m4--beta-14-semanas",
-        ),
+        } => pack_validate(&path),
         Command::Golden {
             action: GoldenAction::Record { seed, seasons },
         } => not_yet(
@@ -131,6 +133,47 @@ fn print_version() {
     // corretamente ligado ao workspace, esta chamada nem compilaria.
     let seed_check = domain::Fixed::from_ratio(1, 3);
     println!("fixed-point   1/3 = {seed_check} (verificação de que o crate domain responde)");
+}
+
+/// Implementação real de `pack validate <path>` (`docs/03 §7`).
+///
+/// Erro estrutural (pack.toml ausente, JSON/TOML malformado) sai por
+/// `stderr` com código 2, sem tentar validar semanticamente algo que nem
+/// carregou direito. Problemas semânticos (referência quebrada, contagem de
+/// clubes divergente...) são **todos** listados de uma vez — o objetivo é
+/// que o autor do pack corrija numa passada, não descubra um erro por
+/// execução (`docs/03 §7`: "validador... com mensagens de erro úteis").
+fn pack_validate(path: &std::path::Path) -> ExitCode {
+    let report = match pack::load_and_validate(path) {
+        Ok(report) => report,
+        Err(err) => {
+            eprintln!(
+                "managerfc-cli: falha ao carregar pack em {}: {err}",
+                path.display()
+            );
+            return ExitCode::from(2);
+        }
+    };
+
+    println!(
+        "pack '{}' ({}) — {} país(es), {} competição(ões), {} clube(s)",
+        report.manifest.id,
+        report.manifest.version,
+        report.pack.nations.len(),
+        report.pack.competitions.len(),
+        report.pack.clubs.len(),
+    );
+
+    if report.is_valid() {
+        println!("válido — nenhum problema encontrado.");
+        ExitCode::SUCCESS
+    } else {
+        eprintln!("{} problema(s) encontrado(s):", report.issues.len());
+        for issue in &report.issues {
+            eprintln!("  - {issue}");
+        }
+        ExitCode::from(1)
+    }
 }
 
 /// Mensagem padrão para subcomandos ainda não implementados — nunca um
