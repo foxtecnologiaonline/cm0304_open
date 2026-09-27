@@ -69,6 +69,13 @@ impl TableRow {
 /// O desempate final, **sempre**, é a ordem do `ClubId` — nunca existe
 /// "empate de verdade" na tabela devolvida, porque uma ordem indefinida
 /// quebraria o determinismo entre plataformas (`ADR 0002`).
+///
+/// Um resultado cujo `fixture` referencie um clube fora de `clubs` é
+/// **ignorado**, nunca causa `panic!` — `docs/02-arquitetura.md §9.2`:
+/// "núcleo devolve `Result` tipado; `panic` é bug". Hoje nenhum chamador
+/// (`world` sempre passa a mesma lista usada para gerar o calendário)
+/// aciona esse caso, mas `compute_table` é função pública de uma
+/// biblioteca — não deveria confiar cegamente na disciplina de quem chama.
 #[must_use]
 pub fn compute_table(
     clubs: &[ClubId],
@@ -80,6 +87,9 @@ pub fn compute_table(
     let mut head_to_head_points: HashMap<(ClubId, ClubId), u32> = HashMap::new();
 
     for (fixture, score) in results {
+        if !rows.contains_key(&fixture.home) || !rows.contains_key(&fixture.away) {
+            continue;
+        }
         apply_result(
             &mut rows,
             fixture.home,
@@ -305,6 +315,30 @@ mod tests {
         let table = compute_table(&clubs, &[], &[Tiebreaker::Points]);
         assert_eq!(table[0].club, c(2));
         assert_eq!(table[1].club, c(5));
+    }
+
+    #[test]
+    fn resultado_com_clube_fora_da_lista_e_ignorado_nao_causa_panic() {
+        // Regressão: `apply_result` usava `.expect()` sobre o lookup do
+        // clube — um fixture referenciando um clube fora de `clubs` fazia
+        // `compute_table` panicar (docs/02 §9.2 proíbe exatamente isso:
+        // "núcleo devolve Result tipado; panic é bug"). Nenhum chamador
+        // atual aciona este caso, mas a função é pública.
+        let clubs = [c(0), c(1)];
+        let results = [
+            (fixture(c(0), c(1)), score(2, 1)),   // válido
+            (fixture(c(0), c(99)), score(1, 0)),  // c(99) não está em `clubs`
+            (fixture(c(99), c(98)), score(3, 3)), // nenhum dos dois está em `clubs`
+        ];
+        let table = compute_table(&clubs, &results, &[Tiebreaker::Points]);
+
+        // Só o resultado válido conta; c(0) tem exatamente 1 jogo (a vitória
+        // contra c(1)), não 2 — os outros dois resultados foram ignorados
+        // por inteiro, não parcialmente aplicados.
+        assert_eq!(table.len(), 2);
+        let row0 = table.iter().find(|r| r.club == c(0)).unwrap();
+        assert_eq!(row0.played, 1);
+        assert_eq!(row0.wins, 1);
     }
 }
 

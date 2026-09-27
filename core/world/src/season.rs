@@ -87,8 +87,8 @@ pub fn run_season(
 
         let mut results = Vec::with_capacity(fixtures.len());
         for fixture in fixtures {
-            let home = strengths[fixture.home.as_usize()];
-            let away = strengths[fixture.away.as_usize()];
+            let home = crate::strength::strength_of(strengths, fixture.home);
+            let away = crate::strength::strength_of(strengths, fixture.away);
             let ctx = engine::MatchContext {
                 world_seed,
                 fixture: fixture_key(season_index, &fixture),

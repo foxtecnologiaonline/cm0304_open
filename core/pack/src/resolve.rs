@@ -35,6 +35,7 @@ pub fn resolve(raw: RawPack) -> (LoadedPack, Vec<String>) {
     let clubs = resolve_clubs(raw.clubs, &nation_index, &competition_index, &mut issues);
 
     check_competition_club_counts(&competitions, &clubs, &mut issues);
+    check_movement_slots(&competitions, &mut issues);
 
     (
         LoadedPack {
@@ -260,6 +261,30 @@ fn check_competition_club_counts(
     }
 }
 
+/// Se `promotion.slots + relegation.slots > format.teams`, os dois
+/// conjuntos de clubes que sobem e descem se sobrepõem — o mesmo clube
+/// apareceria simultaneamente entre os `promotion.slots` melhores
+/// colocados e os `relegation.slots` piores. Note que **igual** ao total
+/// (soma == teams) é válido e comum: significa que todo clube da divisão
+/// sobe ou desce, nenhum fica — só a soma **maior** que o total é
+/// impossível de satisfazer sem sobreposição. Isso deixaria "para onde
+/// esse clube vai na próxima temporada" ambíguo em tempo de execução
+/// (`world::season`), sem nenhum aviso — o tipo de inconsistência que o
+/// validador existe justamente para pegar antes do jogo, não depois
+/// (`docs/03 §7`).
+fn check_movement_slots(competitions: &[ResolvedCompetition], issues: &mut Vec<String>) {
+    for comp in competitions {
+        let Format::RoundRobin { teams, .. } = comp.format;
+        let overlap = comp.promotion.slots + comp.relegation.slots;
+        if overlap > teams {
+            issues.push(format!(
+                "competição '{}': promotion.slots ({}) + relegation.slots ({}) > format.teams ({teams}) — os grupos de acesso e queda se sobrepõem",
+                comp.external_id, comp.promotion.slots, comp.relegation.slots
+            ));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -382,6 +407,95 @@ mod tests {
         };
         let (_pack, issues) = resolve(raw);
         assert!(issues.iter().any(|i| i.contains("declara 4 times")));
+    }
+
+    #[test]
+    fn promocao_e_rebaixamento_sobrepostos_viram_problema() {
+        // 4 times, mas promotion.slots (2) + relegation.slots (3) = 5 > 4:
+        // os grupos de acesso e queda se sobrepõem.
+        let mut comp = competition("ex.t1", "ex", 4);
+        comp.promotion = RawMovement {
+            to: Some("ex.t0".to_string()),
+            slots: 2,
+        };
+        comp.relegation = RawMovement {
+            to: Some("ex.t2".to_string()),
+            slots: 3,
+        };
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![
+                comp,
+                competition("ex.t0", "ex", 1),
+                competition("ex.t2", "ex", 1),
+            ],
+            clubs: vec![],
+        };
+        let (_pack, issues) = resolve(raw);
+        assert!(
+            issues.iter().any(|i| i.contains("se sobrepõem")),
+            "issues: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn promocao_e_rebaixamento_dentro_do_limite_nao_gera_problema() {
+        let mut comp = competition("ex.t1", "ex", 8);
+        comp.promotion = RawMovement {
+            to: Some("ex.t0".to_string()),
+            slots: 2,
+        };
+        comp.relegation = RawMovement {
+            to: Some("ex.t2".to_string()),
+            slots: 2,
+        };
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![
+                comp,
+                competition("ex.t0", "ex", 1),
+                competition("ex.t2", "ex", 1),
+            ],
+            clubs: vec![],
+        };
+        let (_pack, issues) = resolve(raw);
+        assert!(
+            !issues.iter().any(|i| i.contains("se sobrepõem")),
+            "issues inesperadas: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn promocao_e_rebaixamento_somando_exatamente_o_total_nao_e_sobreposicao() {
+        // Regressão: a checagem original usava `>=`, sinalizando por engano
+        // o caso em que toda a divisão sobe ou desce (soma == teams,
+        // nenhuma sobreposição de verdade) — foi o que quebrou um teste já
+        // existente (`rebaixamento_pode_referenciar_competicao...`, com uma
+        // divisão de 1 time inteiramente rebaixado). Só soma > teams é
+        // sobreposição de fato.
+        let mut comp = competition("ex.t1", "ex", 4);
+        comp.promotion = RawMovement {
+            to: Some("ex.t0".to_string()),
+            slots: 2,
+        };
+        comp.relegation = RawMovement {
+            to: Some("ex.t2".to_string()),
+            slots: 2,
+        };
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![
+                comp,
+                competition("ex.t0", "ex", 1),
+                competition("ex.t2", "ex", 1),
+            ],
+            clubs: vec![],
+        };
+        let (_pack, issues) = resolve(raw);
+        assert!(
+            !issues.iter().any(|i| i.contains("se sobrepõem")),
+            "issues inesperadas: {issues:?}"
+        );
     }
 
     #[test]
