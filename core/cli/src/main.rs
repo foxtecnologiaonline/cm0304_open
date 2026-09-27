@@ -1,14 +1,17 @@
 //! `managerfc-cli` — binário headless do núcleo (`docs/02-arquitetura.md §10`).
 //!
 //! É o único jeito de rodar o núcleo sem UI: CI, balanceamento e modders
-//! passam por aqui, nunca pelo Flutter (RNF-13). Neste estágio (M0) a maior
-//! parte dos subcomandos ainda é **placeholder documentado** — existem para
-//! que a forma final da CLI já apareça em `--help` desde o primeiro commit,
-//! mesmo antes de `engine`/`world` terem regra de negócio real para expor.
-//! `pack validate` é a exceção: já é real, porque o carregador de data pack
-//! é entregável do próprio M0 (`docs/07-roadmap.md#m0--fundação-6-semanas`).
-//! Cada placeholder restante diz explicitamente em que marco passa a
-//! funcionar, para não ser confundido com um comando quebrado.
+//! passam por aqui, nunca pelo Flutter (RNF-13). Neste estágio (M0) parte
+//! dos subcomandos ainda é **placeholder documentado** — existem para que a
+//! forma final da CLI já apareça em `--help` desde o primeiro commit, mesmo
+//! antes de `world`/`rules` terem regra de negócio real para expor.
+//! `pack validate` e `bench` já são reais: o carregador de data pack e o
+//! motor v0 são entregáveis do próprio M0
+//! (`docs/07-roadmap.md#m0--fundação-6-semanas`). `bench` hoje só mede o que
+//! existe (o custo de uma partida isolada, RNF-01) — os orçamentos de dia e
+//! de temporada (RNF-02/03) esperam o loop de calendário do `world`. Cada
+//! placeholder restante diz explicitamente em que marco passa a funcionar,
+//! para não ser confundido com um comando quebrado.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -33,9 +36,14 @@ enum Command {
     /// workspace está corretamente ligado.
     Version,
 
-    /// Roda os benchmarks de performance contra os orçamentos de `docs/01 §3.1`.
-    /// Placeholder — chega com o motor v0 (M1, `docs/07-roadmap.md`).
-    Bench,
+    /// Mede o custo de simular uma partida contra o orçamento de RNF-01
+    /// (`docs/01 §3.1`). Os orçamentos de dia/temporada (RNF-02/03) ainda
+    /// não são medíveis — esperam o `world` (M1).
+    Bench {
+        /// Quantas partidas simular para tirar a média.
+        #[arg(long, default_value_t = 10_000)]
+        trials: u32,
+    },
 
     /// Simula temporadas headless e emite métricas de calibração (`docs/08 §4`).
     /// Placeholder — chega com o motor v0/v1 (M1–M2).
@@ -97,10 +105,7 @@ fn main() -> ExitCode {
             print_version();
             ExitCode::SUCCESS
         }
-        Command::Bench => not_yet(
-            "bench",
-            "M1 — motor v0, docs/07-roadmap.md#m1--kick-off-headless-10-semanas",
-        ),
+        Command::Bench { trials } => bench(trials),
         Command::Calibrate { seasons, seed } => not_yet(
             &format!("calibrate --seasons {seasons} --seed {seed}"),
             "M1/M2 — docs/08-qualidade-e-testes.md#4-calibração",
@@ -172,6 +177,54 @@ fn pack_validate(path: &std::path::Path) -> ExitCode {
         for issue in &report.issues {
             eprintln!("  - {issue}");
         }
+        ExitCode::from(1)
+    }
+}
+
+/// Custo orçado de simular uma partida em modo instantâneo, em desktop
+/// (`docs/01 §3.1`, RNF-01). O orçamento de mobile (≤ 6.000 µs) não é
+/// verificado aqui — precisa do aparelho de referência (`docs/08 §6`), não
+/// de uma constante neste binário.
+const BENCH_BUDGET_DESKTOP_NANOS: u128 = 1_500_000;
+
+/// Implementação real de `bench` — mede `engine::simulate` (`docs/04`),
+/// hoje a única peça do núcleo com custo por partida para medir. Duas
+/// forças iguais são usadas de propósito: é o caso que mais dispara o
+/// motor (nem time nem o outro "resolve" cedo por diferença grande de
+/// força), então tende a ser o teto de custo, não o típico.
+fn bench(trials: u32) -> ExitCode {
+    let home = engine::TeamStrength::new(domain::Fixed::from_int(100));
+    let away = engine::TeamStrength::new(domain::Fixed::from_int(100));
+
+    let start = std::time::Instant::now();
+    let mut total_events = 0usize;
+    for i in 0..trials {
+        let ctx = engine::MatchContext {
+            world_seed: 1,
+            fixture: u64::from(i),
+        };
+        total_events += engine::simulate(home, away, ctx).len();
+    }
+    let elapsed = start.elapsed();
+    // Nanossegundos, não microssegundos: o motor v0 é rápido o bastante
+    // (bem abaixo de 1 µs/partida) para que "µs/partida" trunque para 0 e
+    // pareça um bug em vez de uma boa notícia de performance.
+    let per_match_nanos = elapsed.as_nanos() / u128::from(trials.max(1));
+
+    println!(
+        "engine::simulate — {trials} partidas em {elapsed:?} \
+         ({per_match_nanos} ns/partida em média, {total_events} eventos no total)"
+    );
+
+    if per_match_nanos <= BENCH_BUDGET_DESKTOP_NANOS {
+        println!(
+            "dentro do orçamento de desktop (RNF-01: ≤ {BENCH_BUDGET_DESKTOP_NANOS} ns/partida)"
+        );
+        ExitCode::SUCCESS
+    } else {
+        eprintln!(
+            "ACIMA do orçamento de desktop (RNF-01: ≤ {BENCH_BUDGET_DESKTOP_NANOS} ns/partida)"
+        );
         ExitCode::from(1)
     }
 }

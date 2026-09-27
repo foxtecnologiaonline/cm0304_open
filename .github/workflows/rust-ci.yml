@@ -1,10 +1,14 @@
 # CI do núcleo em Rust (core/). Cobre a fatia real e verificável do pipeline
-# descrito em docs/02-arquitetura.md §10: fmt, clippy -D warnings, testes.
+# descrito em docs/02-arquitetura.md §10: fmt, clippy -D warnings, testes, e
+# (job `cli-gate`) o próprio portão do M0 — `managerfc-cli pack validate` e
+# `managerfc-cli bench` rodando de verdade, não só via `cargo test`
+# (docs/07-roadmap.md#m0--fundação-6-semanas).
 #
 # Ainda faltam (ver docs/07-roadmap.md para o marco de cada item):
 #   - golden masters e verificação de hash de estado cruzada entre plataformas
-#     (chega com o motor v0, M1 — docs/08-qualidade-e-testes.md §3 e §8)
-#   - benchmarks contra orçamento (docs/01 §3.1)
+#     (chega com o loop de mundo, M1 — docs/08-qualidade-e-testes.md §3 e §8)
+#   - benchmarks de dia/temporada (RNF-02/03 — esperam o `world`, M1) e de
+#     mobile (RNF-01 mobile — espera aparelho de referência, docs/08 §6)
 #   - build/lint da interface Flutter em app/ (sem SDK Flutter neste passo
 #     ainda; entra junto com a ponte flutter_rust_bridge)
 #   - build de Android/iOS (cross-compilação/toolchain, M2+)
@@ -20,10 +24,12 @@ on:
     branches: [main]
     paths:
       - "core/**"
+      - "packs/**"
       - ".github/workflows/rust-ci.yml"
   pull_request:
     paths:
       - "core/**"
+      - "packs/**"
       - ".github/workflows/rust-ci.yml"
 
 defaults:
@@ -84,3 +90,23 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: core/Cargo.toml
+
+  cli-gate:
+    name: cli-gate (${{ matrix.os }}) — portão do M0
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: pack validate (pack de exemplo do repositório)
+        # `cargo run` (em vez de chamar o binário direto) evita lidar com a
+        # extensão `.exe` do Windows aqui.
+        run: cargo run -p managerfc-cli --release -- pack validate ../packs/core/example-two-tier
+      - name: bench (RNF-01, desktop)
+        run: cargo run -p managerfc-cli --release -- bench --trials 20000

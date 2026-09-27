@@ -60,13 +60,14 @@ cm0304_open/
 ├─ core/                  # workspace Rust — núcleo determinístico headless
 │  ├─ domain/              # ✅ ids, ponto fixo, calendário, RNG determinístico, atributos
 │  ├─ pack/                # ✅ carregador + validador de data pack (nações, competições, clubes)
-│  ├─ rules/ engine/ world/ # 🚧 esqueleto compilável, regra de negócio entra em M1
+│  ├─ engine/              # ✅ motor de partida v0 (força relativa → placar, docs/04 §7)
+│  ├─ rules/ world/        # 🚧 esqueleto compilável, regra de negócio entra em M1
 │  ├─ ai/ persist/         # 🚧 idem — ver docs/07-roadmap.md para o marco de cada um
 │  ├─ app/                 # 🚧 casos de uso (fronteira dispatch/query/events)
-│  └─ cli/                 # ✅ managerfc-cli — version e pack validate funcionais
+│  └─ cli/                 # ✅ managerfc-cli — version, pack validate e bench funcionais
 ├─ packs/core/             # ✅ pack de exemplo (1 país, 2 divisões, 16 clubes fictícios)
 ├─ app/                    # 🚧 interface Flutter — esqueleto de fonte, ver app/README.md
-├─ .github/workflows/      # ✅ CI do núcleo Rust (fmt, clippy -D warnings, test, cargo-deny)
+├─ .github/workflows/      # ✅ CI do núcleo Rust (fmt, clippy, test, deny, e o portão do M0 de verdade)
 └─ docs/                   # ✅ escopo completo (00–10) + ADRs
 ```
 
@@ -74,10 +75,11 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 68 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 79 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
+cargo run --release -p managerfc-cli -- bench     # RNF-01: ≤ 1,5 ms/partida em desktop
 cargo run -p managerfc-cli -- --help
 ```
 

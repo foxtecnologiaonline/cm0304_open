@@ -159,6 +159,7 @@ name = "engine"
 version = "0.0.1"
 dependencies = [
  "domain",
+ "proptest",
 ]
 
 [[package]]
@@ -264,6 +265,7 @@ version = "0.0.1"
 dependencies = [
  "clap",
  "domain",
+ "engine",
  "pack",
 ]
 

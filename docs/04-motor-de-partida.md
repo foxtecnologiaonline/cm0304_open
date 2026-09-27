@@ -7,6 +7,20 @@ ele é, o que ele não tenta ser, como é calibrado e quanto pode custar**.
 > a partir de material público, como o motor do Championship Manager 03/04 e o do
 > Elifoot 98 funcionavam — e, principalmente, **os dois exploits históricos** ("Diablo"
 > no CM 03/04, "5-0-5" no Elifoot) que justificam a suíte anti-exploit da §4.3.
+>
+> **Estado de implementação:** o crate `engine` já tem uma primeira versão do
+> **v0** (`§7`): duas `TeamStrength`, sem tática nem posse, caminhando os 90
+> minutos e sorteando gol por minuto via `DeterministicRng::chance_per_mille`
+> (uma aproximação por *thinning* binomial de um processo de Poisson — dá no
+> mesmo resultado prático de amostrar Poisson direto, mas reaproveita RNG já
+> testado em vez de precisar de uma tabela de `exp(-λ)` só para isto). O
+> contrato de `MatchEvent` da `§5` ainda é só o subconjunto que o v0 de fato
+> produz (`KickOff`, `Goal`, `FullTime`) — `Shot`/`Foul`/`Injury`/`Sub`/
+> `Positions` esperam jogadores em campo (v1/v2). `TOTAL_GOALS_TARGET` e
+> `HOME_ADVANTAGE` são valores iniciais plausíveis, não uma calibração —
+> isso é trabalho do `managerfc-cli calibrate`, ainda não implementado.
+> Testes: `cargo test -p engine`, incluindo uma sanidade estatística grosseira
+> contra o alvo de gols/partida desta seção (não substitui a suíte de `§4`).
 
 ---
 

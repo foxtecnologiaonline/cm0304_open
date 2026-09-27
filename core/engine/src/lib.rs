@@ -1,25 +1,19 @@
-//! `engine` — Motor de partida: camada tática, posse por zona (Markov), resolução de eventos.
+//! `engine` — motor de partida (`docs/04-motor-de-partida.md`).
 //!
-//! Ainda não implementado além do esqueleto: este crate existe para que a
-//! estrutura de dependências descrita em `docs/02-arquitetura.md §3` já
-//! compile e seja testável desde o M0, mesmo antes de a regra de negócio
-//! chegar (ver `docs/07-roadmap.md` para o marco em que cada peça entra).
-//! Ver também: docs/04-motor-de-partida.md
+//! Este crate implementa o **v0** do plano evolutivo (`docs/04 §7`): só a
+//! camada estatística, "força relativa → placar". As camadas de tática
+//! (`docs/04 §2.1`), posse por zona (`§2.2`) e o resto do contrato de
+//! [`MatchEvent`] (`§5`) chegam em v1/v2, junto de `world`/`rules`
+//! (M1) e de jogadores em campo de verdade (M2/M3).
+//!
+//! Depende só de `domain` — não sabe nada sobre `pack`, `world` ou
+//! escalação. Recebe duas [`TeamStrength`] e devolve um fluxo de
+//! [`MatchEvent`]; de onde a força vem é problema de quem chama
+//! (`docs/02 §2`: "engine... depende de domínio — nunca o inverso").
 #![warn(clippy::all)]
 
-/// Placeholder que prova que o crate compila e está corretamente ligado a
-/// `domain` — removido assim que a primeira funcionalidade real chegar.
-#[must_use]
-pub fn crate_name() -> &'static str {
-    "engine"
-}
+mod event;
+mod simulate;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn crate_esta_ligado_e_nomeado_corretamente() {
-        assert_eq!(crate_name(), "engine");
-    }
-}
+pub use event::{MatchEvent, Side, score};
+pub use simulate::{MatchContext, TeamStrength, simulate};
