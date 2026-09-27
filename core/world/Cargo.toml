@@ -8,3 +8,9 @@ publish.workspace = true
 
 [dependencies]
 domain = { workspace = true }
+pack = { workspace = true }
+rules = { workspace = true }
+engine = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"

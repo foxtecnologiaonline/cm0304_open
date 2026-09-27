@@ -1,14 +1,15 @@
 # CI do núcleo em Rust (core/). Cobre a fatia real e verificável do pipeline
 # descrito em docs/02-arquitetura.md §10: fmt, clippy -D warnings, testes, e
-# (job `cli-gate`) o próprio portão do M0 — `managerfc-cli pack validate` e
-# `managerfc-cli bench` rodando de verdade, não só via `cargo test`
+# (job `cli-gate`) o próprio portão do M0 — `managerfc-cli pack validate`,
+# `bench` e `calibrate` rodando de verdade, não só via `cargo test`
 # (docs/07-roadmap.md#m0--fundação-6-semanas).
 #
 # Ainda faltam (ver docs/07-roadmap.md para o marco de cada item):
 #   - golden masters e verificação de hash de estado cruzada entre plataformas
-#     (chega com o loop de mundo, M1 — docs/08-qualidade-e-testes.md §3 e §8)
-#   - benchmarks de dia/temporada (RNF-02/03 — esperam o `world`, M1) e de
-#     mobile (RNF-01 mobile — espera aparelho de referência, docs/08 §6)
+#     (formato de arquivo ainda não desenhado — docs/08-qualidade-e-testes.md §3 e §8)
+#   - benchmarks de dia/temporada (RNF-02/03 — esperam calendário com datas de
+#     verdade, `domain::GameDate`, ainda não ligado a `world`) e de mobile
+#     (RNF-01 mobile — espera aparelho de referência, docs/08 §6)
 #   - build/lint da interface Flutter em app/ (sem SDK Flutter neste passo
 #     ainda; entra junto com a ponte flutter_rust_bridge)
 #   - build de Android/iOS (cross-compilação/toolchain, M2+)
@@ -110,3 +111,5 @@ jobs:
         run: cargo run -p managerfc-cli --release -- pack validate ../packs/core/example-two-tier
       - name: bench (RNF-01, desktop)
         run: cargo run -p managerfc-cli --release -- bench --trials 20000
+      - name: calibrate (sanidade do motor v0, docs/04 §4.1)
+        run: cargo run -p managerfc-cli --release -- calibrate --seasons 50

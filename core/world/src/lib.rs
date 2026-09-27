@@ -1,25 +1,16 @@
-//! `world` — Loop do calendário, temporada, progressão de jogadores, regens.
+//! `world` — o loop que faz o mundo girar sozinho, sem UI: calendário,
+//! temporada, tabela, promoção e rebaixamento. Consome um
+//! `pack::LoadedPack` e o `engine` de partida; é o portão do M1
+//! (`docs/07-roadmap.md#m1--kick-off-headless-10-semanas`).
 //!
-//! Ainda não implementado além do esqueleto: este crate existe para que a
-//! estrutura de dependências descrita em `docs/02-arquitetura.md §3` já
-//! compile e seja testável desde o M0, mesmo antes de a regra de negócio
-//! chegar (ver `docs/07-roadmap.md` para o marco em que cada peça entra).
-//! Ver também: docs/01-requisitos.md §2.1-2.3
+//! Ainda não implementado: progressão de jogadores, lesões, regens — tudo
+//! isso pressupõe jogadores de verdade (`docs/01 §2.1-2.3`), que só chegam
+//! com `ai`/elenco (M2/M3). A força de cada clube usada aqui é sintética
+//! ([`strength`]), um substituto documentado, não uma simulação de elenco.
 #![warn(clippy::all)]
 
-/// Placeholder que prova que o crate compila e está corretamente ligado a
-/// `domain` — removido assim que a primeira funcionalidade real chegar.
-#[must_use]
-pub fn crate_name() -> &'static str {
-    "world"
-}
+mod season;
+mod strength;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn crate_esta_ligado_e_nomeado_corretamente() {
-        assert_eq!(crate_name(), "world");
-    }
-}
+pub use season::{SeasonResult, run_season, run_seasons};
+pub use strength::{generate_strengths, strength_of};

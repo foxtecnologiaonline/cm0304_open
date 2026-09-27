@@ -267,6 +267,7 @@ dependencies = [
  "domain",
  "engine",
  "pack",
+ "world",
 ]
 
 [[package]]
@@ -441,6 +442,8 @@ name = "rules"
 version = "0.0.1"
 dependencies = [
  "domain",
+ "pack",
+ "proptest",
 ]
 
 [[package]]
@@ -668,6 +671,10 @@ name = "world"
 version = "0.0.1"
 dependencies = [
  "domain",
+ "engine",
+ "pack",
+ "proptest",
+ "rules",
 ]
 
 [[package]]

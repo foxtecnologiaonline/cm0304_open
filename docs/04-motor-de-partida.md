@@ -17,10 +17,16 @@ ele é, o que ele não tenta ser, como é calibrado e quanto pode custar**.
 > contrato de `MatchEvent` da `§5` ainda é só o subconjunto que o v0 de fato
 > produz (`KickOff`, `Goal`, `FullTime`) — `Shot`/`Foul`/`Injury`/`Sub`/
 > `Positions` esperam jogadores em campo (v1/v2). `TOTAL_GOALS_TARGET` e
-> `HOME_ADVANTAGE` são valores iniciais plausíveis, não uma calibração —
-> isso é trabalho do `managerfc-cli calibrate`, ainda não implementado.
-> Testes: `cargo test -p engine`, incluindo uma sanidade estatística grosseira
-> contra o alvo de gols/partida desta seção (não substitui a suíte de `§4`).
+> `HOME_ADVANTAGE` são valores iniciais plausíveis, não uma calibração fina.
+> `managerfc-cli calibrate` já roda de ponta a ponta (carrega um pack,
+> simula N temporadas via `world::run_seasons`, imprime gols/partida e % de
+> vitória do mandante) — primeiros números contra o pack de exemplo: ~2,70
+> gols/partida (alvo 2,70) e 44–49% de vitórias do mandante (alvo ~44%) em
+> 200 temporadas, sem nenhum ajuste ainda. Não é a suíte de calibração
+> completa de `§4` (falta histórico versionado, distribuição de placares,
+> correlação CA×pontos — essa última sem sentido antes de CA de jogador
+> existir). Testes: `cargo test -p engine` e `-p world`, incluindo uma
+> sanidade estatística grosseira contra o alvo de gols/partida desta seção.
 
 ---
 

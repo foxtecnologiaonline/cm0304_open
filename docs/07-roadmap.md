@@ -69,6 +69,20 @@ trabalho da comunidade.
 **Portão:** 20 temporadas seguidas sem divergência entre plataformas e com métricas de
 [`04`](04-motor-de-partida.md#41-alvos-futebol-europeu-de-primeira-divisão-médias-recentes) dentro da tolerância.
 
+> **Estado de implementação:** o crate `world` já faz o essencial deste marco
+> para uma competição de exemplo — calendário (`rules::round_robin`), tabela
+> com desempate (`rules::compute_table`) e promoção/rebaixamento entre
+> temporadas, tudo consumindo o motor v0 e testado com `world::run_seasons`
+> contra o pack de exemplo do M0. `managerfc-cli calibrate` já roda e imprime
+> gols/partida e % de vitória do mandante contra os alvos de `docs/04 §4.1`
+> (primeiros números: ~2,70 gols/partida e ~44-49% de vitórias do mandante em
+> 200 temporadas — dentro ou na borda da tolerância, sem nenhum ajuste fino
+> ainda). O que falta deste marco: **copa** (só liga existe), **cartão de
+> desempenho de CI cross-platform** (verificação de hash de estado entre
+> plataformas, `docs/08 §8`), **progressão de jogadores e IA de mercado**
+> (esperam jogadores de verdade — força de clube hoje é sintética, ver
+> `docs/04` e o módulo `world::strength`), e **golden masters** (formato de
+> arquivo ainda não desenhado).
 ### M2 — MVP jogável (12 semanas)
 
 **Objetivo:** responder se o loop é divertido. Ver critérios em [`00`](00-escopo.md#7-mvp--a-menor-coisa-que-prova-a-tese).

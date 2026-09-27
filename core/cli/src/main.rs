@@ -1,17 +1,11 @@
 //! `managerfc-cli` — binário headless do núcleo (`docs/02-arquitetura.md §10`).
 //!
 //! É o único jeito de rodar o núcleo sem UI: CI, balanceamento e modders
-//! passam por aqui, nunca pelo Flutter (RNF-13). Neste estágio (M0) parte
-//! dos subcomandos ainda é **placeholder documentado** — existem para que a
-//! forma final da CLI já apareça em `--help` desde o primeiro commit, mesmo
-//! antes de `world`/`rules` terem regra de negócio real para expor.
-//! `pack validate` e `bench` já são reais: o carregador de data pack e o
-//! motor v0 são entregáveis do próprio M0
-//! (`docs/07-roadmap.md#m0--fundação-6-semanas`). `bench` hoje só mede o que
-//! existe (o custo de uma partida isolada, RNF-01) — os orçamentos de dia e
-//! de temporada (RNF-02/03) esperam o loop de calendário do `world`. Cada
-//! placeholder restante diz explicitamente em que marco passa a funcionar,
-//! para não ser confundido com um comando quebrado.
+//! passam por aqui, nunca pelo Flutter (RNF-13). `version`, `pack validate`,
+//! `bench` e `calibrate` já são reais — só `golden record`/`golden verify`
+//! seguem placeholder (esperam um formato de arquivo de golden master ainda
+//! não desenhado, `docs/08 §3`). Cada placeholder diz explicitamente em que
+//! marco passa a funcionar, para não ser confundido com um comando quebrado.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -38,7 +32,11 @@ enum Command {
 
     /// Mede o custo de simular uma partida contra o orçamento de RNF-01
     /// (`docs/01 §3.1`). Os orçamentos de dia/temporada (RNF-02/03) ainda
-    /// não são medíveis — esperam o `world` (M1).
+    /// não são medíveis — não porque falte o `world` (já existe), mas
+    /// porque as partidas dele hoje são identificadas por rodada, não por
+    /// data de calendário (`domain::GameDate`); "1 dia de calendário
+    /// mundial" só faz sentido depois que o calendário tiver datas de
+    /// verdade.
     Bench {
         /// Quantas partidas simular para tirar a média.
         #[arg(long, default_value_t = 10_000)]
@@ -46,7 +44,6 @@ enum Command {
     },
 
     /// Simula temporadas headless e emite métricas de calibração (`docs/08 §4`).
-    /// Placeholder — chega com o motor v0/v1 (M1–M2).
     Calibrate {
         /// Número de temporadas a simular.
         #[arg(long, default_value_t = 20)]
@@ -54,6 +51,12 @@ enum Command {
         /// Seed do mundo.
         #[arg(long, default_value_t = 42)]
         seed: u64,
+        /// Diretório do pack a usar. Sem isto, usa o pack de exemplo do
+        /// próprio repositório (`packs/core/example-two-tier`) — suficiente
+        /// pra exercitar o motor, não para calibração de verdade contra uma
+        /// base de escala real (essa espera o pipeline de `docs/05 §3.3`).
+        #[arg(long)]
+        pack: Option<PathBuf>,
     },
 
     /// Operações sobre data packs (`docs/03 §7`).
@@ -106,10 +109,11 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::Bench { trials } => bench(trials),
-        Command::Calibrate { seasons, seed } => not_yet(
-            &format!("calibrate --seasons {seasons} --seed {seed}"),
-            "M1/M2 — docs/08-qualidade-e-testes.md#4-calibração",
-        ),
+        Command::Calibrate {
+            seasons,
+            seed,
+            pack,
+        } => calibrate(seasons, seed, pack),
         Command::Pack {
             action: PackAction::Validate { path },
         } => pack_validate(&path),
@@ -179,6 +183,83 @@ fn pack_validate(path: &std::path::Path) -> ExitCode {
         }
         ExitCode::from(1)
     }
+}
+
+/// Caminho do pack de exemplo do próprio repositório — usado como padrão de
+/// `calibrate` quando `--pack` não é informado. Resolvido a partir de
+/// `CARGO_MANIFEST_DIR` (fixado em tempo de compilação): funciona enquanto
+/// o binário for usado dentro do próprio checkout do repositório (o caso de
+/// CI e de desenvolvimento local), não é um caminho válido para uma versão
+/// distribuída fora dele — quando isso importar, `--pack` deixa de ser
+/// opcional ou passa a ter um default de outra natureza (pack empacotado
+/// junto do binário, por exemplo).
+fn default_example_pack_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/core/example-two-tier")
+}
+
+/// Implementação real de `calibrate` (`docs/08 §4`). Carrega um pack, roda
+/// `seasons` temporadas via `world::run_seasons` e imprime as métricas
+/// agregadas contra os alvos de `docs/04 §4.1`. Não é a suíte de calibração
+/// completa (histórico versionado, distribuição de placares, correlação
+/// CA×pontos — essa última nem faz sentido ainda, sem CA de jogador de
+/// verdade) — é o suficiente para saber se o motor está grosseiramente
+/// fora, o que já é mais do que existia antes deste comando.
+fn calibrate(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
+    let path = pack_path.unwrap_or_else(default_example_pack_path);
+    let report = match pack::load_and_validate(&path) {
+        Ok(report) => report,
+        Err(err) => {
+            eprintln!(
+                "managerfc-cli: falha ao carregar pack em {}: {err}",
+                path.display()
+            );
+            return ExitCode::from(2);
+        }
+    };
+    if !report.is_valid() {
+        eprintln!(
+            "managerfc-cli: pack em {} tem {} problema(s) — rode `pack validate` antes de calibrar:",
+            path.display(),
+            report.issues.len()
+        );
+        for issue in &report.issues {
+            eprintln!("  - {issue}");
+        }
+        return ExitCode::from(2);
+    }
+
+    println!(
+        "calibrando com pack '{}' — seed={seed}, {seasons} temporada(s)",
+        report.manifest.id
+    );
+    let results = world::run_seasons(&report.pack, seed, seasons);
+
+    let matches: u64 = results.iter().map(|r| u64::from(r.matches_played)).sum();
+    let goals: u64 = results.iter().map(|r| u64::from(r.total_goals)).sum();
+    let home_wins: u64 = results.iter().map(|r| u64::from(r.home_wins)).sum();
+    let away_wins: u64 = results.iter().map(|r| u64::from(r.away_wins)).sum();
+    let draws: u64 = results.iter().map(|r| u64::from(r.draws)).sum();
+
+    if matches == 0 {
+        eprintln!("managerfc-cli: nenhuma partida simulada (pack sem competições jogáveis?)");
+        return ExitCode::from(1);
+    }
+
+    let avg_goals_permille = goals * 1000 / matches;
+    let home_win_pct = home_wins * 100 / matches;
+    let away_win_pct = away_wins * 100 / matches;
+    let draw_pct = draws * 100 / matches;
+
+    println!("{matches} partidas simuladas ao todo");
+    println!(
+        "gols/partida:          {}.{:03}  (alvo docs/04 §4.1: 2.700 ± 0.15)",
+        avg_goals_permille / 1000,
+        avg_goals_permille % 1000
+    );
+    println!("vitórias do mandante:  {home_win_pct}%   (alvo: ~44% ± 3pp)");
+    println!("empates:               {draw_pct}%   (alvo: ~25% ± 3pp)");
+    println!("vitórias do visitante: {away_win_pct}%   (complemento)");
+    ExitCode::SUCCESS
 }
 
 /// Custo orçado de simular uma partida em modo instantâneo, em desktop
