@@ -2,7 +2,9 @@
 //! densos (`docs/03 §2`) — a forma como o resto do núcleo (a partir de
 //! `world`/`rules`, no M1) vai consumir os dados de um pack.
 
-use domain::{ClubId, CompetitionId, NationId};
+use domain::{
+    Ability, ClubId, CompetitionId, GameDate, NationId, PlayerAttributes, PlayerId, Position,
+};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedNation {
@@ -80,6 +82,24 @@ pub struct ResolvedClub {
     pub stadium: Option<String>,
 }
 
+/// Um jogador resolvido — `docs/03 §3`. Simplificação deliberada de
+/// `Person`+`Player` do modelo completo: sem condição/moral/forma/status
+/// (que variam partida a partida, não são dado de pack) e com posição única
+/// em vez da familiaridade completa por posição (`domain::Position`).
+#[derive(Debug, Clone)]
+pub struct ResolvedPlayer {
+    pub id: PlayerId,
+    pub external_id: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub birth: GameDate,
+    pub nation: NationId,
+    pub club: ClubId,
+    pub position: Position,
+    pub attributes: PlayerAttributes,
+    pub ability: Ability,
+}
+
 /// Um data pack completamente carregado e com ids resolvidos. Ver
 /// [`crate::PackReport::is_valid`] antes de usar para o jogo de verdade —
 /// um `LoadedPack` pode conter menos entidades do que o pack original tinha
@@ -90,6 +110,7 @@ pub struct LoadedPack {
     pub nations: Vec<ResolvedNation>,
     pub competitions: Vec<ResolvedCompetition>,
     pub clubs: Vec<ResolvedClub>,
+    pub players: Vec<ResolvedPlayer>,
 }
 
 impl LoadedPack {
@@ -117,6 +138,14 @@ impl LoadedPack {
             .iter()
             .filter(|c| c.competition == competition)
             .collect()
+    }
+
+    /// Elenco de um clube — usado por `world::squad_strength` para calcular
+    /// força a partir de jogadores de verdade em vez da força sintética
+    /// (`world::strength`, fallback documentado para clubes sem elenco).
+    #[must_use]
+    pub fn players_of(&self, club: ClubId) -> Vec<&ResolvedPlayer> {
+        self.players.iter().filter(|p| p.club == club).collect()
     }
 }
 

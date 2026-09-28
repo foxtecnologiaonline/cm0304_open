@@ -59,14 +59,15 @@ restante do pipeline de M0 seguem em construção incremental.
 cm0304_open/
 ├─ core/                  # workspace Rust — núcleo determinístico headless
 │  ├─ domain/              # ✅ ids, ponto fixo, calendário, RNG determinístico, atributos
-│  ├─ pack/                # ✅ carregador + validador de data pack (nações, competições, clubes)
+│  ├─ pack/                # ✅ carregador + validador de data pack (nações, competições, clubes, jogadores)
 │  ├─ engine/              # ✅ motor de partida v0 (força relativa → placar, docs/04 §7)
 │  ├─ rules/               # ✅ calendário round-robin + tabela com desempate (docs/03 §7)
 │  ├─ world/               # ✅ loop de temporada: calendário → partidas → tabela → acesso/queda
+│  │                       #    (força de clube a partir do elenco de verdade, com fallback sintético)
 │  ├─ app/                 # ✅ dispatch/query (GameSession) — a fronteira que a ponte vai expor
 │  ├─ ai/ persist/         # 🚧 esqueleto compilável — ver docs/07-roadmap.md para o marco de cada um
 │  └─ cli/                 # ✅ managerfc-cli — version, pack validate, bench, calibrate e play
-├─ packs/core/             # ✅ pack de exemplo (1 país, 2 divisões, 16 clubes fictícios)
+├─ packs/core/             # ✅ pack de exemplo (1 país, 2 divisões, 16 clubes, 256 jogadores fictícios)
 ├─ app/                    # 🚧 interface Flutter (não confundir com core/app, acima) — esqueleto de
 │                          #    fonte, sem SDK Flutter neste ambiente para gerar/verificar; ver app/README.md
 ├─ .github/workflows/      # ✅ CI do núcleo Rust (fmt, clippy, test, deny, e o portão do M0/M1 de verdade)
@@ -77,7 +78,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 117 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 130 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier

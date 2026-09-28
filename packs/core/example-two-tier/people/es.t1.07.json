@@ -1,0 +1,405 @@
+[
+  {
+    "id": "es.t1.07.p01",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Mateus",
+    "last_name": "Siqueira",
+    "birth_date": "2001-02-27",
+    "position": "gk",
+    "attributes": {
+      "reflexes": 12,
+      "rushing": 15,
+      "aerial_ability": 15,
+      "distribution": 15,
+      "positioning": 13,
+      "concentration": 16,
+      "balance": 9,
+      "leadership": 12
+    },
+    "ability": {
+      "current": 86,
+      "potential": 123
+    }
+  },
+  {
+    "id": "es.t1.07.p02",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Xisto",
+    "last_name": "Uchoa",
+    "birth_date": "2006-06-16",
+    "position": "gk",
+    "attributes": {
+      "reflexes": 11,
+      "rushing": 12,
+      "aerial_ability": 18,
+      "distribution": 13,
+      "positioning": 16,
+      "concentration": 14,
+      "composure": 9,
+      "determination": 10,
+      "leadership": 9
+    },
+    "ability": {
+      "current": 82,
+      "potential": 97
+    }
+  },
+  {
+    "id": "es.t1.07.p03",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Nando",
+    "last_name": "Nogueira",
+    "birth_date": "2009-07-26",
+    "position": "df",
+    "attributes": {
+      "tackling": 15,
+      "marking": 15,
+      "heading": 11,
+      "strength": 16,
+      "positioning": 18,
+      "anticipation": 16,
+      "pace": 13,
+      "stamina": 13,
+      "balance": 11,
+      "composure": 12,
+      "agility": 8
+    },
+    "ability": {
+      "current": 148,
+      "potential": 172
+    }
+  },
+  {
+    "id": "es.t1.07.p04",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Edu",
+    "last_name": "Nogueira",
+    "birth_date": "1999-05-25",
+    "position": "df",
+    "attributes": {
+      "tackling": 17,
+      "marking": 18,
+      "heading": 18,
+      "strength": 16,
+      "positioning": 11,
+      "anticipation": 14,
+      "pace": 16,
+      "stamina": 16,
+      "composure": 9,
+      "concentration": 11,
+      "agility": 13
+    },
+    "ability": {
+      "current": 125,
+      "potential": 167
+    }
+  },
+  {
+    "id": "es.t1.07.p05",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Iago",
+    "last_name": "Queiroga",
+    "birth_date": "2008-01-03",
+    "position": "df",
+    "attributes": {
+      "tackling": 14,
+      "marking": 12,
+      "heading": 17,
+      "strength": 15,
+      "positioning": 14,
+      "anticipation": 12,
+      "pace": 18,
+      "stamina": 17,
+      "leadership": 13,
+      "determination": 9,
+      "agility": 13
+    },
+    "ability": {
+      "current": 136,
+      "potential": 176
+    }
+  },
+  {
+    "id": "es.t1.07.p06",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Firmino",
+    "last_name": "Ibiapina",
+    "birth_date": "2007-12-22",
+    "position": "df",
+    "attributes": {
+      "tackling": 18,
+      "marking": 18,
+      "heading": 17,
+      "strength": 17,
+      "positioning": 14,
+      "anticipation": 17,
+      "pace": 11,
+      "stamina": 17,
+      "concentration": 10,
+      "determination": 13,
+      "composure": 12
+    },
+    "ability": {
+      "current": 121,
+      "potential": 124
+    }
+  },
+  {
+    "id": "es.t1.07.p07",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Pedro",
+    "last_name": "Brandão",
+    "birth_date": "1999-08-15",
+    "position": "df",
+    "attributes": {
+      "tackling": 13,
+      "marking": 16,
+      "heading": 12,
+      "strength": 18,
+      "positioning": 18,
+      "anticipation": 12,
+      "pace": 15,
+      "stamina": 18,
+      "agility": 11,
+      "concentration": 15,
+      "balance": 8
+    },
+    "ability": {
+      "current": 141,
+      "potential": 157
+    }
+  },
+  {
+    "id": "es.t1.07.p08",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Pedro",
+    "last_name": "Xavier",
+    "birth_date": "1999-12-23",
+    "position": "mf",
+    "attributes": {
+      "passing": 11,
+      "vision": 18,
+      "first_touch": 16,
+      "dribbling": 18,
+      "stamina": 17,
+      "decisions": 11,
+      "teamwork": 15,
+      "technique": 14,
+      "agility": 10,
+      "concentration": 13,
+      "determination": 15
+    },
+    "ability": {
+      "current": 116,
+      "potential": 120
+    }
+  },
+  {
+    "id": "es.t1.07.p09",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Fábio",
+    "last_name": "Kessler",
+    "birth_date": "2001-11-28",
+    "position": "mf",
+    "attributes": {
+      "passing": 13,
+      "vision": 18,
+      "first_touch": 18,
+      "dribbling": 16,
+      "stamina": 17,
+      "decisions": 12,
+      "teamwork": 18,
+      "technique": 17,
+      "balance": 10,
+      "concentration": 8,
+      "agility": 8
+    },
+    "ability": {
+      "current": 72,
+      "potential": 74
+    }
+  },
+  {
+    "id": "es.t1.07.p10",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Aurélio",
+    "last_name": "Junqueira",
+    "birth_date": "2001-02-11",
+    "position": "mf",
+    "attributes": {
+      "passing": 14,
+      "vision": 16,
+      "first_touch": 13,
+      "dribbling": 18,
+      "stamina": 15,
+      "decisions": 14,
+      "teamwork": 15,
+      "technique": 17,
+      "leadership": 12,
+      "determination": 9,
+      "balance": 9
+    },
+    "ability": {
+      "current": 139,
+      "potential": 145
+    }
+  },
+  {
+    "id": "es.t1.07.p11",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Wander",
+    "last_name": "Brandão",
+    "birth_date": "1996-02-05",
+    "position": "mf",
+    "attributes": {
+      "passing": 11,
+      "vision": 12,
+      "first_touch": 13,
+      "dribbling": 14,
+      "stamina": 11,
+      "decisions": 11,
+      "teamwork": 15,
+      "technique": 13,
+      "balance": 13,
+      "concentration": 13,
+      "determination": 14
+    },
+    "ability": {
+      "current": 99,
+      "potential": 116
+    }
+  },
+  {
+    "id": "es.t1.07.p12",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Xisto",
+    "last_name": "Farias",
+    "birth_date": "2006-04-20",
+    "position": "mf",
+    "attributes": {
+      "passing": 17,
+      "vision": 14,
+      "first_touch": 15,
+      "dribbling": 11,
+      "stamina": 13,
+      "decisions": 11,
+      "teamwork": 11,
+      "technique": 16,
+      "determination": 8,
+      "agility": 9,
+      "balance": 13
+    },
+    "ability": {
+      "current": 97,
+      "potential": 128
+    }
+  },
+  {
+    "id": "es.t1.07.p13",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Iago",
+    "last_name": "Yepes",
+    "birth_date": "2009-07-05",
+    "position": "fw",
+    "attributes": {
+      "finishing": 11,
+      "dribbling": 11,
+      "pace": 18,
+      "off_the_ball": 13,
+      "composure": 16,
+      "acceleration": 13,
+      "technique": 12,
+      "balance": 14,
+      "agility": 8
+    },
+    "ability": {
+      "current": 93,
+      "potential": 101
+    }
+  },
+  {
+    "id": "es.t1.07.p14",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Zeca",
+    "last_name": "Abranches",
+    "birth_date": "2001-06-15",
+    "position": "fw",
+    "attributes": {
+      "finishing": 18,
+      "dribbling": 18,
+      "pace": 16,
+      "off_the_ball": 12,
+      "composure": 17,
+      "acceleration": 17,
+      "technique": 16,
+      "balance": 13,
+      "determination": 15
+    },
+    "ability": {
+      "current": 115,
+      "potential": 150
+    }
+  },
+  {
+    "id": "es.t1.07.p15",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Quim",
+    "last_name": "Brandão",
+    "birth_date": "1996-05-09",
+    "position": "fw",
+    "attributes": {
+      "finishing": 15,
+      "dribbling": 14,
+      "pace": 15,
+      "off_the_ball": 14,
+      "composure": 11,
+      "acceleration": 15,
+      "technique": 11,
+      "determination": 15,
+      "agility": 9
+    },
+    "ability": {
+      "current": 89,
+      "potential": 101
+    }
+  },
+  {
+    "id": "es.t1.07.p16",
+    "club": "es.t1.07",
+    "nation": "es",
+    "first_name": "Zeca",
+    "last_name": "Dutra",
+    "birth_date": "2000-11-12",
+    "position": "fw",
+    "attributes": {
+      "finishing": 11,
+      "dribbling": 18,
+      "pace": 15,
+      "off_the_ball": 11,
+      "composure": 12,
+      "acceleration": 12,
+      "technique": 11,
+      "balance": 14,
+      "determination": 12
+    },
+    "ability": {
+      "current": 89,
+      "potential": 102
+    }
+  }
+]

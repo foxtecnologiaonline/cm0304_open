@@ -194,12 +194,13 @@ fn pack_validate(path: &std::path::Path) -> ExitCode {
     };
 
     println!(
-        "pack '{}' ({}) — {} país(es), {} competição(ões), {} clube(s)",
+        "pack '{}' ({}) — {} país(es), {} competição(ões), {} clube(s), {} jogador(es)",
         report.manifest.id,
         report.manifest.version,
         report.pack.nations.len(),
         report.pack.competitions.len(),
         report.pack.clubs.len(),
+        report.pack.players.len(),
     );
 
     if report.is_valid() {

@@ -12,11 +12,15 @@
 
 use std::collections::BTreeMap;
 
-use domain::{ClubId, CompetitionId, NationId};
+use domain::{
+    Ability, Attribute, ClubId, CompetitionId, GameDate, NationId, PlayerAttributes, PlayerId,
+    Position,
+};
 
-use crate::raw::{RawClub, RawCompetition, RawFormat, RawMovement, RawNation, RawPack};
+use crate::raw::{RawClub, RawCompetition, RawFormat, RawMovement, RawNation, RawPack, RawPlayer};
 use crate::resolved::{
-    Format, LoadedPack, Movement, ResolvedClub, ResolvedCompetition, ResolvedNation, Tiebreaker,
+    Format, LoadedPack, Movement, ResolvedClub, ResolvedCompetition, ResolvedNation,
+    ResolvedPlayer, Tiebreaker,
 };
 
 /// Resolve um [`RawPack`] em um [`LoadedPack`] + lista de problemas
@@ -33,6 +37,11 @@ pub fn resolve(raw: RawPack) -> (LoadedPack, Vec<String>) {
     let (competitions, competition_index) =
         resolve_competitions(raw.competitions, &nation_index, &mut issues);
     let clubs = resolve_clubs(raw.clubs, &nation_index, &competition_index, &mut issues);
+    let club_index: BTreeMap<String, ClubId> = clubs
+        .iter()
+        .map(|c| (c.external_id.clone(), c.id))
+        .collect();
+    let players = resolve_players(raw.players, &nation_index, &club_index, &mut issues);
 
     check_competition_club_counts(&competitions, &clubs, &mut issues);
     check_movement_slots(&competitions, &mut issues);
@@ -42,6 +51,7 @@ pub fn resolve(raw: RawPack) -> (LoadedPack, Vec<String>) {
             nations,
             competitions,
             clubs,
+            players,
         },
         issues,
     )
@@ -241,6 +251,134 @@ fn resolve_clubs(
     clubs
 }
 
+/// Resolve `people/*.json` (`docs/03 §3`, `§7`). Um jogador é descartado
+/// (com um item em `issues`) se referenciar clube/país inexistente, se
+/// `birth_date` não for uma data válida, ou se `position` não estiver no
+/// vocabulário de `domain::Position::parse` — todos os três deixariam o
+/// resto do núcleo sem um valor utilizável, então não faz sentido manter o
+/// registro parcialmente. Um nome de atributo desconhecido em `attributes`,
+/// ao contrário, só gera um item em `issues` e é ignorado — o jogador
+/// continua com o resto dos atributos declarados (mesmo padrão de
+/// `resolve_tiebreakers`).
+fn resolve_players(
+    mut raw: Vec<RawPlayer>,
+    nation_index: &BTreeMap<String, NationId>,
+    club_index: &BTreeMap<String, ClubId>,
+    issues: &mut Vec<String>,
+) -> Vec<ResolvedPlayer> {
+    raw.sort_by(|a, b| a.id.cmp(&b.id));
+    let mut seen = std::collections::BTreeSet::new();
+    let mut players = Vec::with_capacity(raw.len());
+
+    for rec in raw {
+        if seen.contains(&rec.id) {
+            issues.push(format!(
+                "jogador duplicado: id '{}' aparece em mais de um arquivo",
+                rec.id
+            ));
+            continue;
+        }
+        let Some(&nation) = nation_index.get(&rec.nation) else {
+            issues.push(format!(
+                "jogador '{}' referencia país inexistente '{}'",
+                rec.id, rec.nation
+            ));
+            continue;
+        };
+        let Some(&club) = club_index.get(&rec.club) else {
+            issues.push(format!(
+                "jogador '{}' referencia clube inexistente '{}'",
+                rec.id, rec.club
+            ));
+            continue;
+        };
+        let Some(position) = Position::parse(&rec.position) else {
+            issues.push(format!(
+                "jogador '{}': posição desconhecida '{}'",
+                rec.id, rec.position
+            ));
+            continue;
+        };
+        let Some(birth) = parse_birth_date(&rec.birth_date) else {
+            issues.push(format!(
+                "jogador '{}': data de nascimento inválida '{}'",
+                rec.id, rec.birth_date
+            ));
+            continue;
+        };
+
+        if rec.ability.current > rec.ability.potential {
+            issues.push(format!(
+                "jogador '{}': ability.current ({}) maior que ability.potential ({}) — CA foi limitado ao PA",
+                rec.id, rec.ability.current, rec.ability.potential
+            ));
+        }
+
+        let mut raw_attrs = [domain::attributes::ATTR_MIN; domain::attributes::N_ATTR];
+        for (name, value) in &rec.attributes {
+            match Attribute::parse(name) {
+                Some(attr) => raw_attrs[attr.index()] = *value,
+                None => issues.push(format!(
+                    "jogador '{}': atributo desconhecido '{name}'",
+                    rec.id
+                )),
+            }
+        }
+
+        seen.insert(rec.id.clone());
+        let id = PlayerId::new(players.len() as u32);
+        players.push(ResolvedPlayer {
+            id,
+            external_id: rec.id,
+            first_name: rec.first_name,
+            last_name: rec.last_name,
+            birth,
+            nation,
+            club,
+            position,
+            attributes: PlayerAttributes::from_raw(raw_attrs),
+            ability: Ability::new(rec.ability.current, rec.ability.potential),
+        });
+    }
+    players
+}
+
+/// Analisa `"AAAA-MM-DD"` estritamente — ao contrário de
+/// `GameDate::from_ymd` (que não valida, de propósito: essa validação é
+/// responsabilidade de quem carrega dado externo, `docs/03 §7`), aqui um
+/// dia inválido para o mês (ex.: 31 de fevereiro) ou fora de faixa vira
+/// `None` em vez de silenciosamente virar outra data.
+fn parse_birth_date(raw: &str) -> Option<GameDate> {
+    let mut parts = raw.split('-');
+    let year: i32 = parts.next()?.parse().ok()?;
+    let month: u32 = parts.next()?.parse().ok()?;
+    let day: u32 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    if !(1..=12).contains(&month) {
+        return None;
+    }
+    if day < 1 || day > days_in_month(year, month) {
+        return None;
+    }
+    Some(GameDate::from_ymd(year, month, day))
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0, // inalcançável: `month` já foi validado em `1..=12` por `parse_birth_date`
+    }
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
 /// Verificação final: o número de clubes de fato inscritos numa competição
 /// precisa bater com `format.teams` declarado — é o tipo de inconsistência
 /// de digitação que só aparece jogando, se ninguém checar antes.
@@ -288,7 +426,9 @@ fn check_movement_slots(competitions: &[ResolvedCompetition], issues: &mut Vec<S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raw::{RawClub, RawCompetition, RawFormat, RawMovement, RawNation};
+    use crate::raw::{
+        RawAbility, RawClub, RawCompetition, RawFormat, RawMovement, RawNation, RawPlayer,
+    };
 
     fn nation(id: &str) -> RawNation {
         RawNation {
@@ -327,6 +467,7 @@ mod tests {
             nations: vec![nation("ex")],
             competitions: vec![competition("ex.t1", "ex", 2)],
             clubs: vec![club("ex.a", "ex", "ex.t1"), club("ex.b", "ex", "ex.t1")],
+            players: vec![],
         };
         let (pack, issues) = resolve(raw);
         assert!(
@@ -358,6 +499,7 @@ mod tests {
             nations: vec![nation("ex")],
             competitions: vec![competition("ex.t1", "ex", 1)],
             clubs: vec![club("ex.a", "nao_existe", "ex.t1")],
+            players: vec![],
         };
         let (pack, issues) = resolve(raw);
         assert_eq!(pack.clubs.len(), 0);
@@ -370,6 +512,7 @@ mod tests {
             nations: vec![],
             competitions: vec![competition("ex.t1", "fantasma", 1)],
             clubs: vec![],
+            players: vec![],
         };
         let (pack, issues) = resolve(raw);
         assert_eq!(pack.competitions.len(), 0);
@@ -390,6 +533,7 @@ mod tests {
             nations: vec![nation("ex")],
             competitions: vec![tier1, competition("b.tier2", "ex", 1)],
             clubs: vec![club("ex.a", "ex", "a.tier1"), club("ex.b", "ex", "b.tier2")],
+            players: vec![],
         };
         let (pack, issues) = resolve(raw);
         assert!(issues.is_empty(), "issues inesperadas: {issues:?}");
@@ -404,6 +548,7 @@ mod tests {
             nations: vec![nation("ex")],
             competitions: vec![competition("ex.t1", "ex", 4)], // declara 4 times
             clubs: vec![club("ex.a", "ex", "ex.t1")],          // só 1 inscrito
+            players: vec![],
         };
         let (_pack, issues) = resolve(raw);
         assert!(issues.iter().any(|i| i.contains("declara 4 times")));
@@ -430,6 +575,7 @@ mod tests {
                 competition("ex.t2", "ex", 1),
             ],
             clubs: vec![],
+            players: vec![],
         };
         let (_pack, issues) = resolve(raw);
         assert!(
@@ -457,6 +603,7 @@ mod tests {
                 competition("ex.t2", "ex", 1),
             ],
             clubs: vec![],
+            players: vec![],
         };
         let (_pack, issues) = resolve(raw);
         assert!(
@@ -490,6 +637,7 @@ mod tests {
                 competition("ex.t2", "ex", 1),
             ],
             clubs: vec![],
+            players: vec![],
         };
         let (_pack, issues) = resolve(raw);
         assert!(
@@ -506,6 +654,7 @@ mod tests {
             nations: vec![nation("ex")],
             competitions: vec![comp],
             clubs: vec![],
+            players: vec![],
         };
         let (pack, issues) = resolve(raw);
         assert_eq!(pack.competitions.len(), 1);
@@ -526,5 +675,132 @@ mod tests {
         let (pack, issues) = resolve(raw);
         assert_eq!(pack.nations.len(), 1);
         assert!(issues.iter().any(|i| i.contains("duplicada")));
+    }
+
+    fn player(id: &str, club: &str, nation: &str) -> RawPlayer {
+        RawPlayer {
+            id: id.to_string(),
+            club: club.to_string(),
+            nation: nation.to_string(),
+            first_name: "Nome".to_string(),
+            last_name: "Sobrenome".to_string(),
+            birth_date: "2000-06-15".to_string(),
+            position: "mf".to_string(),
+            attributes: std::collections::BTreeMap::from([("passing".to_string(), 14)]),
+            ability: RawAbility {
+                current: 120,
+                potential: 150,
+            },
+        }
+    }
+
+    #[test]
+    fn jogador_valido_e_resolvido_com_atributo_e_ability_corretos() {
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![competition("ex.t1", "ex", 1)],
+            clubs: vec![club("ex.a", "ex", "ex.t1")],
+            players: vec![player("ex.a.p01", "ex.a", "ex")],
+        };
+        let (pack, issues) = resolve(raw);
+        assert!(issues.is_empty(), "issues inesperadas: {issues:?}");
+        assert_eq!(pack.players.len(), 1);
+        let p = &pack.players[0];
+        assert_eq!(p.attributes.get(domain::Attribute::Passing), 14);
+        assert_eq!(p.ability.current(), 120);
+        assert_eq!(p.ability.potential(), 150);
+        assert_eq!(p.club, pack.clubs[0].id);
+        assert_eq!(p.position, domain::Position::Midfielder);
+        assert_eq!(p.birth.to_ymd(), (2000, 6, 15));
+    }
+
+    #[test]
+    fn jogador_com_clube_inexistente_vira_problema_e_e_descartado() {
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            players: vec![player("ex.a.p01", "fantasma", "ex")],
+            ..RawPack::default()
+        };
+        let (pack, issues) = resolve(raw);
+        assert_eq!(pack.players.len(), 0);
+        assert!(
+            issues.iter().any(|i| i.contains("clube inexistente")),
+            "issues: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn jogador_com_data_de_nascimento_invalida_vira_problema_e_e_descartado() {
+        let mut p = player("ex.a.p01", "ex.a", "ex");
+        p.birth_date = "2001-02-30".to_string(); // fevereiro não tem dia 30
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![competition("ex.t1", "ex", 1)],
+            clubs: vec![club("ex.a", "ex", "ex.t1")],
+            players: vec![p],
+        };
+        let (pack, issues) = resolve(raw);
+        assert_eq!(pack.players.len(), 0);
+        assert!(
+            issues.iter().any(|i| i.contains("data de nascimento")),
+            "issues: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn atributo_desconhecido_vira_problema_mas_nao_descarta_o_jogador() {
+        let mut p = player("ex.a.p01", "ex.a", "ex");
+        p.attributes.insert("chute_de_bicicleta".to_string(), 20);
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![competition("ex.t1", "ex", 1)],
+            clubs: vec![club("ex.a", "ex", "ex.t1")],
+            players: vec![p],
+        };
+        let (pack, issues) = resolve(raw);
+        assert_eq!(pack.players.len(), 1); // jogador sobrevive
+        assert!(
+            issues.iter().any(|i| i.contains("atributo desconhecido")),
+            "issues: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn ability_current_maior_que_potential_e_limitado_mas_vira_aviso() {
+        let mut p = player("ex.a.p01", "ex.a", "ex");
+        p.ability = RawAbility {
+            current: 180,
+            potential: 150,
+        };
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![competition("ex.t1", "ex", 1)],
+            clubs: vec![club("ex.a", "ex", "ex.t1")],
+            players: vec![p],
+        };
+        let (pack, issues) = resolve(raw);
+        assert_eq!(pack.players[0].ability.current(), 150); // limitado ao potencial
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("maior que ability.potential")),
+            "issues: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn jogadores_duplicados_mantem_so_a_primeira_ocorrencia() {
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![competition("ex.t1", "ex", 1)],
+            clubs: vec![club("ex.a", "ex", "ex.t1")],
+            players: vec![
+                player("ex.a.p01", "ex.a", "ex"),
+                player("ex.a.p01", "ex.a", "ex"),
+            ],
+        };
+        let (pack, issues) = resolve(raw);
+        assert_eq!(pack.players.len(), 1);
+        assert!(issues.iter().any(|i| i.contains("jogador duplicado")));
     }
 }

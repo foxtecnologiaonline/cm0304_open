@@ -1,0 +1,407 @@
+[
+  {
+    "id": "es.t1.03.p01",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Cássio",
+    "last_name": "Teixeira",
+    "birth_date": "2004-07-11",
+    "position": "gk",
+    "attributes": {
+      "reflexes": 17,
+      "rushing": 14,
+      "aerial_ability": 13,
+      "distribution": 14,
+      "positioning": 12,
+      "concentration": 12,
+      "agility": 11,
+      "balance": 9,
+      "leadership": 12
+    },
+    "ability": {
+      "current": 102,
+      "potential": 117
+    }
+  },
+  {
+    "id": "es.t1.03.p02",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Sérgio",
+    "last_name": "Cordeiro",
+    "birth_date": "1993-03-28",
+    "position": "gk",
+    "attributes": {
+      "reflexes": 18,
+      "rushing": 13,
+      "aerial_ability": 11,
+      "distribution": 13,
+      "positioning": 12,
+      "concentration": 18,
+      "balance": 15,
+      "agility": 13
+    },
+    "ability": {
+      "current": 126,
+      "potential": 162
+    }
+  },
+  {
+    "id": "es.t1.03.p03",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Kaio",
+    "last_name": "Farias",
+    "birth_date": "2000-07-21",
+    "position": "df",
+    "attributes": {
+      "tackling": 18,
+      "marking": 13,
+      "heading": 13,
+      "strength": 17,
+      "positioning": 15,
+      "anticipation": 13,
+      "pace": 14,
+      "stamina": 12,
+      "balance": 15,
+      "leadership": 8,
+      "agility": 9
+    },
+    "ability": {
+      "current": 137,
+      "potential": 164
+    }
+  },
+  {
+    "id": "es.t1.03.p04",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Gil",
+    "last_name": "Nogueira",
+    "birth_date": "1999-08-23",
+    "position": "df",
+    "attributes": {
+      "tackling": 13,
+      "marking": 17,
+      "heading": 15,
+      "strength": 14,
+      "positioning": 14,
+      "anticipation": 16,
+      "pace": 12,
+      "stamina": 13,
+      "agility": 12,
+      "composure": 11,
+      "determination": 13
+    },
+    "ability": {
+      "current": 84,
+      "potential": 108
+    }
+  },
+  {
+    "id": "es.t1.03.p05",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Sérgio",
+    "last_name": "Brandão",
+    "birth_date": "1996-09-02",
+    "position": "df",
+    "attributes": {
+      "tackling": 16,
+      "marking": 18,
+      "heading": 14,
+      "strength": 15,
+      "positioning": 11,
+      "anticipation": 15,
+      "pace": 12,
+      "stamina": 17,
+      "concentration": 9,
+      "leadership": 14,
+      "agility": 11
+    },
+    "ability": {
+      "current": 81,
+      "potential": 85
+    }
+  },
+  {
+    "id": "es.t1.03.p06",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Cássio",
+    "last_name": "Pimentel",
+    "birth_date": "1997-03-23",
+    "position": "df",
+    "attributes": {
+      "tackling": 12,
+      "marking": 14,
+      "heading": 11,
+      "strength": 16,
+      "positioning": 16,
+      "anticipation": 13,
+      "pace": 13,
+      "stamina": 17,
+      "balance": 12,
+      "concentration": 12,
+      "agility": 10
+    },
+    "ability": {
+      "current": 75,
+      "potential": 82
+    }
+  },
+  {
+    "id": "es.t1.03.p07",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Juca",
+    "last_name": "Dornelles",
+    "birth_date": "2000-03-28",
+    "position": "df",
+    "attributes": {
+      "tackling": 13,
+      "marking": 13,
+      "heading": 11,
+      "strength": 16,
+      "positioning": 13,
+      "anticipation": 12,
+      "pace": 13,
+      "stamina": 11,
+      "balance": 12,
+      "concentration": 12,
+      "leadership": 13
+    },
+    "ability": {
+      "current": 124,
+      "potential": 167
+    }
+  },
+  {
+    "id": "es.t1.03.p08",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Kaio",
+    "last_name": "Aguiar",
+    "birth_date": "2005-12-03",
+    "position": "mf",
+    "attributes": {
+      "passing": 14,
+      "vision": 11,
+      "first_touch": 11,
+      "dribbling": 18,
+      "stamina": 13,
+      "decisions": 14,
+      "teamwork": 17,
+      "technique": 14,
+      "leadership": 15,
+      "agility": 10,
+      "concentration": 12
+    },
+    "ability": {
+      "current": 89,
+      "potential": 92
+    }
+  },
+  {
+    "id": "es.t1.03.p09",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Pedro",
+    "last_name": "Leal",
+    "birth_date": "2007-02-12",
+    "position": "mf",
+    "attributes": {
+      "passing": 15,
+      "vision": 15,
+      "first_touch": 17,
+      "dribbling": 14,
+      "stamina": 17,
+      "decisions": 18,
+      "teamwork": 17,
+      "technique": 17,
+      "composure": 8,
+      "agility": 9,
+      "concentration": 14
+    },
+    "ability": {
+      "current": 132,
+      "potential": 159
+    }
+  },
+  {
+    "id": "es.t1.03.p10",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Mateus",
+    "last_name": "Queiroga",
+    "birth_date": "1997-02-11",
+    "position": "mf",
+    "attributes": {
+      "passing": 15,
+      "vision": 12,
+      "first_touch": 17,
+      "dribbling": 12,
+      "stamina": 18,
+      "decisions": 12,
+      "teamwork": 14,
+      "technique": 12,
+      "balance": 14,
+      "determination": 13,
+      "leadership": 15
+    },
+    "ability": {
+      "current": 94,
+      "potential": 126
+    }
+  },
+  {
+    "id": "es.t1.03.p11",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Aurélio",
+    "last_name": "Cordeiro",
+    "birth_date": "2000-07-13",
+    "position": "mf",
+    "attributes": {
+      "passing": 15,
+      "vision": 18,
+      "first_touch": 14,
+      "dribbling": 15,
+      "stamina": 16,
+      "decisions": 14,
+      "teamwork": 11,
+      "technique": 17,
+      "balance": 10,
+      "leadership": 10,
+      "agility": 13
+    },
+    "ability": {
+      "current": 138,
+      "potential": 167
+    }
+  },
+  {
+    "id": "es.t1.03.p12",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Sérgio",
+    "last_name": "Nogueira",
+    "birth_date": "1999-11-16",
+    "position": "mf",
+    "attributes": {
+      "passing": 11,
+      "vision": 15,
+      "first_touch": 13,
+      "dribbling": 11,
+      "stamina": 17,
+      "decisions": 17,
+      "teamwork": 18,
+      "technique": 12,
+      "balance": 8,
+      "agility": 12,
+      "composure": 15
+    },
+    "ability": {
+      "current": 72,
+      "potential": 98
+    }
+  },
+  {
+    "id": "es.t1.03.p13",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Rui",
+    "last_name": "Pimentel",
+    "birth_date": "2009-11-17",
+    "position": "fw",
+    "attributes": {
+      "finishing": 12,
+      "dribbling": 13,
+      "pace": 18,
+      "off_the_ball": 13,
+      "composure": 18,
+      "acceleration": 18,
+      "technique": 15,
+      "leadership": 15,
+      "concentration": 12
+    },
+    "ability": {
+      "current": 116,
+      "potential": 153
+    }
+  },
+  {
+    "id": "es.t1.03.p14",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Fábio",
+    "last_name": "Uchoa",
+    "birth_date": "1997-11-16",
+    "position": "fw",
+    "attributes": {
+      "finishing": 18,
+      "dribbling": 13,
+      "pace": 15,
+      "off_the_ball": 11,
+      "composure": 11,
+      "acceleration": 13,
+      "technique": 17,
+      "leadership": 15,
+      "determination": 12
+    },
+    "ability": {
+      "current": 133,
+      "potential": 167
+    }
+  },
+  {
+    "id": "es.t1.03.p15",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Bento",
+    "last_name": "Abranches",
+    "birth_date": "2006-11-15",
+    "position": "fw",
+    "attributes": {
+      "finishing": 16,
+      "dribbling": 17,
+      "pace": 14,
+      "off_the_ball": 17,
+      "composure": 12,
+      "acceleration": 12,
+      "technique": 13,
+      "leadership": 11,
+      "determination": 11,
+      "concentration": 12
+    },
+    "ability": {
+      "current": 97,
+      "potential": 108
+    }
+  },
+  {
+    "id": "es.t1.03.p16",
+    "club": "es.t1.03",
+    "nation": "es",
+    "first_name": "Mateus",
+    "last_name": "Barros",
+    "birth_date": "1998-01-19",
+    "position": "fw",
+    "attributes": {
+      "finishing": 13,
+      "dribbling": 11,
+      "pace": 13,
+      "off_the_ball": 14,
+      "composure": 16,
+      "acceleration": 13,
+      "technique": 12,
+      "concentration": 11,
+      "determination": 13,
+      "agility": 11
+    },
+    "ability": {
+      "current": 104,
+      "potential": 127
+    }
+  }
+]

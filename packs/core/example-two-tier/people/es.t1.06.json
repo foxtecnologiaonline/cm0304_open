@@ -1,0 +1,407 @@
+[
+  {
+    "id": "es.t1.06.p01",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Hugo",
+    "last_name": "Aguiar",
+    "birth_date": "2006-01-07",
+    "position": "gk",
+    "attributes": {
+      "reflexes": 12,
+      "rushing": 14,
+      "aerial_ability": 16,
+      "distribution": 11,
+      "positioning": 13,
+      "concentration": 16,
+      "composure": 9,
+      "balance": 13,
+      "determination": 10
+    },
+    "ability": {
+      "current": 97,
+      "potential": 117
+    }
+  },
+  {
+    "id": "es.t1.06.p02",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Adão",
+    "last_name": "Wagner",
+    "birth_date": "2006-09-27",
+    "position": "gk",
+    "attributes": {
+      "reflexes": 18,
+      "rushing": 11,
+      "aerial_ability": 16,
+      "distribution": 16,
+      "positioning": 13,
+      "concentration": 16,
+      "determination": 8,
+      "leadership": 13
+    },
+    "ability": {
+      "current": 122,
+      "potential": 145
+    }
+  },
+  {
+    "id": "es.t1.06.p03",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Sérgio",
+    "last_name": "Osório",
+    "birth_date": "1997-05-12",
+    "position": "df",
+    "attributes": {
+      "tackling": 13,
+      "marking": 18,
+      "heading": 17,
+      "strength": 17,
+      "positioning": 14,
+      "anticipation": 11,
+      "pace": 13,
+      "stamina": 11,
+      "leadership": 10,
+      "balance": 8,
+      "composure": 8
+    },
+    "ability": {
+      "current": 150,
+      "potential": 154
+    }
+  },
+  {
+    "id": "es.t1.06.p04",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Mateus",
+    "last_name": "Pimentel",
+    "birth_date": "2001-09-28",
+    "position": "df",
+    "attributes": {
+      "tackling": 15,
+      "marking": 13,
+      "heading": 13,
+      "strength": 11,
+      "positioning": 12,
+      "anticipation": 16,
+      "pace": 16,
+      "stamina": 13,
+      "balance": 8,
+      "leadership": 11,
+      "agility": 15
+    },
+    "ability": {
+      "current": 84,
+      "potential": 84
+    }
+  },
+  {
+    "id": "es.t1.06.p05",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Mateus",
+    "last_name": "Cavalcante",
+    "birth_date": "1995-08-16",
+    "position": "df",
+    "attributes": {
+      "tackling": 11,
+      "marking": 17,
+      "heading": 12,
+      "strength": 13,
+      "positioning": 15,
+      "anticipation": 13,
+      "pace": 18,
+      "stamina": 17,
+      "determination": 10,
+      "concentration": 13,
+      "leadership": 14
+    },
+    "ability": {
+      "current": 151,
+      "potential": 181
+    }
+  },
+  {
+    "id": "es.t1.06.p06",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Wander",
+    "last_name": "Leal",
+    "birth_date": "1993-12-17",
+    "position": "df",
+    "attributes": {
+      "tackling": 11,
+      "marking": 13,
+      "heading": 17,
+      "strength": 15,
+      "positioning": 16,
+      "anticipation": 16,
+      "pace": 15,
+      "stamina": 12,
+      "concentration": 8,
+      "leadership": 14,
+      "agility": 8
+    },
+    "ability": {
+      "current": 72,
+      "potential": 78
+    }
+  },
+  {
+    "id": "es.t1.06.p07",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Quim",
+    "last_name": "Xavier",
+    "birth_date": "2007-06-05",
+    "position": "df",
+    "attributes": {
+      "tackling": 15,
+      "marking": 11,
+      "heading": 13,
+      "strength": 14,
+      "positioning": 15,
+      "anticipation": 13,
+      "pace": 14,
+      "stamina": 15,
+      "concentration": 13,
+      "leadership": 9,
+      "balance": 9
+    },
+    "ability": {
+      "current": 132,
+      "potential": 154
+    }
+  },
+  {
+    "id": "es.t1.06.p08",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Xisto",
+    "last_name": "Cavalcante",
+    "birth_date": "1996-03-24",
+    "position": "mf",
+    "attributes": {
+      "passing": 11,
+      "vision": 14,
+      "first_touch": 13,
+      "dribbling": 11,
+      "stamina": 16,
+      "decisions": 18,
+      "teamwork": 15,
+      "technique": 11,
+      "leadership": 8,
+      "determination": 9,
+      "balance": 9
+    },
+    "ability": {
+      "current": 152,
+      "potential": 169
+    }
+  },
+  {
+    "id": "es.t1.06.p09",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Caio",
+    "last_name": "Siqueira",
+    "birth_date": "1999-04-23",
+    "position": "mf",
+    "attributes": {
+      "passing": 11,
+      "vision": 15,
+      "first_touch": 14,
+      "dribbling": 16,
+      "stamina": 11,
+      "decisions": 11,
+      "teamwork": 11,
+      "technique": 17,
+      "balance": 11,
+      "agility": 12,
+      "leadership": 8
+    },
+    "ability": {
+      "current": 90,
+      "potential": 102
+    }
+  },
+  {
+    "id": "es.t1.06.p10",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Edu",
+    "last_name": "Brandão",
+    "birth_date": "1999-12-01",
+    "position": "mf",
+    "attributes": {
+      "passing": 18,
+      "vision": 18,
+      "first_touch": 16,
+      "dribbling": 13,
+      "stamina": 17,
+      "decisions": 11,
+      "teamwork": 18,
+      "technique": 14,
+      "leadership": 9,
+      "determination": 13,
+      "balance": 14
+    },
+    "ability": {
+      "current": 144,
+      "potential": 150
+    }
+  },
+  {
+    "id": "es.t1.06.p11",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Rui",
+    "last_name": "Brandão",
+    "birth_date": "2003-11-23",
+    "position": "mf",
+    "attributes": {
+      "passing": 14,
+      "vision": 17,
+      "first_touch": 18,
+      "dribbling": 13,
+      "stamina": 16,
+      "decisions": 13,
+      "teamwork": 18,
+      "technique": 17,
+      "agility": 11,
+      "balance": 8,
+      "determination": 9
+    },
+    "ability": {
+      "current": 130,
+      "potential": 135
+    }
+  },
+  {
+    "id": "es.t1.06.p12",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Davi",
+    "last_name": "Dornelles",
+    "birth_date": "2001-07-17",
+    "position": "mf",
+    "attributes": {
+      "passing": 15,
+      "vision": 17,
+      "first_touch": 13,
+      "dribbling": 12,
+      "stamina": 13,
+      "decisions": 17,
+      "teamwork": 12,
+      "technique": 18,
+      "agility": 9,
+      "concentration": 14,
+      "balance": 10
+    },
+    "ability": {
+      "current": 142,
+      "potential": 159
+    }
+  },
+  {
+    "id": "es.t1.06.p13",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Bento",
+    "last_name": "Abranches",
+    "birth_date": "2007-12-20",
+    "position": "fw",
+    "attributes": {
+      "finishing": 13,
+      "dribbling": 17,
+      "pace": 17,
+      "off_the_ball": 13,
+      "composure": 18,
+      "acceleration": 14,
+      "technique": 11,
+      "balance": 9,
+      "concentration": 10
+    },
+    "ability": {
+      "current": 114,
+      "potential": 114
+    }
+  },
+  {
+    "id": "es.t1.06.p14",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Hugo",
+    "last_name": "Pimentel",
+    "birth_date": "1999-10-01",
+    "position": "fw",
+    "attributes": {
+      "finishing": 11,
+      "dribbling": 11,
+      "pace": 15,
+      "off_the_ball": 17,
+      "composure": 11,
+      "acceleration": 11,
+      "technique": 18,
+      "agility": 9,
+      "balance": 9
+    },
+    "ability": {
+      "current": 132,
+      "potential": 165
+    }
+  },
+  {
+    "id": "es.t1.06.p15",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Edu",
+    "last_name": "Cordeiro",
+    "birth_date": "2007-05-17",
+    "position": "fw",
+    "attributes": {
+      "finishing": 11,
+      "dribbling": 12,
+      "pace": 14,
+      "off_the_ball": 16,
+      "composure": 15,
+      "acceleration": 14,
+      "technique": 13,
+      "concentration": 15,
+      "agility": 13,
+      "leadership": 13
+    },
+    "ability": {
+      "current": 107,
+      "potential": 110
+    }
+  },
+  {
+    "id": "es.t1.06.p16",
+    "club": "es.t1.06",
+    "nation": "es",
+    "first_name": "Quim",
+    "last_name": "Dornelles",
+    "birth_date": "2007-03-03",
+    "position": "fw",
+    "attributes": {
+      "finishing": 15,
+      "dribbling": 11,
+      "pace": 12,
+      "off_the_ball": 11,
+      "composure": 16,
+      "acceleration": 11,
+      "technique": 13,
+      "balance": 13,
+      "leadership": 10,
+      "concentration": 12
+    },
+    "ability": {
+      "current": 135,
+      "potential": 174
+    }
+  }
+]

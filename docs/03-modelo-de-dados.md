@@ -87,6 +87,15 @@ struct Player {
 Atributos de goleiro só contam no cálculo de CA se a familiaridade em GOL ≥ 10 — é o
 que evita o clássico "zagueiro com CA inflado por atributos inúteis".
 
+> **Estado de implementação:** `pack::ResolvedPlayer` (M1) já carrega pessoa + jogador
+> num único tipo, com `attrs`/`ability` como aqui descritos — mas **sem** `hidden`,
+> `positions` (familiaridade completa; hoje é uma posição primária só,
+> `domain::Position`, com 4 valores em vez do array por posição), `foot`, `condition`,
+> `sharpness`, `morale`, `form` nem `status`. CA/PA também **não** vêm da fórmula
+> ponderada de `§5` (a tabela `ability.toml` ainda não existe) — o pack declara
+> `ability.current`/`ability.potential` diretamente, como um ponto de partida de
+> carreira curado. Ver `docs/07-roadmap.md` (M1) para o que falta.
+
 ### 3.2 Atributos ocultos (`N_HIDDEN = 10`)
 
 consistência · jogo importante · sujeira · lealdade · ambição · profissionalismo ·
@@ -218,6 +227,14 @@ Regras do formato:
   regra, porque têm perfil jurídico diferente ([`05`](05-dados-e-legal.md)).
 * Conflito entre packs ativos é resolvido por ordem declarada + regra determinística de
   precedência (último vence por campo, nunca por arquivo inteiro).
+
+> **Estado de implementação:** `nations/`, `competitions/` e `clubs/` são um arquivo por
+> entidade (M0). `people/` é diferente **de propósito**: cada arquivo `.json` é um lote
+> (`Vec<Player>`), não um jogador — na volumetria alvo de `§9` (250 mil jogadores), um
+> arquivo por jogador seria impraticável; o pack de exemplo usa um arquivo por elenco de
+> clube (`packs/core/example-two-tier/people/<clube>.json`), mas o formato aceita
+> qualquer agrupamento. `rules/*.toml`, `names/*.json` e `cosmetics/` ainda não existem;
+> `.fmpack` zipado também não — hoje é sempre um diretório (M4, `docs/07-roadmap.md`).
 
 ---
 

@@ -26,7 +26,8 @@ mod testutil;
 pub use error::PackError;
 pub use manifest::PackManifest;
 pub use resolved::{
-    Format, LoadedPack, Movement, ResolvedClub, ResolvedCompetition, ResolvedNation, Tiebreaker,
+    Format, LoadedPack, Movement, ResolvedClub, ResolvedCompetition, ResolvedNation,
+    ResolvedPlayer, Tiebreaker,
 };
 
 use std::path::Path;

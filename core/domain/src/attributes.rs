@@ -124,6 +124,53 @@ impl Attribute {
                 | Attribute::Distribution
         )
     }
+
+    /// Analisa o nome `snake_case` usado nos data packs (`docs/03 §7`,
+    /// `people/*.json`). `None` para qualquer string desconhecida — vira um
+    /// item em `issues` de `pack::resolve`, nunca um `panic` (mesmo padrão
+    /// de `pack::Tiebreaker::parse`).
+    #[must_use]
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "finishing" => Some(Self::Finishing),
+            "heading" => Some(Self::Heading),
+            "passing" => Some(Self::Passing),
+            "crossing" => Some(Self::Crossing),
+            "dribbling" => Some(Self::Dribbling),
+            "first_touch" => Some(Self::FirstTouch),
+            "tackling" => Some(Self::Tackling),
+            "marking" => Some(Self::Marking),
+            "long_shots" => Some(Self::LongShots),
+            "set_pieces" => Some(Self::SetPieces),
+            "penalties" => Some(Self::Penalties),
+            "long_throws" => Some(Self::LongThrows),
+            "dominance" => Some(Self::Dominance),
+            "technique" => Some(Self::Technique),
+            "vision" => Some(Self::Vision),
+            "decisions" => Some(Self::Decisions),
+            "positioning" => Some(Self::Positioning),
+            "anticipation" => Some(Self::Anticipation),
+            "concentration" => Some(Self::Concentration),
+            "determination" => Some(Self::Determination),
+            "leadership" => Some(Self::Leadership),
+            "teamwork" => Some(Self::Teamwork),
+            "aggression" => Some(Self::Aggression),
+            "composure" => Some(Self::Composure),
+            "creativity" => Some(Self::Creativity),
+            "off_the_ball" => Some(Self::OffTheBall),
+            "pace" => Some(Self::Pace),
+            "acceleration" => Some(Self::Acceleration),
+            "stamina" => Some(Self::Stamina),
+            "strength" => Some(Self::Strength),
+            "agility" => Some(Self::Agility),
+            "balance" => Some(Self::Balance),
+            "reflexes" => Some(Self::Reflexes),
+            "rushing" => Some(Self::Rushing),
+            "aerial_ability" => Some(Self::AerialAbility),
+            "distribution" => Some(Self::Distribution),
+            _ => None,
+        }
+    }
 }
 
 /// Os 36 atributos visíveis de um jogador, cada um em `1..=20`.
@@ -245,6 +292,66 @@ mod tests {
         let ability = Ability::new(180, 150);
         assert_eq!(ability.current(), 150);
         assert_eq!(ability.potential(), 150);
+    }
+
+    #[test]
+    fn parse_cobre_as_36_variantes_sem_colisao() {
+        // As 36 strings `snake_case` usadas nos data packs, uma por
+        // variante de `Attribute::ALL` na mesma ordem — se `parse` ficar
+        // desalinhado com `ALL` (variante nova sem entrada, ou string
+        // repetida), este teste pega tanto o `None` inesperado quanto a
+        // colisão (índices repetidos em `seen`).
+        const NAMES: [&str; N_ATTR] = [
+            "finishing",
+            "heading",
+            "passing",
+            "crossing",
+            "dribbling",
+            "first_touch",
+            "tackling",
+            "marking",
+            "long_shots",
+            "set_pieces",
+            "penalties",
+            "long_throws",
+            "dominance",
+            "technique",
+            "vision",
+            "decisions",
+            "positioning",
+            "anticipation",
+            "concentration",
+            "determination",
+            "leadership",
+            "teamwork",
+            "aggression",
+            "composure",
+            "creativity",
+            "off_the_ball",
+            "pace",
+            "acceleration",
+            "stamina",
+            "strength",
+            "agility",
+            "balance",
+            "reflexes",
+            "rushing",
+            "aerial_ability",
+            "distribution",
+        ];
+        let mut seen = [false; N_ATTR];
+        for (name, expected) in NAMES.iter().zip(Attribute::ALL) {
+            let parsed =
+                Attribute::parse(name).unwrap_or_else(|| panic!("'{name}' não reconhecido"));
+            assert_eq!(
+                parsed, expected,
+                "'{name}' deveria mapear para {expected:?}"
+            );
+            assert!(!seen[parsed.index()], "índice repetido para '{name}'");
+            seen[parsed.index()] = true;
+        }
+        assert!(seen.iter().all(|&s| s));
+        assert_eq!(Attribute::parse("chute_de_bicicleta"), None);
     }
 
     #[test]

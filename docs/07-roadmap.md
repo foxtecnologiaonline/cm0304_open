@@ -77,12 +77,23 @@ trabalho da comunidade.
 > gols/partida e % de vitória do mandante contra os alvos de `docs/04 §4.1`
 > (primeiros números: ~2,70 gols/partida e ~44-49% de vitórias do mandante em
 > 200 temporadas — dentro ou na borda da tolerância, sem nenhum ajuste fino
-> ainda). O que falta deste marco: **copa** (só liga existe), **cartão de
-> desempenho de CI cross-platform** (verificação de hash de estado entre
-> plataformas, `docs/08 §8`), **progressão de jogadores e IA de mercado**
-> (esperam jogadores de verdade — força de clube hoje é sintética, ver
-> `docs/04` e o módulo `world::strength`), e **golden masters** (formato de
-> arquivo ainda não desenhado).
+> ainda). `pack` agora também carrega `people/*.json` (`docs/03 §3`/`§7`) —
+> jogadores de verdade, com atributos e CA/PA — e `world::strength_from_squad`
+> usa a média de CA do elenco declarado como força do clube, com o sorteio
+> sintético (`world::strength`) só de *fallback* para clubes sem elenco; o
+> pack de exemplo (`packs/core/example-two-tier/people/`) já tem 16
+> jogadores por clube, gerados por um script placeholder
+> (`tools/generate_people.py`, **não** o pipeline de dados real de
+> `docs/05 §3.3`). O que falta deste marco: **copa** (só liga existe),
+> **cartão de desempenho de CI cross-platform** (verificação de hash de
+> estado entre plataformas, `docs/08 §8`), **progressão de jogadores**
+> (idade, condição, moral, treino — o CA hoje é estático, só declarado no
+> pack), **IA de mercado**, e **golden masters** (formato de arquivo ainda
+> não desenhado). A força de elenco também é uma simplificação deliberada de
+> `docs/04 §2.1`: média simples de CA, sem peso por posição/tática/condição
+> (essas dependem de tática completa, M3) — e a posição do jogador é um
+> único campo primário (`domain::Position`), não a familiaridade completa
+> por posição de `docs/03 §3`.
 ### M2 — MVP jogável (12 semanas)
 
 **Objetivo:** responder se o loop é divertido. Ver critérios em [`00`](00-escopo.md#7-mvp--a-menor-coisa-que-prova-a-tese).

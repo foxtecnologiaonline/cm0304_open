@@ -1,0 +1,408 @@
+[
+  {
+    "id": "es.t1.04.p01",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Cássio",
+    "last_name": "Brandão",
+    "birth_date": "2005-11-12",
+    "position": "gk",
+    "attributes": {
+      "reflexes": 16,
+      "rushing": 14,
+      "aerial_ability": 15,
+      "distribution": 16,
+      "positioning": 17,
+      "concentration": 13,
+      "agility": 15,
+      "balance": 12,
+      "determination": 14
+    },
+    "ability": {
+      "current": 88,
+      "potential": 133
+    }
+  },
+  {
+    "id": "es.t1.04.p02",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Xisto",
+    "last_name": "Abranches",
+    "birth_date": "2004-10-22",
+    "position": "gk",
+    "attributes": {
+      "reflexes": 14,
+      "rushing": 16,
+      "aerial_ability": 18,
+      "distribution": 11,
+      "positioning": 17,
+      "concentration": 12,
+      "determination": 10,
+      "agility": 8,
+      "balance": 10
+    },
+    "ability": {
+      "current": 132,
+      "potential": 151
+    }
+  },
+  {
+    "id": "es.t1.04.p03",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Quim",
+    "last_name": "Yepes",
+    "birth_date": "1994-11-08",
+    "position": "df",
+    "attributes": {
+      "tackling": 12,
+      "marking": 18,
+      "heading": 11,
+      "strength": 17,
+      "positioning": 14,
+      "anticipation": 16,
+      "pace": 15,
+      "stamina": 15,
+      "determination": 12,
+      "concentration": 12,
+      "agility": 11
+    },
+    "ability": {
+      "current": 114,
+      "potential": 128
+    }
+  },
+  {
+    "id": "es.t1.04.p04",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Otávio",
+    "last_name": "Siqueira",
+    "birth_date": "1999-12-02",
+    "position": "df",
+    "attributes": {
+      "tackling": 13,
+      "marking": 18,
+      "heading": 15,
+      "strength": 13,
+      "positioning": 18,
+      "anticipation": 14,
+      "pace": 17,
+      "stamina": 18,
+      "concentration": 15,
+      "determination": 13,
+      "composure": 10
+    },
+    "ability": {
+      "current": 76,
+      "potential": 110
+    }
+  },
+  {
+    "id": "es.t1.04.p05",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Aurélio",
+    "last_name": "Nogueira",
+    "birth_date": "2004-05-25",
+    "position": "df",
+    "attributes": {
+      "tackling": 17,
+      "marking": 18,
+      "heading": 18,
+      "strength": 11,
+      "positioning": 16,
+      "anticipation": 14,
+      "pace": 11,
+      "stamina": 18,
+      "composure": 10,
+      "agility": 8,
+      "balance": 12
+    },
+    "ability": {
+      "current": 89,
+      "potential": 127
+    }
+  },
+  {
+    "id": "es.t1.04.p06",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Gil",
+    "last_name": "Zambrano",
+    "birth_date": "1999-10-12",
+    "position": "df",
+    "attributes": {
+      "tackling": 12,
+      "marking": 13,
+      "heading": 16,
+      "strength": 11,
+      "positioning": 17,
+      "anticipation": 14,
+      "pace": 16,
+      "stamina": 14,
+      "agility": 8,
+      "leadership": 9,
+      "balance": 13
+    },
+    "ability": {
+      "current": 147,
+      "potential": 178
+    }
+  },
+  {
+    "id": "es.t1.04.p07",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Rui",
+    "last_name": "Leal",
+    "birth_date": "1997-06-17",
+    "position": "df",
+    "attributes": {
+      "tackling": 14,
+      "marking": 12,
+      "heading": 14,
+      "strength": 18,
+      "positioning": 13,
+      "anticipation": 15,
+      "pace": 12,
+      "stamina": 15,
+      "leadership": 12,
+      "balance": 8,
+      "agility": 8
+    },
+    "ability": {
+      "current": 106,
+      "potential": 145
+    }
+  },
+  {
+    "id": "es.t1.04.p08",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Sérgio",
+    "last_name": "Yepes",
+    "birth_date": "1996-04-07",
+    "position": "mf",
+    "attributes": {
+      "passing": 14,
+      "vision": 18,
+      "first_touch": 16,
+      "dribbling": 12,
+      "stamina": 12,
+      "decisions": 11,
+      "teamwork": 13,
+      "technique": 14,
+      "agility": 13,
+      "leadership": 11,
+      "balance": 10
+    },
+    "ability": {
+      "current": 90,
+      "potential": 116
+    }
+  },
+  {
+    "id": "es.t1.04.p09",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Gil",
+    "last_name": "Farias",
+    "birth_date": "2007-05-20",
+    "position": "mf",
+    "attributes": {
+      "passing": 15,
+      "vision": 17,
+      "first_touch": 12,
+      "dribbling": 12,
+      "stamina": 14,
+      "decisions": 16,
+      "teamwork": 12,
+      "technique": 16,
+      "composure": 12,
+      "leadership": 9,
+      "determination": 9
+    },
+    "ability": {
+      "current": 141,
+      "potential": 183
+    }
+  },
+  {
+    "id": "es.t1.04.p10",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Hugo",
+    "last_name": "Ibiapina",
+    "birth_date": "1996-05-09",
+    "position": "mf",
+    "attributes": {
+      "passing": 14,
+      "vision": 16,
+      "first_touch": 18,
+      "dribbling": 14,
+      "stamina": 15,
+      "decisions": 11,
+      "teamwork": 11,
+      "technique": 16,
+      "concentration": 11,
+      "leadership": 15,
+      "balance": 14
+    },
+    "ability": {
+      "current": 104,
+      "potential": 110
+    }
+  },
+  {
+    "id": "es.t1.04.p11",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Gil",
+    "last_name": "Siqueira",
+    "birth_date": "2001-02-21",
+    "position": "mf",
+    "attributes": {
+      "passing": 18,
+      "vision": 18,
+      "first_touch": 13,
+      "dribbling": 12,
+      "stamina": 11,
+      "decisions": 17,
+      "teamwork": 11,
+      "technique": 14,
+      "balance": 11,
+      "composure": 11,
+      "concentration": 8
+    },
+    "ability": {
+      "current": 153,
+      "potential": 189
+    }
+  },
+  {
+    "id": "es.t1.04.p12",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Gil",
+    "last_name": "Wagner",
+    "birth_date": "2002-08-12",
+    "position": "mf",
+    "attributes": {
+      "passing": 13,
+      "vision": 15,
+      "first_touch": 12,
+      "dribbling": 12,
+      "stamina": 17,
+      "decisions": 12,
+      "teamwork": 12,
+      "technique": 15,
+      "leadership": 14,
+      "determination": 10,
+      "agility": 12
+    },
+    "ability": {
+      "current": 111,
+      "potential": 124
+    }
+  },
+  {
+    "id": "es.t1.04.p13",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Caio",
+    "last_name": "Osório",
+    "birth_date": "2008-08-17",
+    "position": "fw",
+    "attributes": {
+      "finishing": 15,
+      "dribbling": 15,
+      "pace": 16,
+      "off_the_ball": 17,
+      "composure": 15,
+      "acceleration": 16,
+      "technique": 16,
+      "determination": 11,
+      "concentration": 10
+    },
+    "ability": {
+      "current": 106,
+      "potential": 149
+    }
+  },
+  {
+    "id": "es.t1.04.p14",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Bento",
+    "last_name": "Dutra",
+    "birth_date": "2004-01-10",
+    "position": "fw",
+    "attributes": {
+      "finishing": 13,
+      "dribbling": 11,
+      "pace": 17,
+      "off_the_ball": 11,
+      "composure": 14,
+      "acceleration": 11,
+      "technique": 11,
+      "concentration": 12,
+      "leadership": 9,
+      "determination": 14
+    },
+    "ability": {
+      "current": 108,
+      "potential": 132
+    }
+  },
+  {
+    "id": "es.t1.04.p15",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Hugo",
+    "last_name": "Farias",
+    "birth_date": "1995-05-26",
+    "position": "fw",
+    "attributes": {
+      "finishing": 11,
+      "dribbling": 17,
+      "pace": 18,
+      "off_the_ball": 17,
+      "composure": 17,
+      "acceleration": 17,
+      "technique": 17,
+      "determination": 15,
+      "agility": 13,
+      "concentration": 10
+    },
+    "ability": {
+      "current": 152,
+      "potential": 181
+    }
+  },
+  {
+    "id": "es.t1.04.p16",
+    "club": "es.t1.04",
+    "nation": "es",
+    "first_name": "Wander",
+    "last_name": "Zambrano",
+    "birth_date": "1995-04-21",
+    "position": "fw",
+    "attributes": {
+      "finishing": 12,
+      "dribbling": 16,
+      "pace": 18,
+      "off_the_ball": 16,
+      "composure": 14,
+      "acceleration": 13,
+      "technique": 17,
+      "balance": 15,
+      "determination": 15
+    },
+    "ability": {
+      "current": 70,
+      "potential": 110
+    }
+  }
+]
