@@ -113,3 +113,5 @@ jobs:
         run: cargo run -p managerfc-cli --release -- bench --trials 20000
       - name: calibrate (sanidade do motor v0, docs/04 §4.1)
         run: cargo run -p managerfc-cli --release -- calibrate --seasons 50
+      - name: play (fronteira app::GameSession, docs/02 §4)
+        run: cargo run -p managerfc-cli --release -- play --seasons 3

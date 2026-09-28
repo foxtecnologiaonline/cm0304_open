@@ -149,6 +149,19 @@ Decisões embutidas nesse contrato:
 * **Paginação obrigatória** em qualquer consulta que possa retornar > 200 linhas.
 * **Zero lógica de jogo em Dart.** Se a UI precisa de um número, existe uma `Query`.
 
+> **Estado de implementação:** o crate `app` já tem uma primeira fatia real
+> — `GameSession::new/dispatch/query`, um `Command` (`AdvanceSeason`) e três
+> `Query` (`Competitions`, `Standings`, `CurrentSeason`), com `StandingsRow`
+> como projeção de verdade (nome de clube já resolvido, nunca `ClubId` cru).
+> `managerfc-cli play` é o primeiro consumidor externo dessa fronteira —
+> prova que ela funciona de fora do próprio crate, não só nos testes
+> internos. Ainda faltam, do contrato conceitual acima: `Command`
+> serializável em log (pré-requisito de replay e do save, `§8`), `events()`
+> como stream navegável (espera eventos de partida com jogadores, M2/M3), e
+> a própria ponte FFI (`flutter_rust_bridge`) — bloqueada neste ambiente por
+> falta do SDK Flutter/Dart para gerar e verificar o lado Dart, não por
+> falta de trabalho no lado Rust.
+
 ---
 
 ## 5. Determinismo

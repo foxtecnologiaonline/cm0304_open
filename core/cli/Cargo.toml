@@ -15,4 +15,5 @@ domain = { workspace = true }
 pack = { workspace = true }
 engine = { workspace = true }
 world = { workspace = true }
+app = { workspace = true }
 clap = { workspace = true }

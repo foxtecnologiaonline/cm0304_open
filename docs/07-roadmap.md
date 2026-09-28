@@ -97,6 +97,16 @@ trabalho da comunidade.
 **Portão:** os 4 critérios de MVP. **Se o critério 1 (diversão) falhar, o projeto para
 aqui e volta ao design** — é para isso que o marco existe.
 
+> **Estado de implementação:** a fronteira `dispatch`/`query` do `app`
+> (`docs/02 §4`) já existe e tem um consumidor externo real (`managerfc-cli
+> play`) — o que falta deste marco é estritamente o lado UI: gerar a ponte
+> `flutter_rust_bridge` a partir dela e construir as telas em cima, o que
+> este ambiente de desenvolvimento não consegue fazer nem verificar por
+> falta do SDK Flutter/Dart (ver `app/README.md`, o diretório Flutter,
+> não `core/app`). `world`/`rules`/`engine` seguem adiantados em relação à
+> UI — o próximo passo de maior risco continua sendo essa ponte, não mais
+> lógica de núcleo.
+
 ### M3 — Alpha (14 semanas)
 
 * Motor v2: regime assistido, posições, **visão 2D**, bolas paradas, fadiga intra-jogo

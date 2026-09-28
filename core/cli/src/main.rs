@@ -2,10 +2,17 @@
 //!
 //! É o único jeito de rodar o núcleo sem UI: CI, balanceamento e modders
 //! passam por aqui, nunca pelo Flutter (RNF-13). `version`, `pack validate`,
-//! `bench` e `calibrate` já são reais — só `golden record`/`golden verify`
-//! seguem placeholder (esperam um formato de arquivo de golden master ainda
-//! não desenhado, `docs/08 §3`). Cada placeholder diz explicitamente em que
-//! marco passa a funcionar, para não ser confundido com um comando quebrado.
+//! `bench`, `calibrate` e `play` já são reais — só `golden record`/`golden
+//! verify` seguem placeholder (esperam um formato de arquivo de golden
+//! master ainda não desenhado, `docs/08 §3`). Cada placeholder diz
+//! explicitamente em que marco passa a funcionar, para não ser confundido
+//! com um comando quebrado.
+//!
+//! `play` é diferente dos outros: não existe pra medir nada, existe pra
+//! provar que `app::GameSession` — a futura fronteira com a ponte
+//! `flutter_rust_bridge` — funciona de fora do próprio crate que a
+//! implementa. Todo teste de `app` roda dentro do crate; `play` é o
+//! primeiro consumidor externo do `dispatch`/`query` real.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -55,6 +62,23 @@ enum Command {
         /// próprio repositório (`packs/core/example-two-tier`) — suficiente
         /// pra exercitar o motor, não para calibração de verdade contra uma
         /// base de escala real (essa espera o pipeline de `docs/05 §3.3`).
+        #[arg(long)]
+        pack: Option<PathBuf>,
+    },
+
+    /// Joga N temporadas via `app::GameSession` — o mesmo `dispatch`/`query`
+    /// que a futura ponte com o Flutter vai chamar (`docs/02 §4`) — e
+    /// imprime a tabela final de cada competição. Existe pra provar que a
+    /// fronteira funciona de fora do crate `app`, não pra medir nada.
+    Play {
+        /// Número de temporadas a avançar.
+        #[arg(long, default_value_t = 3)]
+        seasons: u32,
+        /// Seed do mundo.
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+        /// Diretório do pack a usar. Sem isto, usa o pack de exemplo do
+        /// próprio repositório.
         #[arg(long)]
         pack: Option<PathBuf>,
     },
@@ -114,6 +138,11 @@ fn main() -> ExitCode {
             seed,
             pack,
         } => calibrate(seasons, seed, pack),
+        Command::Play {
+            seasons,
+            seed,
+            pack,
+        } => play(seasons, seed, pack),
         Command::Pack {
             action: PackAction::Validate { path },
         } => pack_validate(&path),
@@ -259,6 +288,75 @@ fn calibrate(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
     println!("vitórias do mandante:  {home_win_pct}%   (alvo: ~44% ± 3pp)");
     println!("empates:               {draw_pct}%   (alvo: ~25% ± 3pp)");
     println!("vitórias do visitante: {away_win_pct}%   (complemento)");
+    ExitCode::SUCCESS
+}
+
+/// Implementação de `play` — usa `app::GameSession` exatamente como uma UI
+/// usaria: cria a sessão, despacha `AdvanceSeason` N vezes, consulta a
+/// tabela final de cada competição. Nenhuma lógica de jogo mora aqui — só
+/// carregar entrada, despachar/consultar e imprimir (`docs/02 §4`).
+fn play(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
+    let path = pack_path.unwrap_or_else(default_example_pack_path);
+    let mut session = match app::GameSession::new(&path, seed) {
+        Ok(session) => session,
+        Err(err) => {
+            eprintln!(
+                "managerfc-cli: falha ao iniciar sessão com pack em {}: {err}",
+                path.display()
+            );
+            return ExitCode::from(2);
+        }
+    };
+
+    println!("sessão iniciada — seed={seed}, pack em {}", path.display());
+    for _ in 0..seasons {
+        match session.dispatch(app::Command::AdvanceSeason) {
+            Ok(receipt) => println!(
+                "temporada {}: {} partidas, {} movimentação(ões) de acesso/queda",
+                receipt.season_index + 1,
+                receipt.matches_played,
+                receipt.movements
+            ),
+            Err(err) => {
+                eprintln!("managerfc-cli: falha ao avançar temporada: {err}");
+                return ExitCode::from(1);
+            }
+        }
+    }
+
+    let app::QueryResult::Competitions(competitions) = session.query(app::Query::Competitions)
+    else {
+        unreachable!("Query::Competitions sempre devolve QueryResult::Competitions")
+    };
+
+    for competition in competitions {
+        println!(
+            "\n=== {} ({}) ===",
+            competition.name, competition.nation_name
+        );
+        let app::QueryResult::Standings(Some(table)) = session.query(app::Query::Standings {
+            competition: competition.id,
+        }) else {
+            println!("(sem tabela — competição não rodou nenhuma partida)");
+            continue;
+        };
+        println!("pos  clube                  J   V   E   D   GP  GC  PTS");
+        for row in table {
+            println!(
+                "{:>3}  {:<20}  {:>2}  {:>2}  {:>2}  {:>2}  {:>3} {:>3}  {:>3}",
+                row.position,
+                row.club_name,
+                row.played,
+                row.wins,
+                row.draws,
+                row.losses,
+                row.goals_for,
+                row.goals_against,
+                row.points
+            );
+        }
+    }
+
     ExitCode::SUCCESS
 }
 

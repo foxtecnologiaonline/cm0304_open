@@ -1,25 +1,20 @@
-//! `app` — Casos de uso — única fronteira pública do núcleo (dispatch/query/events).
+//! `app` — a única fronteira pública do núcleo (`docs/02-arquitetura.md §4`):
+//! `dispatch` muda estado, `query` lê, nunca o contrário. É por aqui que a
+//! futura ponte `flutter_rust_bridge` vai falar com o resto do núcleo — a UI
+//! nunca importa `world`/`rules`/`engine`/`pack` diretamente.
 //!
-//! Ainda não implementado além do esqueleto: este crate existe para que a
-//! estrutura de dependências descrita em `docs/02-arquitetura.md §3` já
-//! compile e seja testável desde o M0, mesmo antes de a regra de negócio
-//! chegar (ver `docs/07-roadmap.md` para o marco em que cada peça entra).
-//! Ver também: docs/02-arquitetura.md §4
+//! O que existe hoje é a primeira fatia vertical real, não o contrato
+//! final: um comando ([`Command::AdvanceSeason`]) e três consultas
+//! ([`Query`]), o suficiente para uma UI carregar um pack, avançar
+//! temporadas e mostrar uma tabela de classificação. Faltam: o log de
+//! comandos serializável (a base do save, `docs/02 §4` e `§8`) e o stream
+//! de `events()` (chega junto de eventos de partida navegáveis, M2/M3).
 #![warn(clippy::all)]
 
-/// Placeholder que prova que o crate compila e está corretamente ligado a
-/// `domain` — removido assim que a primeira funcionalidade real chegar.
-#[must_use]
-pub fn crate_name() -> &'static str {
-    "app"
-}
+mod error;
+mod query;
+mod session;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn crate_esta_ligado_e_nomeado_corretamente() {
-        assert_eq!(crate_name(), "app");
-    }
-}
+pub use error::AppError;
+pub use query::{CompetitionSummary, Query, QueryResult, StandingsRow};
+pub use session::{Command, CommandReceipt, GameSession};
