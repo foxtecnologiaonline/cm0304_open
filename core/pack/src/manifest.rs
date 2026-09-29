@@ -15,6 +15,14 @@ pub struct PackManifest {
     /// Licença **dos dados** deste pack — pode (e deve, para packs de
     /// conteúdo real) diferir da licença do código (`docs/05 §5.2`).
     pub license: String,
+    /// Ano civil que `people/*.json` `birth_date` usa como referência para
+    /// calcular idade (`docs/03 §3`, `world::progression`) — o "hoje" deste
+    /// pack, não o hoje real: um pack sobre a temporada 2003/04 declararia
+    /// `2003`, não o ano em que alguém rodou o jogo. Obrigatório mesmo em
+    /// packs sem jogadores, pelo mesmo motivo que `license` é: mais barato
+    /// pedir sempre do que decidir por padrão qual "hoje" um pack "só
+    /// regras" quis dizer.
+    pub reference_year: i32,
     /// Ids de outros packs que este depende, na ordem de precedência
     /// (`docs/03 §7`). Vazio por padrão — a maioria dos packs é autônoma.
     #[serde(default)]
@@ -51,6 +59,7 @@ mod tests {
                 name = "Exemplo — Duas Divisões"
                 version = "0.1.0"
                 license = "CC0-1.0"
+                reference_year = 2026
             "#,
         )
         .unwrap();
@@ -58,6 +67,7 @@ mod tests {
         let manifest = load(dir.path()).unwrap();
         assert_eq!(manifest.id, "example.two-tier");
         assert_eq!(manifest.version, "0.1.0");
+        assert_eq!(manifest.reference_year, 2026);
         assert!(manifest.dependencies.is_empty());
     }
 
@@ -72,6 +82,23 @@ mod tests {
     fn erro_claro_quando_manifesto_invalido() {
         let dir = TempDir::new();
         std::fs::write(dir.path().join("pack.toml"), "isso não é toml válido = [[[").unwrap();
+        let err = load(dir.path()).unwrap_err();
+        assert!(matches!(err, PackError::InvalidManifest { .. }));
+    }
+
+    #[test]
+    fn manifesto_sem_reference_year_e_invalido() {
+        let dir = TempDir::new();
+        std::fs::write(
+            dir.path().join("pack.toml"),
+            r#"
+                id = "example.two-tier"
+                name = "Exemplo — Duas Divisões"
+                version = "0.1.0"
+                license = "CC0-1.0"
+            "#,
+        )
+        .unwrap();
         let err = load(dir.path()).unwrap_err();
         assert!(matches!(err, PackError::InvalidManifest { .. }));
     }

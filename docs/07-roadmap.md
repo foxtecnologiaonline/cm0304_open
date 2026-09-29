@@ -84,16 +84,27 @@ trabalho da comunidade.
 > pack de exemplo (`packs/core/example-two-tier/people/`) já tem 16
 > jogadores por clube, gerados por um script placeholder
 > (`tools/generate_people.py`, **não** o pipeline de dados real de
-> `docs/05 §3.3`). O que falta deste marco: **copa** (só liga existe),
-> **cartão de desempenho de CI cross-platform** (verificação de hash de
-> estado entre plataformas, `docs/08 §8`), **progressão de jogadores**
-> (idade, condição, moral, treino — o CA hoje é estático, só declarado no
-> pack), **IA de mercado**, e **golden masters** (formato de arquivo ainda
-> não desenhado). A força de elenco também é uma simplificação deliberada de
-> `docs/04 §2.1`: média simples de CA, sem peso por posição/tática/condição
-> (essas dependem de tática completa, M3) — e a posição do jogador é um
-> único campo primário (`domain::Position`), não a familiaridade completa
-> por posição de `docs/03 §3`.
+> `docs/05 §3.3`). **Progressão de jogadores por idade** (`docs/03 §5.1`)
+> também já é real dentro de uma sessão: `world::progression` mantém um
+> `PlayerState` (CA + idade) por jogador, separado do pack imutável,
+> envelhece 1 ano e ajusta CA a cada `AdvanceSeason` segundo a faixa etária
+> (ganho alto até 18, platô 24-28, declínio acelerado 33+ — sinal e direção
+> verificados por teste, não a curva exata), e `app::GameSession` já
+> recalcula a força de cada clube a partir desse estado a cada temporada —
+> não é decorativo, uma sessão de 5+ temporadas muda de força mensurável.
+> Simplificação aceita: "uma temporada = um ano" (sem calendário mensal
+> ligado a `world` ainda) e nenhuma das outras variáveis da fórmula
+> completa (treino, minutos jogados, profissionalismo, moral — nenhuma
+> existe). O que falta deste marco: **copa** (só liga existe), **cartão de
+> desempenho de CI cross-platform** (verificação de hash de estado entre
+> plataformas, `docs/08 §8`), **condição, moral, lesões, regens e
+> aposentadoria** (só CA e idade evoluem hoje), **IA de mercado**, e
+> **golden masters** (formato de arquivo ainda não desenhado). A força de
+> elenco também é uma simplificação deliberada de `docs/04 §2.1`: média
+> simples de CA, sem peso por posição/tática/condição (essas dependem de
+> tática completa, M3) — e a posição do jogador é um único campo primário
+> (`domain::Position`), não a familiaridade completa por posição de
+> `docs/03 §3`.
 ### M2 — MVP jogável (12 semanas)
 
 **Objetivo:** responder se o loop é divertido. Ver critérios em [`00`](00-escopo.md#7-mvp--a-menor-coisa-que-prova-a-tese).

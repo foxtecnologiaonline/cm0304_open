@@ -11,3 +11,7 @@ id = "example.two-tier"
 name = "Exemplo — Duas Divisões (Estrelônia)"
 version = "0.1.0"
 license = "CC0-1.0"
+# Ano de referência para idade de jogador (docs/03 §3, `people/*.json`
+# `birth_date`) — o mesmo valor usado por tools/generate_people.py ao
+# sortear idades entre 17 e 34 anos.
+reference_year = 2026

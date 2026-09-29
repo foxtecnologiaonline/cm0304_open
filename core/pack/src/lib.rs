@@ -64,7 +64,7 @@ impl PackReport {
 pub fn load_and_validate(root: &Path) -> Result<PackReport, PackError> {
     let manifest = manifest::load(root)?;
     let raw = raw::load(root)?;
-    let (pack, issues) = resolve::resolve(raw);
+    let (pack, issues) = resolve::resolve(raw, manifest.reference_year);
     Ok(PackReport {
         manifest,
         pack,
@@ -87,6 +87,7 @@ mod tests {
                 name = "Exemplo — Duas Divisões"
                 version = "0.1.0"
                 license = "CC0-1.0"
+                reference_year = 2026
             "#,
         )
         .unwrap();

@@ -9,8 +9,10 @@
 //! ([`strength`]), um substituto documentado, não uma simulação de elenco.
 #![warn(clippy::all)]
 
+mod progression;
 mod season;
 mod strength;
 
+pub use progression::{PlayerState, advance_season, initial_roster};
 pub use season::{SeasonResult, run_season, run_seasons};
-pub use strength::{generate_strengths, strength_of};
+pub use strength::{generate_strengths, generate_strengths_from_roster, strength_of};

@@ -15,6 +15,8 @@ use domain::{ClubId, DeterministicRng, Fixed};
 use engine::TeamStrength;
 use pack::LoadedPack;
 
+use crate::progression::PlayerState;
+
 /// Piso e teto da força sintética — mesma ordem de grandeza usada nos
 /// testes do `engine` (`Fixed::from_int(100)` como referência "média") e
 /// próxima da escala de CA (0..=200, `docs/03 §4`), para que os dois modos
@@ -79,6 +81,52 @@ pub fn strength_of(strengths: &[TeamStrength], club: ClubId) -> TeamStrength {
     strengths[club.as_usize()]
 }
 
+/// Igual a [`strength_from_squad`], mas lê o CA **atual** de um `roster`
+/// mutável (`crate::progression`) em vez do CA fixo declarado no pack —
+/// o que faz a força de um clube refletir a progressão de jogadores ao
+/// longo de uma carreira, não o instantâneo do pack no dia em que foi
+/// carregado. `roster` precisa ter sido construído por
+/// [`crate::progression::initial_roster`] a partir do mesmo `pack` (o
+/// índice é `PlayerId::as_usize()`, dependente disso).
+#[must_use]
+pub fn strength_from_roster(
+    pack: &LoadedPack,
+    roster: &[PlayerState],
+    club: ClubId,
+) -> Option<TeamStrength> {
+    let squad = pack.players_of(club);
+    if squad.is_empty() {
+        return None;
+    }
+    let total: u32 = squad
+        .iter()
+        .map(|p| u32::from(roster[p.id.as_usize()].ability.current()))
+        .sum();
+    let average = total / squad.len() as u32;
+    Some(TeamStrength::new(Fixed::from_int(average as i32)))
+}
+
+/// Igual a [`generate_strengths`], mas via [`strength_from_roster`] — a
+/// versão que `app::GameSession` usa a cada temporada, depois de aplicar
+/// [`crate::progression::advance_season`] no `roster` da temporada
+/// anterior. `generate_strengths` continua existindo à parte para quem só
+/// quer o instantâneo do pack sem estado de carreira (`managerfc-cli
+/// calibrate`, que não acompanha progressão).
+#[must_use]
+pub fn generate_strengths_from_roster(
+    pack: &LoadedPack,
+    roster: &[PlayerState],
+    world_seed: u64,
+) -> Vec<TeamStrength> {
+    pack.clubs
+        .iter()
+        .map(|club| {
+            strength_from_roster(pack, roster, club.id)
+                .unwrap_or_else(|| synthetic_strength(club.id, world_seed))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +163,7 @@ mod tests {
             })
             .collect();
         LoadedPack {
+            reference_year: 2026,
             nations: vec![nation],
             competitions: vec![],
             clubs,

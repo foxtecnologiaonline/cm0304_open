@@ -158,6 +158,16 @@ Curva por idade (ponto de partida para calibração, ajustável em dados):
 | 29–32 | declínio físico, ganho mental compensa parcialmente |
 | 33+ | declínio acelerado; físico cai primeiro, técnica por último |
 
+> **Estado de implementação:** `world::progression` (M1) já aplica esta
+> curva **por temporada**, não por mês (`ΔCA_mês` vira `ΔCA_temporada`,
+> sem calendário mensal ligado a `world` ainda) e sem nenhuma das outras
+> variáveis da fórmula (`treino`, `minutos_jogados`, `profissionalismo`,
+> `ambição`, `qualidade_do_clube`, `moral` — nenhuma existe hoje). O sinal e
+> a direção da curva são verificados por teste (jovens sobem, veteranos
+> descem, em média); a curva em si é um ponto de partida a recalibrar, não
+> dado em `packs/core/`, ao contrário do que este parágrafo já prevê para o
+> alvo final.
+
 ---
 
 ## 6. Conhecimento (névoa de guerra)

@@ -107,6 +107,10 @@ pub struct ResolvedPlayer {
 /// (`docs/03 §7`, `resolve.rs`).
 #[derive(Debug, Clone, Default)]
 pub struct LoadedPack {
+    /// Copiado de `PackManifest::reference_year` — o "hoje" deste pack,
+    /// usado para calcular a idade inicial de um jogador a partir de
+    /// `ResolvedPlayer::birth` (`world::progression`).
+    pub reference_year: i32,
     pub nations: Vec<ResolvedNation>,
     pub competitions: Vec<ResolvedCompetition>,
     pub clubs: Vec<ResolvedClub>,

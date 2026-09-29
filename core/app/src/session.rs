@@ -50,6 +50,13 @@ pub struct GameSession {
     /// despachos em vez de interno a uma chamada só).
     membership: Vec<CompetitionId>,
     strengths: Vec<engine::TeamStrength>,
+    /// CA e idade de cada jogador nesta carreira (`world::progression`) —
+    /// separado de `pack.players`, que nunca muda. Recalculado em força de
+    /// clube a cada `AdvanceSeason` (`world::generate_strengths_from_roster`)
+    /// e envelhecido/progredido ao final de cada uma
+    /// (`world::advance_season`), então a força de um clube muda de
+    /// temporada pra temporada mesmo sem promoção/rebaixamento.
+    roster: Vec<world::PlayerState>,
     world_seed: u64,
     /// Uma entrada por temporada já simulada — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
@@ -71,7 +78,8 @@ impl GameSession {
             return Err(AppError::NoCompetitions);
         }
 
-        let strengths = world::generate_strengths(&report.pack, world_seed);
+        let roster = world::initial_roster(&report.pack);
+        let strengths = world::generate_strengths_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
             report.pack.clubs.iter().map(|c| c.competition).collect();
 
@@ -81,6 +89,7 @@ impl GameSession {
             pack_version: report.manifest.version,
             membership,
             strengths,
+            roster,
             world_seed,
             history: Vec::new(),
         })
@@ -142,6 +151,15 @@ impl GameSession {
         match command {
             Command::AdvanceSeason => {
                 let season_index = self.history.len() as u32;
+                // Recalcula a força a partir do roster atual — reflete
+                // qualquer progressão aplicada ao final da temporada
+                // anterior (`world::advance_season`, abaixo). Em `season_index
+                // == 0` é idêntico ao que `Self::new` já calculou.
+                self.strengths = world::generate_strengths_from_roster(
+                    &self.pack,
+                    &self.roster,
+                    self.world_seed,
+                );
                 let result = world::run_season(
                     &self.pack,
                     &self.membership,
@@ -153,6 +171,7 @@ impl GameSession {
                 for &(club, _from, to) in &result.movements {
                     self.membership[club.as_usize()] = to;
                 }
+                world::advance_season(&mut self.roster, self.world_seed, season_index);
 
                 let receipt = CommandReceipt {
                     season_index,
@@ -320,6 +339,36 @@ mod tests {
         assert_eq!(save.pack_id, "example.two-tier");
         assert_eq!(save.world_seed, 99);
         assert_eq!(save.seasons_advanced, 2);
+    }
+
+    #[test]
+    fn avancar_temporadas_envelhece_o_elenco_e_muda_a_forca_dos_clubes() {
+        // Teste de caixa branca (acessa campos privados — este módulo de
+        // teste é filho de `session`): prova que a progressão
+        // (`world::advance_season`) está de fato ligada ao dispatch, não só
+        // existe isolada em `world`. Sem isto, seria fácil o CA do roster
+        // nunca evoluir e ninguém perceber — as tabelas continuariam
+        // plausíveis mesmo com a força de clube congelada.
+        let mut session = GameSession::new(&example_pack_path(), 5).unwrap();
+        let initial_ages: Vec<i32> = session.roster.iter().map(|p| p.age_years).collect();
+        let initial_strengths = session.strengths.clone();
+
+        for _ in 0..5 {
+            session.dispatch(Command::AdvanceSeason).unwrap();
+        }
+
+        let final_ages: Vec<i32> = session.roster.iter().map(|p| p.age_years).collect();
+        assert!(
+            initial_ages
+                .iter()
+                .zip(&final_ages)
+                .all(|(before, after)| *after == before + 5),
+            "cada jogador deveria ter envelhecido exatamente 5 anos"
+        );
+        assert_ne!(
+            initial_strengths, session.strengths,
+            "força dos clubes deveria mudar após 5 temporadas de progressão"
+        );
     }
 
     #[test]
