@@ -265,6 +265,26 @@ que torna o mercado crível.
 * O log de comandos vai junto (comprimido): permite reproduzir bugs e, opcionalmente,
   reconstruir o save.
 
+> **Estado de implementação:** `persist` (M2) já implementa o cabeçalho —
+> `magic | schema_version | sim_version | seed | pack_id+version` — com
+> endianness little fixa, checksum (FNV-1a, não xxh3: ver `persist::save`
+> para o porquê) e escrita atômica de verdade (arquivo `.tmp` + `rename`),
+> tudo com testes de propriedade garantindo que `decode` nunca panica com
+> dado externo. O que falta do parágrafo acima: **os blocos** (`people |
+> clubs | contracts | ...`) — hoje não existe nenhum estado mutável por
+> entidade pra colunar (sem elenco jogável, sem contratos, sem
+> transferências), então o "save" de hoje é o cabeçalho sozinho, e
+> `GameSession::load` reconstrói o resto **por replay**
+> (`seasons_advanced` vezes o único `Command` que existe) em vez de
+> restaurar um snapshot — exatamente a estratégia que o parágrafo acima já
+> previa ("o log de comandos... permite, opcionalmente, reconstruir o
+> save"). Quando `Command` ganhar variantes com parâmetros, esse contador
+> deixa de bastar e vira um log de comandos de verdade. Compressão zstd,
+> `created_at`, hash do conteúdo do pack (para detectar packs que mudaram
+> sob os pés de uma carreira) e rotação de N gerações de autosave também
+> não existem ainda — `managerfc-cli save`/`load` e `app::slot_path`/
+> `autosave_path` cobrem hoje só o essencial testável sem UI.
+
 ### 8.2 SQLite
 
 Não guarda a verdade do jogo — guarda **índices derivados** (busca de jogadores,

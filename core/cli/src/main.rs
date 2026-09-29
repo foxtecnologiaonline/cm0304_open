@@ -83,6 +83,37 @@ enum Command {
         pack: Option<PathBuf>,
     },
 
+    /// Avança N temporadas via `app::GameSession` e grava o resultado num
+    /// arquivo de save (`persist`, `docs/03 §8.1`) — o mesmo papel de `play`
+    /// para `GameSession::save_to_path`: provar que funciona de fora do
+    /// crate `app`.
+    Save {
+        /// Número de temporadas a avançar antes de salvar.
+        #[arg(long, default_value_t = 3)]
+        seasons: u32,
+        /// Seed do mundo.
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+        /// Diretório do pack a usar. Sem isto, usa o pack de exemplo do
+        /// próprio repositório.
+        #[arg(long)]
+        pack: Option<PathBuf>,
+        /// Caminho do arquivo de save a gravar.
+        path: PathBuf,
+    },
+
+    /// Carrega um save (por replay determinístico — ver `persist::save` para
+    /// o porquê disso bastar hoje) e imprime a tabela final de cada
+    /// competição, no mesmo formato de `play`.
+    Load {
+        /// Diretório do pack a usar — precisa ser o mesmo pack (id + versão)
+        /// gravado no save, senão `load` recusa (`AppError::SavePackMismatch`).
+        #[arg(long)]
+        pack: Option<PathBuf>,
+        /// Caminho do arquivo de save a carregar.
+        path: PathBuf,
+    },
+
     /// Operações sobre data packs (`docs/03 §7`).
     Pack {
         #[command(subcommand)]
@@ -143,6 +174,13 @@ fn main() -> ExitCode {
             seed,
             pack,
         } => play(seasons, seed, pack),
+        Command::Save {
+            seasons,
+            seed,
+            pack,
+            path,
+        } => save_command(seasons, seed, pack, &path),
+        Command::Load { pack, path } => load_command(pack, &path),
         Command::Pack {
             action: PackAction::Validate { path },
         } => pack_validate(&path),
@@ -325,6 +363,14 @@ fn play(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
         }
     }
 
+    print_all_standings(&session);
+    ExitCode::SUCCESS
+}
+
+/// Imprime a tabela final de cada competição da sessão — extraído de `play`
+/// para ser reaproveitado por `load` (mesmo formato de saída para os dois,
+/// já que os dois só diferem em como a sessão foi construída).
+fn print_all_standings(session: &app::GameSession) {
     let app::QueryResult::Competitions(competitions) = session.query(app::Query::Competitions)
     else {
         unreachable!("Query::Competitions sempre devolve QueryResult::Competitions")
@@ -357,7 +403,78 @@ fn play(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
             );
         }
     }
+}
 
+/// Implementação de `save` — avança `seasons` temporadas como `play`, mas em
+/// vez de imprimir a tabela, grava a sessão em `path` via
+/// `GameSession::save_to_path` (`persist`, escrita atômica).
+fn save_command(
+    seasons: u32,
+    seed: u64,
+    pack_path: Option<PathBuf>,
+    path: &std::path::Path,
+) -> ExitCode {
+    let pack_dir = pack_path.unwrap_or_else(default_example_pack_path);
+    let mut session = match app::GameSession::new(&pack_dir, seed) {
+        Ok(session) => session,
+        Err(err) => {
+            eprintln!(
+                "managerfc-cli: falha ao iniciar sessão com pack em {}: {err}",
+                pack_dir.display()
+            );
+            return ExitCode::from(2);
+        }
+    };
+
+    for _ in 0..seasons {
+        if let Err(err) = session.dispatch(app::Command::AdvanceSeason) {
+            eprintln!("managerfc-cli: falha ao avançar temporada: {err}");
+            return ExitCode::from(1);
+        }
+    }
+
+    if let Err(err) = session.save_to_path(path) {
+        eprintln!(
+            "managerfc-cli: falha ao gravar save em {}: {err}",
+            path.display()
+        );
+        return ExitCode::from(2);
+    }
+
+    println!(
+        "save gravado em {} — seed={seed}, {seasons} temporada(s), pack '{}'",
+        path.display(),
+        session.to_save().pack_id
+    );
+    ExitCode::SUCCESS
+}
+
+/// Implementação de `load` — o inverso de `save_command`: lê o arquivo,
+/// reconstrói a `GameSession` por replay (`GameSession::load_from_path`) e
+/// imprime a mesma tabela que `play` imprimiria se tivesse rodado do zero
+/// até este ponto — prova que save e replay produzem o mesmo mundo.
+fn load_command(pack_path: Option<PathBuf>, path: &std::path::Path) -> ExitCode {
+    let pack_dir = pack_path.unwrap_or_else(default_example_pack_path);
+    let session = match app::GameSession::load_from_path(&pack_dir, path) {
+        Ok(session) => session,
+        Err(err) => {
+            eprintln!(
+                "managerfc-cli: falha ao carregar save de {} com pack em {}: {err}",
+                path.display(),
+                pack_dir.display()
+            );
+            return ExitCode::from(2);
+        }
+    };
+
+    let app::QueryResult::CurrentSeason(season) = session.query(app::Query::CurrentSeason) else {
+        unreachable!("Query::CurrentSeason sempre devolve QueryResult::CurrentSeason")
+    };
+    println!(
+        "save carregado de {} — {season} temporada(s) reproduzida(s) por replay",
+        path.display()
+    );
+    print_all_standings(&session);
     ExitCode::SUCCESS
 }
 

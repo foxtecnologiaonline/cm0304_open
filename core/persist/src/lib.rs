@@ -1,25 +1,17 @@
-//! `persist` — Serialização do save binário colunar, migrações, índices SQLite.
+//! `persist` — serialização do save (`docs/03-modelo-de-dados.md §8`).
 //!
-//! Ainda não implementado além do esqueleto: este crate existe para que a
-//! estrutura de dependências descrita em `docs/02-arquitetura.md §3` já
-//! compile e seja testável desde o M0, mesmo antes de a regra de negócio
-//! chegar (ver `docs/07-roadmap.md` para o marco em que cada peça entra).
-//! Ver também: docs/03-modelo-de-dados.md §8
+//! Primeira fatia real: um formato binário pequeno, versionado, com
+//! checksum e escrita atômica — o suficiente para `app::GameSession`
+//! salvar/carregar por *replay* (ver o doc de [`save`] para o porquê disso
+//! ser a escolha certa hoje, não um atalho). Migrações (`docs/02 §8.3`) e
+//! os índices SQLite (`docs/02 §8.2`) ainda não existem — chegam quando
+//! houver estado mutável de verdade (elenco, contratos) para indexar.
 #![warn(clippy::all)]
 
-/// Placeholder que prova que o crate compila e está corretamente ligado a
-/// `domain` — removido assim que a primeira funcionalidade real chegar.
-#[must_use]
-pub fn crate_name() -> &'static str {
-    "persist"
-}
+mod error;
+mod save;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn crate_esta_ligado_e_nomeado_corretamente() {
-        assert_eq!(crate_name(), "persist");
-    }
-}
+pub use error::PersistError;
+pub use save::{
+    SCHEMA_VERSION, SIM_VERSION, SaveFile, decode, encode, load_from_path, save_to_path,
+};

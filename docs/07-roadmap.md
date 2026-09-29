@@ -110,13 +110,23 @@ aqui e volta ao design** — é para isso que o marco existe.
 
 > **Estado de implementação:** a fronteira `dispatch`/`query` do `app`
 > (`docs/02 §4`) já existe e tem um consumidor externo real (`managerfc-cli
-> play`) — o que falta deste marco é estritamente o lado UI: gerar a ponte
-> `flutter_rust_bridge` a partir dela e construir as telas em cima, o que
-> este ambiente de desenvolvimento não consegue fazer nem verificar por
-> falta do SDK Flutter/Dart (ver `app/README.md`, o diretório Flutter,
-> não `core/app`). `world`/`rules`/`engine` seguem adiantados em relação à
-> UI — o próximo passo de maior risco continua sendo essa ponte, não mais
-> lógica de núcleo.
+> play`). Save/autosave/slots também já têm uma primeira fatia real:
+> `persist` grava/lê um save versionado com checksum e escrita atômica
+> (`docs/03 §8.1`), `GameSession::save_to_path`/`load_from_path` cobrem o
+> ciclo completo por replay determinístico, `app::slot_path`/`autosave_path`
+> já fixam a convenção de nome para os 3 slots, e `managerfc-cli
+> save`/`load` provam tudo isso de fora do crate (inclusive em CI,
+> `cli-gate`, nas 3 plataformas). O que falta deste marco é majoritariamente
+> o lado UI: gerar a ponte `flutter_rust_bridge` a partir da fronteira
+> `app` e construir as telas em cima (incluindo a tela de "carregar/salvar"
+> que de fato lista os 3 slots) — o que este ambiente de desenvolvimento
+> não consegue fazer nem verificar por falta do SDK Flutter/Dart (ver
+> `app/README.md`, o diretório Flutter, não `core/app`). Do lado Rust ainda
+> faltam: elenco jogável, transferências e treino (`ai` continua um
+> esqueleto) e táticas — nenhum dos três tem estado ainda para o save
+> precisar guardar além do replay. `world`/`rules`/`engine`/`pack`/`persist`
+> seguem adiantados em relação à UI — o próximo passo de maior risco
+> continua sendo essa ponte, não mais lógica de núcleo.
 
 ### M3 — Alpha (14 semanas)
 

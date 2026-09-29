@@ -115,3 +115,8 @@ jobs:
         run: cargo run -p managerfc-cli --release -- calibrate --seasons 50
       - name: play (fronteira app::GameSession, docs/02 §4)
         run: cargo run -p managerfc-cli --release -- play --seasons 3
+      - name: save/load (persist — round-trip cross-platform, docs/03 §8.1)
+        shell: bash
+        run: |
+          cargo run -p managerfc-cli --release -- save --seasons 3 --seed 7 save.cm0304save
+          cargo run -p managerfc-cli --release -- load save.cm0304save

@@ -255,6 +255,12 @@ Regras do formato:
 *Hot* vs *cold* existe para o mobile: abrir um save carrega os blocos quentes; histórico
 e carreira entram sob demanda (RNF-04, RNF-08).
 
+> **Estado de implementação:** ver a nota equivalente em `docs/02 §8.1` —
+> `persist` já grava o cabeçalho (magic/schema/sim_version/seed/pack_id) com
+> checksum e escrita atômica, mas nenhum dos blocos acima existe ainda; o
+> save de hoje reconstrói o resto por replay do log de comandos (hoje só um
+> contador, já que existe um único `Command` sem parâmetros).
+
 ### 8.2 SQLite (índices derivados, descartáveis)
 
 ```sql

@@ -16,4 +16,5 @@ pack = { workspace = true }
 engine = { workspace = true }
 world = { workspace = true }
 app = { workspace = true }
+persist = { workspace = true }
 clap = { workspace = true }

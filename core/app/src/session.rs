@@ -39,6 +39,11 @@ pub struct CommandReceipt {
 #[derive(Debug)]
 pub struct GameSession {
     pack: pack::LoadedPack,
+    /// Identidade do pack (`pack::PackManifest::id`/`version`) — guardada
+    /// para gravar no save e para `load` recusar reabrir a carreira contra
+    /// um pack diferente (`AppError::SavePackMismatch`).
+    pack_id: String,
+    pack_version: String,
     /// Competição atual de cada clube, indexada por id denso — começa como
     /// `pack.clubs[i].competition` e muda com promoção/rebaixamento
     /// (mesmo desenho de `world::season`, só que preservado entre
@@ -72,11 +77,64 @@ impl GameSession {
 
         Ok(Self {
             pack: report.pack,
+            pack_id: report.manifest.id,
+            pack_version: report.manifest.version,
             membership,
             strengths,
             world_seed,
             history: Vec::new(),
         })
+    }
+
+    /// Reabre uma carreira salva: carrega o pack do zero e **repete** cada
+    /// temporada já jogada via [`Self::dispatch`], em vez de restaurar um
+    /// instantâneo. Funciona porque a sessão inteira é uma função pura de
+    /// `(pack, world_seed, quantos `AdvanceSeason` já rodaram)`
+    /// (`ADR 0002`) — é a mesma ideia por trás do "log de comandos" de
+    /// `docs/02 §4`, só que hoje o log é um contador porque existe um único
+    /// tipo de comando sem parâmetros (ver `persist::save` para o porquê
+    /// disso não ser um atalho, e o que muda quando `Command` crescer).
+    pub fn load(pack_path: &Path, save: &persist::SaveFile) -> Result<Self, AppError> {
+        let mut session = Self::new(pack_path, save.world_seed)?;
+        if session.pack_id != save.pack_id || session.pack_version != save.pack_version {
+            return Err(AppError::SavePackMismatch {
+                save_pack_id: save.pack_id.clone(),
+                save_pack_version: save.pack_version.clone(),
+                loaded_pack_id: session.pack_id,
+                loaded_pack_version: session.pack_version,
+            });
+        }
+        for _ in 0..save.seasons_advanced {
+            session.dispatch(Command::AdvanceSeason)?;
+        }
+        Ok(session)
+    }
+
+    /// Lê um arquivo de save em `save_path` e reabre a carreira contra o
+    /// pack em `pack_path` — o par de operações que `managerfc-cli
+    /// load`/uma futura UI de fato chamam; [`Self::load`] (a partir de um
+    /// [`persist::SaveFile`] já em memória) existe separado para ser
+    /// testável sem tocar disco.
+    pub fn load_from_path(pack_path: &Path, save_path: &Path) -> Result<Self, AppError> {
+        let save = persist::load_from_path(save_path).map_err(AppError::Persist)?;
+        Self::load(pack_path, &save)
+    }
+
+    /// Extrai o [`persist::SaveFile`] desta sessão — puro, não toca disco
+    /// (ver [`Self::save_to_path`] para isso).
+    #[must_use]
+    pub fn to_save(&self) -> persist::SaveFile {
+        persist::SaveFile {
+            pack_id: self.pack_id.clone(),
+            pack_version: self.pack_version.clone(),
+            world_seed: self.world_seed,
+            seasons_advanced: self.history.len() as u32,
+        }
+    }
+
+    /// Grava esta sessão em disco (escrita atômica — `persist::save_to_path`).
+    pub fn save_to_path(&self, path: &Path) -> Result<(), AppError> {
+        persist::save_to_path(path, &self.to_save()).map_err(AppError::Persist)
     }
 
     /// Processa um comando, mudando o estado da sessão.
@@ -251,6 +309,82 @@ mod tests {
             b.query(Query::Standings { competition: id })
         );
     }
+
+    #[test]
+    fn to_save_reflete_seed_e_temporadas_avancadas() {
+        let mut session = GameSession::new(&example_pack_path(), 99).unwrap();
+        session.dispatch(Command::AdvanceSeason).unwrap();
+        session.dispatch(Command::AdvanceSeason).unwrap();
+
+        let save = session.to_save();
+        assert_eq!(save.pack_id, "example.two-tier");
+        assert_eq!(save.world_seed, 99);
+        assert_eq!(save.seasons_advanced, 2);
+    }
+
+    #[test]
+    fn load_a_partir_do_save_reproduz_a_mesma_tabela_por_replay() {
+        let mut original = GameSession::new(&example_pack_path(), 7).unwrap();
+        let id = tier1_id(&original);
+        for _ in 0..3 {
+            original.dispatch(Command::AdvanceSeason).unwrap();
+        }
+        let save = original.to_save();
+
+        let reloaded = GameSession::load(&example_pack_path(), &save).unwrap();
+
+        assert_eq!(
+            reloaded.query(Query::CurrentSeason),
+            original.query(Query::CurrentSeason)
+        );
+        assert_eq!(
+            reloaded.query(Query::Standings { competition: id }),
+            original.query(Query::Standings { competition: id })
+        );
+    }
+
+    #[test]
+    fn save_to_path_e_load_from_path_fazem_round_trip_em_disco() {
+        let dir =
+            std::env::temp_dir().join(format!("managerfc-app-save-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let save_path = dir.join("slot0.cm0304save");
+
+        let mut original = GameSession::new(&example_pack_path(), 3).unwrap();
+        let id = tier1_id(&original);
+        original.dispatch(Command::AdvanceSeason).unwrap();
+        original.save_to_path(&save_path).unwrap();
+
+        let reloaded = GameSession::load_from_path(&example_pack_path(), &save_path).unwrap();
+        assert_eq!(
+            reloaded.query(Query::Standings { competition: id }),
+            original.query(Query::Standings { competition: id })
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_recusa_save_de_outro_pack() {
+        let save = persist::SaveFile {
+            pack_id: "outro.pack".to_string(),
+            pack_version: "9.9.9".to_string(),
+            world_seed: 1,
+            seasons_advanced: 0,
+        };
+        let err = GameSession::load(&example_pack_path(), &save).unwrap_err();
+        assert!(matches!(err, AppError::SavePackMismatch { .. }));
+    }
+
+    #[test]
+    fn load_from_path_propaga_erro_tipado_de_persist_para_save_ausente() {
+        let err = GameSession::load_from_path(
+            &example_pack_path(),
+            Path::new("/tmp/managerfc-save-que-nao-existe.cm0304save"),
+        )
+        .unwrap_err();
+        assert!(matches!(err, AppError::Persist(_)));
+    }
 }
 
 /// Testes de propriedade (`docs/08 §1`) — generaliza
@@ -283,6 +417,36 @@ mod proptests {
                 prop_assert_eq!(
                     a.query(Query::Standings { competition: comp.id }),
                     b.query(Query::Standings { competition: comp.id })
+                );
+            }
+        }
+
+        /// Generaliza `load_a_partir_do_save_reproduz_a_mesma_tabela_por_replay`
+        /// para seed e número de temporadas arbitrários (dentro de uma faixa
+        /// pequena, já que cada temporada roda partidas de verdade).
+        #[test]
+        fn save_e_load_reproduzem_a_mesma_sessao_para_qualquer_seed_e_temporadas(
+            world_seed: u64,
+            seasons in 0u32..4,
+        ) {
+            let mut original = GameSession::new(&example_pack_path(), world_seed).unwrap();
+            for _ in 0..seasons {
+                original.dispatch(Command::AdvanceSeason).unwrap();
+            }
+            let save = original.to_save();
+            let reloaded = GameSession::load(&example_pack_path(), &save).unwrap();
+
+            prop_assert_eq!(
+                reloaded.query(Query::CurrentSeason),
+                original.query(Query::CurrentSeason)
+            );
+            let QueryResult::Competitions(comps) = original.query(Query::Competitions) else {
+                unreachable!()
+            };
+            for comp in comps {
+                prop_assert_eq!(
+                    reloaded.query(Query::Standings { competition: comp.id }),
+                    original.query(Query::Standings { competition: comp.id })
                 );
             }
         }

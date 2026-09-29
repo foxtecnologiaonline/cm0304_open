@@ -65,8 +65,10 @@ cm0304_open/
 │  ├─ world/               # ✅ loop de temporada: calendário → partidas → tabela → acesso/queda
 │  │                       #    (força de clube a partir do elenco de verdade, com fallback sintético)
 │  ├─ app/                 # ✅ dispatch/query (GameSession) — a fronteira que a ponte vai expor
-│  ├─ ai/ persist/         # 🚧 esqueleto compilável — ver docs/07-roadmap.md para o marco de cada um
-│  └─ cli/                 # ✅ managerfc-cli — version, pack validate, bench, calibrate e play
+│  │                       #    save/load por replay determinístico (docs/03 §8.1)
+│  ├─ persist/             # ✅ save binário versionado — checksum, escrita atômica, sem blocos ainda
+│  ├─ ai/                  # 🚧 esqueleto compilável — ver docs/07-roadmap.md para o marco
+│  └─ cli/                 # ✅ managerfc-cli — version, pack validate, bench, calibrate, play, save, load
 ├─ packs/core/             # ✅ pack de exemplo (1 país, 2 divisões, 16 clubes, 256 jogadores fictícios)
 ├─ app/                    # 🚧 interface Flutter (não confundir com core/app, acima) — esqueleto de
 │                          #    fonte, sem SDK Flutter neste ambiente para gerar/verificar; ver app/README.md
@@ -78,13 +80,15 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 130 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 150 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
 cargo run --release -p managerfc-cli -- bench     # RNF-01: ≤ 1,5 ms/partida em desktop
 cargo run --release -p managerfc-cli -- play --seasons 3   # dispatch/query via app::GameSession
 cargo run --release -p managerfc-cli -- calibrate --seasons 200   # gols/partida, % de vitória do mandante
+cargo run --release -p managerfc-cli -- save --seasons 3 minha-carreira.cm0304save   # persist
+cargo run --release -p managerfc-cli -- load minha-carreira.cm0304save              # replay do save
 cargo run -p managerfc-cli -- --help
 ```
 

@@ -12,6 +12,7 @@ pack = { workspace = true }
 rules = { workspace = true }
 engine = { workspace = true }
 world = { workspace = true }
+persist = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

@@ -16,6 +16,18 @@ pub enum AppError {
     PackInvalid { issues: Vec<String> },
     /// Nenhuma competição no pack para simular.
     NoCompetitions,
+    /// Falha ao (de)serializar ou ler/escrever um save (`persist`).
+    Persist(persist::PersistError),
+    /// O save é de um pack diferente do que foi passado a
+    /// [`crate::GameSession::load`] — carregar aplicaria o histórico de uma
+    /// carreira sobre clubes/competições que podem nem existir mais
+    /// (`docs/03 §2`: remapeamento entre packs ainda não existe).
+    SavePackMismatch {
+        save_pack_id: String,
+        save_pack_version: String,
+        loaded_pack_id: String,
+        loaded_pack_version: String,
+    },
 }
 
 impl fmt::Display for AppError {
@@ -26,6 +38,17 @@ impl fmt::Display for AppError {
                 write!(f, "pack com {} problema(s) de validação", issues.len())
             }
             AppError::NoCompetitions => write!(f, "pack não tem nenhuma competição jogável"),
+            AppError::Persist(err) => write!(f, "falha ao ler/gravar save: {err}"),
+            AppError::SavePackMismatch {
+                save_pack_id,
+                save_pack_version,
+                loaded_pack_id,
+                loaded_pack_version,
+            } => write!(
+                f,
+                "save é do pack '{save_pack_id}' v{save_pack_version}, mas foi carregado com \
+                 '{loaded_pack_id}' v{loaded_pack_version}"
+            ),
         }
     }
 }
@@ -34,7 +57,10 @@ impl std::error::Error for AppError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             AppError::PackLoad(err) => Some(err),
-            AppError::PackInvalid { .. } | AppError::NoCompetitions => None,
+            AppError::Persist(err) => Some(err),
+            AppError::PackInvalid { .. }
+            | AppError::NoCompetitions
+            | AppError::SavePackMismatch { .. } => None,
         }
     }
 }
