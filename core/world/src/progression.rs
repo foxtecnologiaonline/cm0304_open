@@ -20,14 +20,25 @@
 //! `persist` ainda reconstrói uma sessão por replay em vez de guardar
 //! estado por entidade (ver `persist::save`).
 
-use domain::{Ability, DeterministicRng, PlayerId};
+use domain::{Ability, ClubId, DeterministicRng, PlayerId, Position};
 use pack::LoadedPack;
 
-/// CA e idade de um jogador dentro de uma carreira específica — evolui a
-/// cada [`advance_season`]; o pack nunca muda.
+/// CA, idade e clube de um jogador dentro de uma carreira específica —
+/// evolui a cada [`advance_season`] (CA/idade) ou transferência
+/// (`crate::market`, `club`); o pack nunca muda. `position` é copiada do
+/// pack e nunca muda por conta própria (não há treino de reconversão de
+/// posição ainda) — mora aqui, não só em `pack::ResolvedPlayer`, pra que
+/// `crate::strength`/`crate::market` não precisem voltar no pack só pra
+/// saber onde alguém joga.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlayerState {
     pub player: PlayerId,
+    /// Clube atual — começa como `pack::ResolvedPlayer::club`, muda com
+    /// transferências (`crate::market::run_market_day`). É por isso que a
+    /// força de um clube (`crate::strength::strength_from_roster`) agrupa
+    /// jogadores por `roster[i].club`, nunca mais por `pack.players_of`.
+    pub club: ClubId,
+    pub position: Position,
     /// Idade em anos completos, calculada uma vez a partir de
     /// `LoadedPack::reference_year` e incrementada em 1 a cada temporada
     /// (aproximação de "uma temporada = um ano" — não há calendário mensal
@@ -48,6 +59,8 @@ pub fn initial_roster(pack: &LoadedPack) -> Vec<PlayerState> {
         .iter()
         .map(|p| PlayerState {
             player: p.id,
+            club: p.club,
+            position: p.position,
             age_years: pack.reference_year - p.birth.year(),
             ability: p.ability,
         })

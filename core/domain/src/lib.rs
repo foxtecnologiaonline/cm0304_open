@@ -14,6 +14,7 @@ pub mod attributes;
 pub mod date;
 pub mod fixed;
 pub mod ids;
+pub mod money;
 pub mod position;
 pub mod rng;
 
@@ -23,5 +24,6 @@ pub use fixed::Fixed;
 pub use ids::{
     ClubId, CompetitionId, ContractId, FixtureId, NationId, PersonId, PlayerId, SeasonId,
 };
+pub use money::Money;
 pub use position::Position;
 pub use rng::DeterministicRng;

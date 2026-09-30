@@ -86,6 +86,14 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 | RF-TR-08 | Lista de dispensa/transferência, sondagens e propostas rejeitadas com memória | S | M3 |
 | RF-TR-09 | Inflação de mercado coerente ao longo de 20+ temporadas | M | M4 |
 
+> **Estado de implementação:** `ai::run_market_day` (M1, `docs/07-roadmap.md`)
+> já cobre uma fatia mecânica de RF-TR-02 (valor de mercado — só CA, fórmula
+> não calibrada) e RF-TR-05 (clube identifica carência e compra se couber no
+> orçamento) — sem janela por país (RF-TR-01), sem negociação/disputa/
+> desistência de verdade (o "dono" sempre vende se o preço bate) e sem
+> nenhum dos RF-TR-03/04/06/07/08/09. É automático e roda toda temporada em
+> `GameSession::dispatch`, não uma tela jogável ainda.
+
 ### 2.5 Táticas e partida (`PA`)
 
 | ID | Requisito | Pri | Marco |

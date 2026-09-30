@@ -107,9 +107,24 @@ trabalho da comunidade.
 > que falta deste marco: **copa** (só liga existe), **cartão de desempenho
 > de CI cross-platform** (verificação de hash de estado entre plataformas,
 > `docs/08 §8`), **condição, moral, lesões, regens e aposentadoria** (só CA
-> e idade evoluem hoje), **IA de mercado** (transferências, contratos —
-> `ai::lineup` é só metade do M1), e **golden masters** (formato de arquivo
-> ainda não desenhado). A força de elenco também é uma simplificação
+> e idade evoluem hoje), e **golden masters** (formato de arquivo ainda não
+> desenhado). **A "primeira IA de mercado"** também já é real:
+> `ai::run_market_day` (subconjunto minúsculo de RF-TR-02/05, `docs/01
+> §2.4` — ambos marcados M2 lá porque a versão completa pede negociação,
+> disputa, reputação e contratos, nada disso existe) roda antes de cada
+> temporada em `GameSession::dispatch`: cada clube tenta trocar seu titular
+> mais fraco por um reserva melhor de outro clube que caiba no orçamento
+> (`ai::market_value`, uma fórmula quadrática em CA só, não calibrada) —
+> mecânico e automático, sem negociação nem recusa, o "dono" sempre vende
+> se o preço bate. `domain::Money` (novo) e `world::finance` (orçamento
+> sintético, pack ainda não declara finanças) sustentam isso; `PlayerState`
+> ganhou `club`/`position` porque agora o clube de um jogador **muda** de
+> temporada pra temporada, e `strength_from_roster` passou a agrupar
+> elenco por `roster[i].club`, não mais por `pack.players_of` (o pack
+> nunca muda; só o roster sabe quem pertence a quem *agora*). Confirmado
+> por teste que pelo menos uma transferência acontece em 5 temporadas no
+> pack de exemplo, e que dinheiro é conservado (nenhuma transferência cria
+> ou destrói orçamento). A força de elenco também é uma simplificação
 > deliberada de `docs/04 §2.1`: média simples de CA dos titulares, sem peso
 > por tática/condição (essas dependem de tática completa, M3) — e a
 > escalação em si não tem tática nenhuma (não sabe de marcação, zona,

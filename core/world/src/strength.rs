@@ -115,32 +115,32 @@ pub fn strength_of(strengths: &[TeamStrength], club: ClubId) -> TeamStrength {
     strengths[club.as_usize()]
 }
 
-/// Igual a [`strength_from_squad`], mas lê o CA **atual** de um `roster`
-/// mutável (`crate::progression`) em vez do CA fixo declarado no pack —
-/// o que faz a força de um clube refletir a progressão de jogadores ao
+/// Igual a [`strength_from_squad`], mas lê o CA **e o clube atual** de um
+/// `roster` mutável (`crate::progression`) em vez do CA e do clube fixos
+/// declarados no pack — o que faz a força de um clube refletir tanto a
+/// progressão de jogadores quanto transferências (`crate::market`) ao
 /// longo de uma carreira, não o instantâneo do pack no dia em que foi
-/// carregado. `roster` precisa ter sido construído por
-/// [`crate::progression::initial_roster`] a partir do mesmo `pack` (o
-/// índice é `PlayerId::as_usize()`, dependente disso).
+/// carregado. Note que o elenco é agrupado por `roster[i].club`, **não**
+/// por `pack.players_of(club)`: depois de uma transferência, os dois
+/// divergem de propósito (o pack nunca muda; é assim que sabemos quem
+/// pertence a quem *agora*). `pack` só entra aqui pra saber quantos
+/// clubes existem no total (`generate_strengths_from_roster`), não pra
+/// filtrar elenco.
 #[must_use]
-pub fn strength_from_roster(
-    pack: &LoadedPack,
-    roster: &[PlayerState],
-    club: ClubId,
-) -> Option<TeamStrength> {
-    let squad = pack.players_of(club);
+pub fn strength_from_roster(roster: &[PlayerState], club: ClubId) -> Option<TeamStrength> {
+    let squad: Vec<ai::PlayerRating> = roster
+        .iter()
+        .filter(|p| p.club == club)
+        .map(|p| ai::PlayerRating {
+            player: p.player,
+            position: p.position,
+            current_ability: p.ability.current(),
+        })
+        .collect();
     if squad.is_empty() {
         return None;
     }
-    let ratings: Vec<ai::PlayerRating> = squad
-        .iter()
-        .map(|p| ai::PlayerRating {
-            player: p.id,
-            position: p.position,
-            current_ability: roster[p.id.as_usize()].ability.current(),
-        })
-        .collect();
-    let starters = ai::select_starting_eleven(&ratings);
+    let starters = ai::select_starting_eleven(&squad);
     average_ability(
         starters
             .iter()
@@ -163,7 +163,7 @@ pub fn generate_strengths_from_roster(
     pack.clubs
         .iter()
         .map(|club| {
-            strength_from_roster(pack, roster, club.id)
+            strength_from_roster(roster, club.id)
                 .unwrap_or_else(|| synthetic_strength(club.id, world_seed))
         })
         .collect()
@@ -314,6 +314,34 @@ mod tests {
         // contrário do caminho sintético (`caminho_sintetico_seeds_diferentes_dao_forcas_diferentes`).
         assert_eq!(a, b);
         assert_eq!(a[0].value(), Fixed::from_int(90));
+    }
+
+    #[test]
+    fn strength_from_roster_segue_o_clube_atual_do_roster_nao_o_do_pack() {
+        // Pack estático: um jogador de CA 200 pertence ao clube 0. Depois
+        // de uma transferência simulada (mutar `roster[0].club` direto,
+        // sem passar por `ai::market`), a força tem que "seguir" o
+        // jogador — clube 0 fica sem elenco, clube 1 ganha o reforço —
+        // exatamente o comportamento que `pack.players_of` sozinho jamais
+        // capturaria (ele não sabe de transferência nenhuma).
+        let mut p = pack_without_players(2);
+        let club0 = p.clubs[0].id;
+        let nation = p.nations[0].id;
+        p.players = vec![player_with_ca(0, club0, nation, 200)];
+
+        let mut roster = crate::progression::initial_roster(&p);
+        assert_eq!(
+            strength_from_roster(&roster, p.clubs[0].id),
+            Some(TeamStrength::new(Fixed::from_int(200)))
+        );
+        assert_eq!(strength_from_roster(&roster, p.clubs[1].id), None);
+
+        roster[0].club = p.clubs[1].id; // transferência simulada
+        assert_eq!(strength_from_roster(&roster, p.clubs[0].id), None);
+        assert_eq!(
+            strength_from_roster(&roster, p.clubs[1].id),
+            Some(TeamStrength::new(Fixed::from_int(200)))
+        );
     }
 
     #[test]

@@ -33,6 +33,10 @@ pub struct CommandReceipt {
     pub matches_played: u32,
     /// Quantos clubes mudaram de competição para a próxima temporada.
     pub movements: usize,
+    /// Quantas transferências a IA de mercado fechou antes da temporada
+    /// (`world::run_market_day`, `ai::run_market_day` — `docs/07-roadmap.md`
+    /// M1: "primeira IA de mercado").
+    pub transfers: usize,
 }
 
 /// Uma carreira carregada em memória.
@@ -57,6 +61,11 @@ pub struct GameSession {
     /// (`world::advance_season`), então a força de um clube muda de
     /// temporada pra temporada mesmo sem promoção/rebaixamento.
     roster: Vec<world::PlayerState>,
+    /// Orçamento de cada clube, indexado por id denso (`world::generate_budgets`,
+    /// sintético — pack ainda não declara finanças, `world::finance`). Só
+    /// muda por transferência (`world::run_market_day`): sem receita nem
+    /// despesa externas ainda, uma economia fechada.
+    budgets: Vec<domain::Money>,
     world_seed: u64,
     /// Uma entrada por temporada já simulada — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
@@ -79,6 +88,7 @@ impl GameSession {
         }
 
         let roster = world::initial_roster(&report.pack);
+        let budgets = world::generate_budgets(&report.pack, world_seed);
         let strengths = world::generate_strengths_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
             report.pack.clubs.iter().map(|c| c.competition).collect();
@@ -90,6 +100,7 @@ impl GameSession {
             membership,
             strengths,
             roster,
+            budgets,
             world_seed,
             history: Vec::new(),
         })
@@ -151,10 +162,19 @@ impl GameSession {
         match command {
             Command::AdvanceSeason => {
                 let season_index = self.history.len() as u32;
+                // Mercado antes da temporada: clubes tentam substituir seu
+                // titular mais fraco por um reserva melhor de outro clube
+                // que caiba no orçamento (`world::run_market_day`,
+                // `docs/07-roadmap.md` M1: "primeira IA de mercado"). Feito
+                // antes de recalcular a força, pra quem comprou reforço já
+                // jogar mais forte nesta mesma temporada.
+                let transfers = world::run_market_day(&mut self.roster, &mut self.budgets);
+
                 // Recalcula a força a partir do roster atual — reflete
-                // qualquer progressão aplicada ao final da temporada
-                // anterior (`world::advance_season`, abaixo). Em `season_index
-                // == 0` é idêntico ao que `Self::new` já calculou.
+                // tanto progressão (`world::advance_season`, abaixo) quanto
+                // as transferências que acabaram de acontecer. Em
+                // `season_index == 0` sem nenhuma transferência, é idêntico
+                // ao que `Self::new` já calculou.
                 self.strengths = world::generate_strengths_from_roster(
                     &self.pack,
                     &self.roster,
@@ -177,6 +197,7 @@ impl GameSession {
                     season_index,
                     matches_played: result.matches_played,
                     movements: result.movements.len(),
+                    transfers: transfers.len(),
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -369,6 +390,44 @@ mod tests {
             initial_strengths, session.strengths,
             "força dos clubes deveria mudar após 5 temporadas de progressão"
         );
+    }
+
+    #[test]
+    fn mercado_de_transferencias_de_fato_move_jogadores_entre_clubes() {
+        // Outro teste de caixa branca: prova que `world::run_market_day`
+        // está ligado ao dispatch e produz transferências de verdade no
+        // pack de exemplo (256 jogadores reais, `docs/07-roadmap.md` M1) —
+        // não só que a função isolada funciona (isso já é testado em
+        // `ai::market` e `world::market`).
+        let mut session = GameSession::new(&example_pack_path(), 11).unwrap();
+        let initial_clubs: Vec<domain::ClubId> = session.roster.iter().map(|p| p.club).collect();
+        let initial_budgets = session.budgets.clone();
+
+        let mut total_transfers = 0usize;
+        for _ in 0..5 {
+            let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+            total_transfers += receipt.transfers;
+        }
+
+        assert!(
+            total_transfers > 0,
+            "esperava pelo menos uma transferência em 5 temporadas de mercado"
+        );
+        let final_clubs: Vec<domain::ClubId> = session.roster.iter().map(|p| p.club).collect();
+        assert_ne!(
+            initial_clubs, final_clubs,
+            "pelo menos um jogador deveria ter mudado de clube"
+        );
+        assert_ne!(
+            initial_budgets, session.budgets,
+            "orçamentos deveriam ter mudado com as transferências"
+        );
+        // Conservação de dinheiro (mesma propriedade de
+        // `ai::market::proptests::dinheiro_total_e_conservado`, mas
+        // observada de fora, via `GameSession`).
+        let total_before: i64 = initial_budgets.iter().map(|b| b.cents()).sum();
+        let total_after: i64 = session.budgets.iter().map(|b| b.cents()).sum();
+        assert_eq!(total_before, total_after);
     }
 
     #[test]
