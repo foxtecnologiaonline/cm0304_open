@@ -7,9 +7,12 @@
 //! permanece constante durante toda a sequência de temporadas simulada (o
 //! "elenco" sintético não evolui) — suficiente para exercitar calendário,
 //! tabela e promoção/rebaixamento de ponta a ponta mesmo sem elenco. A
-//! força de elenco, ao contrário, é recalculada a cada chamada a partir dos
-//! atributos declarados no pack — determinística por construção, sem RNG
-//! nenhum envolvido.
+//! força de elenco, ao contrário, é recalculada a cada chamada a partir do
+//! CA médio dos **titulares** — `ai::select_starting_eleven` escolhe os 11
+//! (`docs/07-roadmap.md` M1: "IA de escalação"), não o elenco inteiro,
+//! porque um banco de reservas fracos não deveria arrastar pra baixo a
+//! força de um time com um bom time titular. Determinística por
+//! construção, sem RNG nenhum envolvido.
 
 use domain::{ClubId, DeterministicRng, Fixed};
 use engine::TeamStrength;
@@ -53,25 +56,56 @@ fn synthetic_strength(club: ClubId, world_seed: u64) -> TeamStrength {
     TeamStrength::new(Fixed::from_int(value))
 }
 
-/// Calcula a força de um clube a partir do CA (`Ability::current`) médio do
-/// seu elenco — `None` se o clube não tem nenhum jogador declarado no pack.
+/// Calcula a força de um clube a partir do CA (`Ability::current`) médio dos
+/// seus **titulares** (`ai::select_starting_eleven`, ver o doc do módulo) —
+/// `None` se o clube não tem nenhum jogador declarado no pack.
 ///
 /// Simplificação deliberada: a fórmula completa de força de time
 /// (`docs/04 §2.1`) pesaria por posição, condição, moral e a tática do
 /// treinador — nada disso existe ainda (tática entra no M3). Uma média
-/// simples de CA já é suficiente para o motor v0 (que só compara duas
-/// forças escalares, `docs/04 §7`) e não exige nenhum dado que o pack ainda
-/// não declara. Só aritmética inteira (`ADR 0002`): soma de `u32` dividida
-/// por contagem, sem ponto flutuante em nenhum passo.
+/// simples de CA dos titulares já é suficiente para o motor v0 (que só
+/// compara duas forças escalares, `docs/04 §7`) e não exige nenhum dado que
+/// o pack ainda não declara. Só aritmética inteira (`ADR 0002`): soma de
+/// `u32` dividida por contagem, sem ponto flutuante em nenhum passo.
 #[must_use]
 pub fn strength_from_squad(pack: &LoadedPack, club: ClubId) -> Option<TeamStrength> {
     let squad = pack.players_of(club);
     if squad.is_empty() {
         return None;
     }
-    let total: u32 = squad.iter().map(|p| u32::from(p.ability.current())).sum();
-    let average = total / squad.len() as u32;
-    Some(TeamStrength::new(Fixed::from_int(average as i32)))
+    let ratings: Vec<ai::PlayerRating> = squad
+        .iter()
+        .map(|p| ai::PlayerRating {
+            player: p.id,
+            position: p.position,
+            current_ability: p.ability.current(),
+        })
+        .collect();
+    let starters = ai::select_starting_eleven(&ratings);
+    // `PlayerId::as_usize()` indexa `pack.players` globalmente (a ordem em
+    // que `pack::resolve` atribuiu os ids, não a posição dentro de
+    // `squad`) — mesmo esquema de indexação que `strength_from_roster` usa
+    // para `roster`, abaixo.
+    average_ability(
+        starters
+            .iter()
+            .map(|&id| pack.players[id.as_usize()].ability.current()),
+    )
+}
+
+/// Média de CA como [`TeamStrength`] — `None` só se `values` estiver vazio
+/// (não deveria acontecer quando chamado com o resultado de
+/// `ai::select_starting_eleven` sobre um `squad` não-vazio, mas devolver
+/// `Option` em vez de assumir isso mantém a função honesta sobre sua
+/// própria pré-condição).
+fn average_ability(values: impl Iterator<Item = u8>) -> Option<TeamStrength> {
+    let (total, count) = values.fold((0u32, 0u32), |(total, count), v| {
+        (total + u32::from(v), count + 1)
+    });
+    if count == 0 {
+        return None;
+    }
+    Some(TeamStrength::new(Fixed::from_int((total / count) as i32)))
 }
 
 /// Busca a força de um clube pelo seu id denso — painel de acesso indexado,
@@ -98,12 +132,20 @@ pub fn strength_from_roster(
     if squad.is_empty() {
         return None;
     }
-    let total: u32 = squad
+    let ratings: Vec<ai::PlayerRating> = squad
         .iter()
-        .map(|p| u32::from(roster[p.id.as_usize()].ability.current()))
-        .sum();
-    let average = total / squad.len() as u32;
-    Some(TeamStrength::new(Fixed::from_int(average as i32)))
+        .map(|p| ai::PlayerRating {
+            player: p.id,
+            position: p.position,
+            current_ability: roster[p.id.as_usize()].ability.current(),
+        })
+        .collect();
+    let starters = ai::select_starting_eleven(&ratings);
+    average_ability(
+        starters
+            .iter()
+            .map(|&id| roster[id.as_usize()].ability.current()),
+    )
 }
 
 /// Igual a [`generate_strengths`], mas via [`strength_from_roster`] — a
@@ -204,10 +246,10 @@ mod tests {
         assert_eq!(strength_from_squad(&p, ClubId::new(0)), None);
     }
 
-    fn player_with_ca(club: ClubId, nation: domain::NationId, ca: u8) -> ResolvedPlayer {
+    fn player_with_ca(id: u32, club: ClubId, nation: domain::NationId, ca: u8) -> ResolvedPlayer {
         ResolvedPlayer {
-            id: domain::PlayerId::new(0),
-            external_id: "p".to_string(),
+            id: domain::PlayerId::new(id),
+            external_id: format!("p{id}"),
             first_name: "Nome".to_string(),
             last_name: "Sobrenome".to_string(),
             birth: GameDate::from_ymd(2000, 1, 1),
@@ -220,15 +262,17 @@ mod tests {
     }
 
     #[test]
-    fn strength_from_squad_e_a_media_exata_do_ca_do_elenco() {
+    fn strength_from_squad_e_a_media_exata_do_ca_do_elenco_quando_cabe_todo_na_formacao() {
         let mut p = pack_without_players(1);
         let club = p.clubs[0].id;
         let nation = p.nations[0].id;
         p.players = vec![
-            player_with_ca(club, nation, 100),
-            player_with_ca(club, nation, 120),
-            player_with_ca(club, nation, 140),
+            player_with_ca(0, club, nation, 100),
+            player_with_ca(1, club, nation, 120),
+            player_with_ca(2, club, nation, 140),
         ];
+        // Só 3 meio-campistas, a formação (`ai::FORMATION`) permite até 4 —
+        // os 3 titularizam, então a média é do elenco inteiro mesmo.
         // (100 + 120 + 140) / 3 = 120, exato — escolhido de propósito para
         // não depender de arredondamento de divisão inteira.
         let strength = strength_from_squad(&p, club).unwrap();
@@ -236,11 +280,32 @@ mod tests {
     }
 
     #[test]
+    fn strength_from_squad_ignora_reservas_fracos_fora_da_escalacao() {
+        let mut p = pack_without_players(1);
+        let club = p.clubs[0].id;
+        let nation = p.nations[0].id;
+        // 6 meio-campistas, mas a formação só escala 4 — os 2 piores (CA 10
+        // e 20) deveriam ser ignorados no cálculo de força, não arrastar a
+        // média pra baixo.
+        p.players = vec![
+            player_with_ca(0, club, nation, 100),
+            player_with_ca(1, club, nation, 110),
+            player_with_ca(2, club, nation, 120),
+            player_with_ca(3, club, nation, 130),
+            player_with_ca(4, club, nation, 20), // banco
+            player_with_ca(5, club, nation, 10), // banco
+        ];
+        // Titulares: 100, 110, 120, 130 -> média 115.
+        let strength = strength_from_squad(&p, club).unwrap();
+        assert_eq!(strength.value(), Fixed::from_int(115));
+    }
+
+    #[test]
     fn generate_strengths_usa_elenco_quando_disponivel_e_ignora_a_seed() {
         let mut p = pack_without_players(1);
         let club = p.clubs[0].id;
         let nation = p.nations[0].id;
-        p.players = vec![player_with_ca(club, nation, 90)];
+        p.players = vec![player_with_ca(0, club, nation, 90)];
 
         let a = generate_strengths(&p, 1);
         let b = generate_strengths(&p, 2);

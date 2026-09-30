@@ -11,6 +11,7 @@ domain = { workspace = true }
 pack = { workspace = true }
 rules = { workspace = true }
 engine = { workspace = true }
+ai = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

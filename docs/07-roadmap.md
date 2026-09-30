@@ -95,14 +95,25 @@ trabalho da comunidade.
 > Simplificação aceita: "uma temporada = um ano" (sem calendário mensal
 > ligado a `world` ainda) e nenhuma das outras variáveis da fórmula
 > completa (treino, minutos jogados, profissionalismo, moral — nenhuma
-> existe). O que falta deste marco: **copa** (só liga existe), **cartão de
-> desempenho de CI cross-platform** (verificação de hash de estado entre
-> plataformas, `docs/08 §8`), **condição, moral, lesões, regens e
-> aposentadoria** (só CA e idade evoluem hoje), **IA de mercado**, e
-> **golden masters** (formato de arquivo ainda não desenhado). A força de
-> elenco também é uma simplificação deliberada de `docs/04 §2.1`: média
-> simples de CA, sem peso por posição/tática/condição (essas dependem de
-> tática completa, M3) — e a posição do jogador é um único campo primário
+> existe). **IA de escalação** (`docs/01 §2.4`) também já é real: o crate
+> `ai` (antes um esqueleto vazio) ganhou `ai::select_starting_eleven` —
+> escolhe os 11 titulares por posição e CA numa formação fixa (1 GK, 4 DF,
+> 4 MF, 2 FW) — e `world::strength_from_squad`/`strength_from_roster` agora
+> calculam a força do clube pela média dos **titulares**, não do elenco
+> inteiro; um reserva fraco não arrasta mais a força pra baixo (pego por
+> teste dedicado, `strength_from_squad_ignora_reservas_fracos_fora_da_escalacao`).
+> A dependência segue a direção documentada em `docs/02 §2`: `ai` só
+> depende de `domain`, é `world` quem depende de `ai`, não o contrário. O
+> que falta deste marco: **copa** (só liga existe), **cartão de desempenho
+> de CI cross-platform** (verificação de hash de estado entre plataformas,
+> `docs/08 §8`), **condição, moral, lesões, regens e aposentadoria** (só CA
+> e idade evoluem hoje), **IA de mercado** (transferências, contratos —
+> `ai::lineup` é só metade do M1), e **golden masters** (formato de arquivo
+> ainda não desenhado). A força de elenco também é uma simplificação
+> deliberada de `docs/04 §2.1`: média simples de CA dos titulares, sem peso
+> por tática/condição (essas dependem de tática completa, M3) — e a
+> escalação em si não tem tática nenhuma (não sabe de marcação, zona,
+> plano B) — e a posição do jogador é um único campo primário
 > (`domain::Position`), não a familiaridade completa por posição de
 > `docs/03 §3`.
 ### M2 — MVP jogável (12 semanas)

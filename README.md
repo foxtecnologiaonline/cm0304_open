@@ -68,7 +68,7 @@ cm0304_open/
 │  ├─ app/                 # ✅ dispatch/query (GameSession) — a fronteira que a ponte vai expor
 │  │                       #    save/load por replay determinístico (docs/03 §8.1)
 │  ├─ persist/             # ✅ save binário versionado — checksum, escrita atômica, sem blocos ainda
-│  ├─ ai/                  # 🚧 esqueleto compilável — ver docs/07-roadmap.md para o marco
+│  ├─ ai/                  # ✅ escalação automática (11 titulares por posição/CA) — mercado ainda falta
 │  └─ cli/                 # ✅ managerfc-cli — version, pack validate, bench, calibrate, play, save, load
 ├─ packs/core/             # ✅ pack de exemplo (1 país, 2 divisões, 16 clubes, 256 jogadores fictícios)
 ├─ app/                    # 🚧 interface Flutter (não confundir com core/app, acima) — esqueleto de
@@ -81,7 +81,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 161 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 169 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier

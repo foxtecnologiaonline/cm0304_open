@@ -1,25 +1,17 @@
 //! `ai` — IA de clube: escalação, mercado de transferências, finanças.
 //!
-//! Ainda não implementado além do esqueleto: este crate existe para que a
-//! estrutura de dependências descrita em `docs/02-arquitetura.md §3` já
-//! compile e seja testável desde o M0, mesmo antes de a regra de negócio
-//! chegar (ver `docs/07-roadmap.md` para o marco em que cada peça entra).
-//! Ver também: docs/01-requisitos.md §2.4
+//! Primeira fatia real: [`lineup::select_starting_eleven`] (escalação
+//! automática, `docs/07-roadmap.md` M1). Mercado de transferências e
+//! finanças continuam sem nenhuma linha (mercado: `docs/01-requisitos.md
+//! §2.4`; táticas/escalação completa com formação escolhida, capitão e
+//! cobradores, RF-PA-01: `docs/01 §2.5`).
+//!
+//! Depende só de `domain` (`docs/02-arquitetura.md §2`: "motor, IA e mundo
+//! dependem de domínio — nunca o inverso") — é `world` quem depende de
+//! `ai`, nunca ao contrário, então nada aqui sabe o que é um `pack` ou uma
+//! `GameSession`.
 #![warn(clippy::all)]
 
-/// Placeholder que prova que o crate compila e está corretamente ligado a
-/// `domain` — removido assim que a primeira funcionalidade real chegar.
-#[must_use]
-pub fn crate_name() -> &'static str {
-    "ai"
-}
+mod lineup;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn crate_esta_ligado_e_nomeado_corretamente() {
-        assert_eq!(crate_name(), "ai");
-    }
-}
+pub use lineup::{FORMATION, PlayerRating, select_starting_eleven};
