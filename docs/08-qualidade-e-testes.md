@@ -66,6 +66,20 @@ principais e distribuição de CA. Falha de verificação tem **duas leituras po
 Nunca se regrava um golden "para fazer a CI passar". Essa regra vai no `CONTRIBUTING.md`
 e é verificada na revisão.
 
+> **Estado de implementação:** `managerfc-cli golden record`/`golden verify` já são
+> reais (não um placeholder), com um escopo mais estreito que o parágrafo acima descreve.
+> O que o arquivo guarda hoje: as tabelas finais de cada competição e os totais agregados
+> de uma `app::GameSession` (partidas, movimentações de acesso/queda, transferências,
+> lesões), mais um `state_hash` (FNV-1a) sobre todo o conteúdo serializado. `golden
+> verify` roda a mesma simulação (seed + temporadas gravadas) e compara o hash — é o que
+> detecta regressão. O que **ainda não** está coberto, por depender de recursos que não
+> existem ainda: hash de estado **por dia** (não há calendário diário em `world`),
+> **artilheiros** (`MatchEvent::Goal` ainda não carrega o autor do gol) e **distribuição
+> de CA** (nenhum `app::Query` expõe o CA do elenco). Um arquivo de referência real está
+> commitado em `core/tests/golden/s42.json` e verificado no job `cli-gate` nas três
+> famílias de SO da matriz de CI — é isso que de fato comprova, e não só promete, o
+> determinismo cross-platform do ADR 0002.
+
 ---
 
 ## 4. Calibração

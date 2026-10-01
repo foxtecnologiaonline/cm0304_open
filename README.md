@@ -70,7 +70,8 @@ cm0304_open/
 │  ├─ persist/             # ✅ save binário versionado — checksum, escrita atômica, sem blocos ainda
 │  ├─ ai/                  # ✅ escalação automática (11 titulares por posição/CA) +
 │  │                       #    primeira IA de mercado (docs/01 §2.4) — negociação/contratos ainda faltam
-│  └─ cli/                 # ✅ managerfc-cli — version, pack validate, bench, calibrate, play, save, load
+│  └─ cli/                 # ✅ managerfc-cli — version, pack validate, bench, calibrate, play, save,
+│                          #    load, golden record/verify
 ├─ packs/core/             # ✅ pack de exemplo (1 país, 2 divisões, 16 clubes, 256 jogadores fictícios)
 ├─ app/                    # 🚧 interface Flutter (não confundir com core/app, acima) — esqueleto de
 │                          #    fonte, sem SDK Flutter neste ambiente para gerar/verificar; ver app/README.md
@@ -82,7 +83,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 210 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 215 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
@@ -91,6 +92,7 @@ cargo run --release -p managerfc-cli -- play --seasons 3   # dispatch/query via 
 cargo run --release -p managerfc-cli -- calibrate --seasons 200   # gols/partida, vitórias, finalizações, conversão
 cargo run --release -p managerfc-cli -- save --seasons 3 minha-carreira.cm0304save   # persist
 cargo run --release -p managerfc-cli -- load minha-carreira.cm0304save              # replay do save
+cargo run --release -p managerfc-cli -- golden verify --seed 42 --expect tests/golden/s42.json  # docs/08 §3
 cargo run -p managerfc-cli -- --help
 ```
 

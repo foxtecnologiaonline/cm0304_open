@@ -115,14 +115,21 @@ trabalho da comunidade.
 > do cálculo de força/qualidade (nunca é candidato a titular), e ele
 > recupera sozinho se não for sorteado de novo. Confirmado por teste que
 > lesões de fato acontecem em 5 temporadas no pack de exemplo (256
-> jogadores) e que `CommandReceipt::injuries` bate com o roster. O que
-> falta deste marco: **copa** (só liga existe), **cartão de desempenho de
-> CI cross-platform** (verificação de hash de estado entre plataformas,
-> `docs/08 §8`), **condição, moral, fadiga, regens e aposentadoria** (só
-> CA, idade e lesão sim/não evoluem hoje), **lesão com tipo/gravidade/
+> jogadores) e que `CommandReceipt::injuries` bate com o roster. **Golden
+> masters** também já são reais: `managerfc-cli golden record`/`golden
+> verify` (`docs/08 §3`) gravam/conferem um `state_hash` (FNV-1a) sobre as
+> tabelas finais e os totais agregados de uma `app::GameSession`; um
+> arquivo de referência (`core/tests/golden/s42.json`) está commitado e é
+> verificado no job `cli-gate` nas três famílias de SO da matriz de CI —
+> isso **é** o cartão de desempenho de CI cross-platform citado em `docs/08
+> §8`, cobrindo a fatia de hash de estado entre plataformas. Escopo ainda
+> fora: hash **por dia** (sem calendário diário em `world`), artilheiros
+> (`MatchEvent::Goal` não carrega autor) e distribuição de CA (nenhum
+> `app::Query` expõe isso). O que falta deste marco: **copa** (só liga
+> existe), **condição, moral, fadiga, regens e aposentadoria** (só CA,
+> idade e lesão sim/não evoluem hoje), e **lesão com tipo/gravidade/
 > prazo de recuperação** (RF-JG-08 completo é M3; aqui é só sim/não por
-> temporada), e **golden masters** (formato de arquivo ainda não
-> desenhado). **A "primeira IA de mercado"** também já é real:
+> temporada). **A "primeira IA de mercado"** também já é real:
 > `ai::run_market_day` (subconjunto minúsculo de RF-TR-02/05, `docs/01
 > §2.4` — ambos marcados M2 lá porque a versão completa pede negociação,
 > disputa, reputação e contratos, nada disso existe) roda antes de cada

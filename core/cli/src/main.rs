@@ -2,22 +2,23 @@
 //!
 //! É o único jeito de rodar o núcleo sem UI: CI, balanceamento e modders
 //! passam por aqui, nunca pelo Flutter (RNF-13). `version`, `pack validate`,
-//! `bench`, `calibrate` e `play` já são reais — só `golden record`/`golden
-//! verify` seguem placeholder (esperam um formato de arquivo de golden
-//! master ainda não desenhado, `docs/08 §3`). Cada placeholder diz
-//! explicitamente em que marco passa a funcionar, para não ser confundido
-//! com um comando quebrado.
+//! `bench`, `calibrate`, `play`, `save`, `load`, `golden record` e `golden
+//! verify` são todos reais.
 //!
 //! `play` é diferente dos outros: não existe pra medir nada, existe pra
 //! provar que `app::GameSession` — a futura fronteira com a ponte
 //! `flutter_rust_bridge` — funciona de fora do próprio crate que a
 //! implementa. Todo teste de `app` roda dentro do crate; `play` é o
-//! primeiro consumidor externo do `dispatch`/`query` real.
+//! primeiro consumidor externo do `dispatch`/`query` real. `golden` reusa
+//! o mesmo caminho (ver `golden.rs`) — pega regressão em qualquer parte do
+//! pipeline (motor, progressão, mercado, lesões), não só no motor.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+
+mod golden;
 
 #[derive(Parser)]
 #[command(
@@ -140,19 +141,36 @@ enum PackAction {
 
 #[derive(Subcommand)]
 enum GoldenAction {
-    /// Grava um golden master de referência a partir de uma simulação.
-    /// Placeholder — chega com o motor v0 (M1).
+    /// Grava um golden master de referência a partir de uma simulação
+    /// (`docs/08 §3`). Só regrave intencionalmente — nunca "pra fazer a
+    /// CI passar" (mesma seção, a regra é verificada na revisão).
     Record {
         #[arg(long)]
         seed: u64,
         #[arg(long, default_value_t = 3)]
         seasons: u32,
+        /// Diretório do pack a usar. Sem isto, usa o pack de exemplo do
+        /// próprio repositório.
+        #[arg(long)]
+        pack: Option<PathBuf>,
+        /// Caminho do arquivo a gravar.
+        #[arg(long)]
+        out: PathBuf,
     },
-    /// Verifica a simulação atual contra um golden master gravado.
-    /// Placeholder — chega com o motor v0 (M1).
+    /// Verifica a simulação atual contra um golden master gravado
+    /// (`docs/08 §3`). `--seasons` não existe aqui de propósito: `verify`
+    /// reproduz exatamente o que `record` gravou, nunca uma contagem de
+    /// temporadas diferente por engano.
     Verify {
         #[arg(long)]
         seed: u64,
+        /// Diretório do pack a usar. Sem isto, usa o pack de exemplo do
+        /// próprio repositório.
+        #[arg(long)]
+        pack: Option<PathBuf>,
+        /// Caminho do golden master gravado por `golden record`.
+        #[arg(long)]
+        expect: PathBuf,
     },
 }
 
@@ -185,17 +203,17 @@ fn main() -> ExitCode {
             action: PackAction::Validate { path },
         } => pack_validate(&path),
         Command::Golden {
-            action: GoldenAction::Record { seed, seasons },
-        } => not_yet(
-            &format!("golden record --seed {seed} --seasons {seasons}"),
-            "M1 — docs/08-qualidade-e-testes.md#3-golden-masters",
-        ),
+            action:
+                GoldenAction::Record {
+                    seed,
+                    seasons,
+                    pack,
+                    out,
+                },
+        } => golden::record(seed, seasons, pack, &out),
         Command::Golden {
-            action: GoldenAction::Verify { seed },
-        } => not_yet(
-            &format!("golden verify --seed {seed}"),
-            "M1 — docs/08-qualidade-e-testes.md#3-golden-masters",
-        ),
+            action: GoldenAction::Verify { seed, pack, expect },
+        } => golden::verify(seed, pack, &expect),
     }
 }
 
@@ -261,7 +279,7 @@ fn pack_validate(path: &std::path::Path) -> ExitCode {
 /// distribuída fora dele — quando isso importar, `--pack` deixa de ser
 /// opcional ou passa a ter um default de outra natureza (pack empacotado
 /// junto do binário, por exemplo).
-fn default_example_pack_path() -> PathBuf {
+pub(crate) fn default_example_pack_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/core/example-two-tier")
 }
 
@@ -547,15 +565,6 @@ fn bench(trials: u32) -> ExitCode {
         );
         ExitCode::from(1)
     }
-}
-
-/// Mensagem padrão para subcomandos ainda não implementados — nunca um
-/// `panic!`/`unimplemented!`, porque isso quebraria `--help` e scripts que
-/// sondam a CLI (`RNF`: núcleo devolve erro tipado, nunca panic — docs/02 §9.2).
-fn not_yet(command: &str, milestone: &str) -> ExitCode {
-    eprintln!("managerfc-cli: `{command}` ainda não implementado.");
-    eprintln!("Previsto para: {milestone}");
-    ExitCode::from(2)
 }
 
 #[cfg(test)]

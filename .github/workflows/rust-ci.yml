@@ -5,8 +5,6 @@
 # (docs/07-roadmap.md#m0--fundação-6-semanas).
 #
 # Ainda faltam (ver docs/07-roadmap.md para o marco de cada item):
-#   - golden masters e verificação de hash de estado cruzada entre plataformas
-#     (formato de arquivo ainda não desenhado — docs/08-qualidade-e-testes.md §3 e §8)
 #   - benchmarks de dia/temporada (RNF-02/03 — esperam calendário com datas de
 #     verdade, `domain::GameDate`, ainda não ligado a `world`) e de mobile
 #     (RNF-01 mobile — espera aparelho de referência, docs/08 §6)
@@ -120,3 +118,9 @@ jobs:
         run: |
           cargo run -p managerfc-cli --release -- save --seasons 3 --seed 7 save.cm0304save
           cargo run -p managerfc-cli --release -- load save.cm0304save
+      - name: golden verify (hash de estado cruzado entre plataformas, docs/08 §3/§8)
+        # O arquivo é gravado uma vez (`core/tests/golden/s42.json`, commitado)
+        # e verificado aqui nas 3 famílias de SO da matriz — é isso que prova
+        # que a simulação é byte-a-byte idêntica entre elas (ADR 0002), não
+        # só "roda sem erro" em cada uma isoladamente.
+        run: cargo run -p managerfc-cli --release -- golden verify --seed 42 --expect tests/golden/s42.json

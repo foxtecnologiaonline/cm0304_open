@@ -276,6 +276,8 @@ dependencies = [
  "engine",
  "pack",
  "persist",
+ "serde",
+ "serde_json",
  "world",
 ]
 
