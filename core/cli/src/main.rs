@@ -11,13 +11,17 @@
 //! implementa. Todo teste de `app` roda dentro do crate; `play` é o
 //! primeiro consumidor externo do `dispatch`/`query` real. `golden` reusa
 //! o mesmo caminho (ver `golden.rs`) — pega regressão em qualquer parte do
-//! pipeline (motor, progressão, mercado, lesões), não só no motor.
+//! pipeline (motor, progressão, mercado, lesões), não só no motor. `calibrate
+//! --check` (ver `calibration.rs`) é o outro portão: falha se alguma das 5
+//! métricas hoje mensuráveis sair da tolerância de `docs/04 §4.1` — é o que
+//! roda no job `cli-gate` da CI.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+mod calibration;
 mod golden;
 
 #[derive(Parser)]
@@ -65,6 +69,17 @@ enum Command {
         /// base de escala real (essa espera o pipeline de `docs/05 §3.3`).
         #[arg(long)]
         pack: Option<PathBuf>,
+        /// Falha (exit code != 0) se alguma métrica medível sair da
+        /// tolerância de `docs/04 §4.1` — é isto que transforma `calibrate`
+        /// num portão de CI (`docs/07` M1: "primeiras tolerâncias em CI"),
+        /// em vez de só um relatório pra ler.
+        #[arg(long)]
+        check: bool,
+        /// Acrescenta uma linha de CSV com as métricas desta rodada neste
+        /// caminho (cabeçalho escrito se o arquivo ainda não existe) —
+        /// `docs/04 §4.2`: "calibrate roda temporadas headless e emite CSV".
+        #[arg(long)]
+        csv: Option<PathBuf>,
     },
 
     /// Joga N temporadas via `app::GameSession` — o mesmo `dispatch`/`query`
@@ -186,7 +201,9 @@ fn main() -> ExitCode {
             seasons,
             seed,
             pack,
-        } => calibrate(seasons, seed, pack),
+            check,
+            csv,
+        } => calibrate(seasons, seed, pack, check, csv.as_deref()),
         Command::Play {
             seasons,
             seed,
@@ -290,7 +307,13 @@ pub(crate) fn default_example_pack_path() -> PathBuf {
 /// CA×pontos — essa última nem faz sentido ainda, sem CA de jogador de
 /// verdade) — é o suficiente para saber se o motor está grosseiramente
 /// fora, o que já é mais do que existia antes deste comando.
-fn calibrate(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
+fn calibrate(
+    seasons: u32,
+    seed: u64,
+    pack_path: Option<PathBuf>,
+    check: bool,
+    csv_path: Option<&std::path::Path>,
+) -> ExitCode {
     let path = pack_path.unwrap_or_else(default_example_pack_path);
     let report = match pack::load_and_validate(&path) {
         Ok(report) => report,
@@ -332,34 +355,71 @@ fn calibrate(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let avg_goals_permille = goals * 1000 / matches;
-    let home_win_pct = home_wins * 100 / matches;
     let away_win_pct = away_wins * 100 / matches;
-    let draw_pct = draws * 100 / matches;
-    // Finalizações por time (não por partida): docs/04 §4.1 mira 12,5 por
-    // time, então divide por 2 lados além de por partida.
-    let avg_shots_per_team_permille = shots * 1000 / matches / 2;
-    let conversion_permille = if shots == 0 { 0 } else { goals * 1000 / shots };
+    let metrics = calibration::Metrics {
+        matches,
+        avg_goals_permille: goals * 1000 / matches,
+        home_win_pct: home_wins * 100 / matches,
+        draw_pct: draws * 100 / matches,
+        // Finalizações por time (não por partida): docs/04 §4.1 mira 12,5
+        // por time, então divide por 2 lados além de por partida.
+        avg_shots_per_team_permille: shots * 1000 / matches / 2,
+        conversion_permille: if shots == 0 { 0 } else { goals * 1000 / shots },
+    };
 
+    let badge = |ok: bool| if ok { "OK  " } else { "FORA" };
     println!("{matches} partidas simuladas ao todo");
     println!(
-        "gols/partida:          {}.{:03}  (alvo docs/04 §4.1: 2.700 ± 0.15)",
-        avg_goals_permille / 1000,
-        avg_goals_permille % 1000
-    );
-    println!("vitórias do mandante:  {home_win_pct}%   (alvo: ~44% ± 3pp)");
-    println!("empates:               {draw_pct}%   (alvo: ~25% ± 3pp)");
-    println!("vitórias do visitante: {away_win_pct}%   (complemento)");
-    println!(
-        "finalizações/time:     {}.{:03}  (alvo docs/04 §4.1: 12.500 ± 1.5)",
-        avg_shots_per_team_permille / 1000,
-        avg_shots_per_team_permille % 1000
+        "[{}] gols/partida:          {}.{:03}  (alvo docs/04 §4.1: 2.700 ± 0.15)",
+        badge(calibration::GOALS_PER_MATCH_PERMILLE.check(metrics.avg_goals_permille)),
+        metrics.avg_goals_permille / 1000,
+        metrics.avg_goals_permille % 1000
     );
     println!(
-        "conversão de chutes:   {}.{}%  (alvo docs/04 §4.1: 10.5% ± 1.5pp)",
-        conversion_permille / 10,
-        conversion_permille % 10
+        "[{}] vitórias do mandante:  {}%   (alvo: ~44% ± 3pp)",
+        badge(calibration::HOME_WIN_PCT.check(metrics.home_win_pct)),
+        metrics.home_win_pct
     );
+    println!(
+        "[{}] empates:               {}%   (alvo: ~25% ± 3pp)",
+        badge(calibration::DRAW_PCT.check(metrics.draw_pct)),
+        metrics.draw_pct
+    );
+    println!("     vitórias do visitante: {away_win_pct}%   (complemento, sem alvo próprio)");
+    println!(
+        "[{}] finalizações/time:     {}.{:03}  (alvo docs/04 §4.1: 12.500 ± 1.5)",
+        badge(calibration::SHOTS_PER_TEAM_PERMILLE.check(metrics.avg_shots_per_team_permille)),
+        metrics.avg_shots_per_team_permille / 1000,
+        metrics.avg_shots_per_team_permille % 1000
+    );
+    println!(
+        "[{}] conversão de chutes:   {}.{}%  (alvo docs/04 §4.1: 10.5% ± 1.5pp)",
+        badge(calibration::CONVERSION_PERMILLE.check(metrics.conversion_permille)),
+        metrics.conversion_permille / 10,
+        metrics.conversion_permille % 10
+    );
+    println!(
+        "(posse, cartões, lesões/1000min, placares 0x0 e correlação CA×pontos de docs/04 §4.1 \
+         não são medidos ainda — dependem de dados que o motor não produz, ver cli/src/calibration.rs)"
+    );
+
+    if let Some(csv_path) = csv_path {
+        if let Err(err) = calibration::append_csv_row(csv_path, seed, seasons, &metrics) {
+            eprintln!(
+                "managerfc-cli: falha ao escrever CSV em {}: {err}",
+                csv_path.display()
+            );
+            return ExitCode::from(2);
+        }
+        println!("CSV atualizado em {}", csv_path.display());
+    }
+
+    if check && !metrics.all_within_tolerance() {
+        eprintln!(
+            "managerfc-cli: calibração fora da tolerância de docs/04 §4.1 (ver [FORA] acima)"
+        );
+        return ExitCode::from(1);
+    }
     ExitCode::SUCCESS
 }
 

@@ -75,12 +75,17 @@ trabalho da comunidade.
 > temporadas, tudo consumindo o motor (v0.5 agora — ver `docs/04`, finalização
 > vs. goleiro decide conversão, não só a força bruta) e testado com
 > `world::run_seasons` contra o pack de exemplo do M0. `managerfc-cli
-> calibrate` já roda e imprime gols/partida, % de vitória do mandante,
-> finalizações/time e % de conversão contra os alvos de `docs/04 §4.1`
-> (números contra o pack de exemplo, 200 temporadas: ~2,65 gols/partida,
-> ~47% de vitórias do mandante, ~12,5 finalizações/time, ~10,5% de
-> conversão — as duas últimas quase exatas, as duas primeiras dentro ou na
-> borda da tolerância, sem nenhum ajuste fino ainda). `pack` agora também
+> calibrate` já roda e imprime as 5 métricas mensuráveis (gols/partida, %
+> de vitória do mandante, % de empate, finalizações/time, % de conversão)
+> contra os alvos de `docs/04 §4.1`, com `--check` (falha se alguma sair
+> da tolerância — é o item "primeiras tolerâncias em CI" deste marco,
+> agora real no job `cli-gate`) e `--csv` (acrescenta uma linha por
+> rodada). Números contra o pack de exemplo, 200 temporadas: ~2,65
+> gols/partida, ~44% de vitórias do mandante, ~12,5 finalizações/time,
+> ~10,5% de conversão — todas dentro da tolerância, não mais na borda:
+> `HOME_ADVANTAGE` (motor) foi recalibrado de 1,4 para 1,25 depois que
+> `--check` expôs que o valor herdado do v0 deixava o mandante fora da
+> faixa com o motor v0.5 (`docs/04 §4.1`, nota de implementação). `pack` agora também
 > carrega `people/*.json` (`docs/03 §3`/`§7`) —
 > jogadores de verdade, com atributos e CA/PA — e `world::strength_from_squad`
 > usa a média de CA do elenco declarado como força do clube, com o sorteio

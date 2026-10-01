@@ -66,8 +66,14 @@ const MAX_LAMBDA: Fixed = Fixed::from_int(40);
 const TOTAL_SHOTS_TARGET: Fixed = Fixed::from_int(25);
 
 /// Vantagem de mando: razão `λ_home / λ_away` quando as forças são iguais.
-/// Mesmo valor e mesmo papel do v0 — ver `docs/04 §4.1`.
-const HOME_ADVANTAGE: Fixed = Fixed::from_ratio(14, 10);
+/// Recalibrado de 1,4 (valor herdado do v0) para 1,25: com a conversão em
+/// duas etapas do v0.5, 1,4 deixava vitórias do mandante na borda/fora da
+/// tolerância de `docs/04 §4.1` (44% ± 3pp) — `managerfc-cli calibrate
+/// --check` media 47-48% em várias seeds com 50 temporadas. Com 1,25, 6
+/// seeds testadas (1/7/42/100/999/55555 × 50 temporadas) ficam todas entre
+/// 43-45%, dentro da tolerância sem exceção. `sim_version` (persist) foi
+/// incrementado de 0 para 1 junto desta mudança (`docs/08 §3`).
+const HOME_ADVANTAGE: Fixed = Fixed::from_ratio(5, 4);
 
 /// Conversão de finalização em gol quando finalização e goleiro têm
 /// qualidade igual — escolhido para que `TOTAL_SHOTS_TARGET ×

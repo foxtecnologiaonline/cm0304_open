@@ -83,13 +83,14 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 215 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 221 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
 cargo run --release -p managerfc-cli -- bench     # RNF-01: ≤ 1,5 ms/partida em desktop
 cargo run --release -p managerfc-cli -- play --seasons 3   # dispatch/query via app::GameSession
 cargo run --release -p managerfc-cli -- calibrate --seasons 200   # gols/partida, vitórias, finalizações, conversão
+cargo run --release -p managerfc-cli -- calibrate --seasons 50 --check   # falha se sair da tolerância (portão de CI)
 cargo run --release -p managerfc-cli -- save --seasons 3 minha-carreira.cm0304save   # persist
 cargo run --release -p managerfc-cli -- load minha-carreira.cm0304save              # replay do save
 cargo run --release -p managerfc-cli -- golden verify --seed 42 --expect tests/golden/s42.json  # docs/08 §3

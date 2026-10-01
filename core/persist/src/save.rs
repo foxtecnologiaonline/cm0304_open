@@ -46,10 +46,13 @@ const MAGIC: [u8; 10] = *b"CM0304OPEN";
 /// nenhum dos dois existe ainda porque não há uma versão anterior.
 pub const SCHEMA_VERSION: u16 = 1;
 
-/// Versão do motor de simulação que produziu este save — hoje sempre 0
-/// (motor v0, `docs/04 §7`). Guardada para o dia em que golden masters
-/// (`docs/08 §3`) precisarem recusar comparar saves de motores diferentes.
-pub const SIM_VERSION: u16 = 0;
+/// Versão do motor de simulação que produziu este save. Bump 0→1: motor
+/// v0.5 recalibrado (`HOME_ADVANTAGE` 1,4→1,25 em `engine::simulate`, ver
+/// `docs/04 §4.1`/`§4.2`) — a regra de `docs/08 §3` é "nunca regravar um
+/// golden sem bump de `sim_version`"; este é o primeiro bump de verdade.
+/// Ainda não é lido por `golden::verify` (`docs/08 §3`, próxima fatia) nem
+/// recusa comparar saves de motores diferentes — só guardado por enquanto.
+pub const SIM_VERSION: u16 = 1;
 
 /// O conteúdo de um save — o suficiente para `app::GameSession::load`
 /// reconstruir a sessão por replay. Ver o doc do módulo para o porquê de

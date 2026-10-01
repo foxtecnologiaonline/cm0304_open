@@ -78,7 +78,13 @@ e é verificada na revisão.
 > de CA** (nenhum `app::Query` expõe o CA do elenco). Um arquivo de referência real está
 > commitado em `core/tests/golden/s42.json` e verificado no job `cli-gate` nas três
 > famílias de SO da matriz de CI — é isso que de fato comprova, e não só promete, o
-> determinismo cross-platform do ADR 0002.
+> determinismo cross-platform do ADR 0002. O primeiro bump real de
+> `persist::SIM_VERSION` (0→1) e a primeira regravação legítima deste arquivo
+> aconteceram juntos, pela regra do parágrafo acima: `HOME_ADVANTAGE` do motor
+> mudou (`docs/04 §4.1`) depois que `managerfc-cli calibrate --check` (novo,
+> ver `docs/04 §4.2`) expôs que o valor herdado do v0 deixava vitórias do
+> mandante fora da tolerância — não uma regressão por acidente, mudança
+> intencional de balanceamento, documentada no commit que regravou o hash.
 
 ---
 

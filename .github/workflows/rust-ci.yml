@@ -109,8 +109,13 @@ jobs:
         run: cargo run -p managerfc-cli --release -- pack validate ../packs/core/example-two-tier
       - name: bench (RNF-01, desktop)
         run: cargo run -p managerfc-cli --release -- bench --trials 20000
-      - name: calibrate (sanidade do motor v0, docs/04 §4.1)
-        run: cargo run -p managerfc-cli --release -- calibrate --seasons 50
+      - name: calibrate --check (portão de tolerância, docs/04 §4.1, docs/07 M1)
+        # `--check` falha o passo se alguma das 5 métricas hoje mensuráveis
+        # (gols/partida, vitórias do mandante, empates, finalizações/time,
+        # conversão) sair da tolerância de docs/04 §4.1 — as outras 6 linhas
+        # da tabela (posse, cartões, lesões/1000min, 0x0, correlação CA×pontos)
+        # ainda não têm dado por trás (ver `cli/src/calibration.rs`).
+        run: cargo run -p managerfc-cli --release -- calibrate --seasons 50 --seed 42 --check
       - name: play (fronteira app::GameSession, docs/02 §4)
         run: cargo run -p managerfc-cli --release -- play --seasons 3
       - name: save/load (persist — round-trip cross-platform, docs/03 §8.1)

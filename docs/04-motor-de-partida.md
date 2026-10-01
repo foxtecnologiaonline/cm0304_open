@@ -23,15 +23,24 @@ ele é, o que ele não tenta ser, como é calibrado e quanto pode custar**.
 > `Injury`/`Sub`/`Positions` continuam esperando jogadores em campo de
 > verdade (tática, zona — v1/v2). Nenhuma zona, ângulo, pressão, clima ou
 > pé entra ainda — a fórmula completa de `§2.3` fica para quando a camada
-> de posse por zona existir. `TOTAL_SHOTS_TARGET`, `HOME_ADVANTAGE` e
+> de posse por zona existir. `TOTAL_SHOTS_TARGET` e
 > `BASELINE_CONVERSION_PERMILLE` são valores iniciais plausíveis, não uma
 > calibração fina — mas já batem de perto com os alvos publicados: contra
 > o pack de exemplo, 200 temporadas dão ~2,65 gols/partida (alvo 2,70),
 > ~12,5 finalizações/time (alvo 12,5, quase exato) e ~10,5% de conversão
-> (alvo 10,5%, exato) — as duas últimas métricas são novas, o v0 não tinha
-> como medi-las. `managerfc-cli calibrate` já reporta as quatro. Não é a
-> suíte de calibração completa de `§4` (falta histórico versionado,
-> distribuição de placares, cartões, lesões, correlação CA×pontos — essa
+> (alvo 10,5%, exato). `HOME_ADVANTAGE` já passou por uma calibração real,
+> não só um palpite inicial: herdava 1,4 do v0 sem reajuste, o que deixava
+> vitórias do mandante na borda ou fora da tolerância (44% ± 3pp) com a
+> conversão em duas etapas do v0.5 — `managerfc-cli calibrate --check`
+> (`§4.2`, abaixo) foi o que expôs isso. Recalibrado para 1,25, testado
+> contra 6 seeds × 50 temporadas (43-45% em todas); `persist::SIM_VERSION`
+> foi de 0 para 1 junto (`docs/08 §3`). `managerfc-cli calibrate` reporta
+> as cinco métricas mensuráveis (as duas de finalização são novas, o v0
+> não tinha como medi-las), com `--check` (falha se alguma sair da
+> tolerância — é o portão de CI do `cli-gate`) e `--csv` (acrescenta uma
+> linha por rodada, para comparar ao longo do tempo). Não é a suíte de
+> calibração completa de `§4` (falta histórico versionado, distribuição de
+> placares, cartões, lesões por partida, correlação CA×pontos — essa
 > última ainda sem sentido sem progressão calibrada de verdade). Testes:
 > `cargo test -p engine` e `-p world`, incluindo sanidade estatística
 > grosseira contra os quatro alvos desta seção e um teste dedicado de que
@@ -173,6 +182,19 @@ motor honesto.
 2. Comparação com dados públicos (ex.: séries históricas de resultados de ligas abertas).
 3. Ajuste **em dados** (`packs/core/engine.toml`), nunca em código.
 4. Golden masters recongelados **apenas** com bump de `sim_version` e nota de release.
+
+> **Estado de implementação:** os passos 1 e 4 já são reais —
+> `managerfc-cli calibrate --csv <caminho>` acrescenta uma linha por rodada
+> (não automático, é opt-in via flag) e `golden record`/`golden verify`
+> existem de verdade (`docs/08 §3`). O passo 3 (`packs/core/engine.toml`)
+> **não existe ainda** — não há mecanismo de ajuste por dado algum hoje,
+> toda constante de calibração (`TOTAL_SHOTS_TARGET`, `HOME_ADVANTAGE`,
+> `BASELINE_CONVERSION_PERMILLE`) mora em código, em `engine::simulate`. O
+> primeiro ajuste real de balanceamento do projeto (`HOME_ADVANTAGE`
+> 1,4→1,25, ver `§4.1` acima) seguiu o passo 4 à risca (bump de
+> `sim_version`, golden regravado, nota no commit) mas teve que violar o
+> passo 3 por necessidade — o `engine.toml` fica para quando houver mais
+> de uma constante pra justificar o mecanismo.
 
 ### 4.3 Anti-exploit (a lição mais cara do gênero)
 
