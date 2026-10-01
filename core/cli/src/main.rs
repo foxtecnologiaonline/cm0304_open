@@ -304,6 +304,7 @@ fn calibrate(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
 
     let matches: u64 = results.iter().map(|r| u64::from(r.matches_played)).sum();
     let goals: u64 = results.iter().map(|r| u64::from(r.total_goals)).sum();
+    let shots: u64 = results.iter().map(|r| u64::from(r.total_shots)).sum();
     let home_wins: u64 = results.iter().map(|r| u64::from(r.home_wins)).sum();
     let away_wins: u64 = results.iter().map(|r| u64::from(r.away_wins)).sum();
     let draws: u64 = results.iter().map(|r| u64::from(r.draws)).sum();
@@ -317,6 +318,10 @@ fn calibrate(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
     let home_win_pct = home_wins * 100 / matches;
     let away_win_pct = away_wins * 100 / matches;
     let draw_pct = draws * 100 / matches;
+    // Finalizações por time (não por partida): docs/04 §4.1 mira 12,5 por
+    // time, então divide por 2 lados além de por partida.
+    let avg_shots_per_team_permille = shots * 1000 / matches / 2;
+    let conversion_permille = if shots == 0 { 0 } else { goals * 1000 / shots };
 
     println!("{matches} partidas simuladas ao todo");
     println!(
@@ -327,6 +332,16 @@ fn calibrate(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
     println!("vitórias do mandante:  {home_win_pct}%   (alvo: ~44% ± 3pp)");
     println!("empates:               {draw_pct}%   (alvo: ~25% ± 3pp)");
     println!("vitórias do visitante: {away_win_pct}%   (complemento)");
+    println!(
+        "finalizações/time:     {}.{:03}  (alvo docs/04 §4.1: 12.500 ± 1.5)",
+        avg_shots_per_team_permille / 1000,
+        avg_shots_per_team_permille % 1000
+    );
+    println!(
+        "conversão de chutes:   {}.{}%  (alvo docs/04 §4.1: 10.5% ± 1.5pp)",
+        conversion_permille / 10,
+        conversion_permille % 10
+    );
     ExitCode::SUCCESS
 }
 
@@ -491,8 +506,13 @@ const BENCH_BUDGET_DESKTOP_NANOS: u128 = 1_500_000;
 /// motor (nem time nem o outro "resolve" cedo por diferença grande de
 /// força), então tende a ser o teto de custo, não o típico.
 fn bench(trials: u32) -> ExitCode {
-    let home = engine::TeamStrength::new(domain::Fixed::from_int(100));
-    let away = engine::TeamStrength::new(domain::Fixed::from_int(100));
+    let neutral_profile = engine::TeamMatchProfile {
+        strength: engine::TeamStrength::new(domain::Fixed::from_int(100)),
+        finishing: engine::FinishingQuality::new(domain::Fixed::from_int(10)),
+        goalkeeping: engine::GoalkeepingQuality::new(domain::Fixed::from_int(10)),
+    };
+    let home = neutral_profile;
+    let away = neutral_profile;
 
     let start = std::time::Instant::now();
     let mut total_events = 0usize;

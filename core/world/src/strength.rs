@@ -42,9 +42,11 @@ pub fn generate_strengths(pack: &LoadedPack, world_seed: u64) -> Vec<TeamStrengt
         .collect()
 }
 
-/// Sorteia a força sintética de um clube — só usada como *fallback* quando
-/// [`strength_from_squad`] não tem elenco pra trabalhar.
-fn synthetic_strength(club: ClubId, world_seed: u64) -> TeamStrength {
+/// Sorteia a força sintética de um clube — *fallback* quando
+/// [`strength_from_squad`] não tem elenco pra trabalhar. `pub(crate)` porque
+/// `crate::quality` reaproveita exatamente a mesma lógica para o lado
+/// "força" de um [`engine::TeamMatchProfile`] sintético.
+pub(crate) fn synthetic_strength(club: ClubId, world_seed: u64) -> TeamStrength {
     let mut rng = DeterministicRng::seeded(
         world_seed,
         "world.club_strength",

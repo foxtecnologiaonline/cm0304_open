@@ -19,12 +19,19 @@ pub enum Side {
 
 /// Um evento da partida, na ordem em que aconteceu.
 ///
-/// `minute` é `1..=90` (sem acréscimos no v0 — chegam com o motor v1/v2,
+/// `minute` é `1..=90` (sem acréscimos no v0/v0.5 — chegam com o motor v1/v2,
 /// junto de cartões e lesões, que são o que hoje estende o tempo de jogo).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchEvent {
     /// Início da partida.
     KickOff,
+    /// Uma finalização — pode ou não vir seguida de um [`MatchEvent::Goal`]
+    /// no mesmo minuto (`crate::simulate`, primeira fatia da camada de
+    /// evento de `docs/04 §2.3`: resolve "virou gol?" a partir de
+    /// finalização do atacante vs. goleiro, não mais um sorteio de gol
+    /// direto). Sem autor nem `xg_milli`/`outcome` do contrato completo —
+    /// jogador em campo de verdade é M2/M3.
+    Shot { minute: u8, side: Side },
     /// Um gol, sem autor — jogadores entram no v1 (`docs/07` M2), quando o
     /// motor passa a receber uma escalação de verdade, não só duas forças.
     Goal { minute: u8, side: Side },
@@ -45,6 +52,25 @@ pub fn score(events: &[MatchEvent]) -> (u32, u32) {
                 side: Side::Home, ..
             } => (home + 1, away),
             MatchEvent::Goal {
+                side: Side::Away, ..
+            } => (home, away + 1),
+            _ => (home, away),
+        })
+}
+
+/// Conta finalizações por lado — mesma filosofia de [`score`]: deriva da
+/// lista de eventos, nunca um contador paralelo. Alimenta a calibração de
+/// "finalizações por time"/"conversão de finalizações" (`docs/04 §4.1`),
+/// que antes desta variante não tinha como ser medida.
+#[must_use]
+pub fn shots(events: &[MatchEvent]) -> (u32, u32) {
+    events
+        .iter()
+        .fold((0, 0), |(home, away), event| match event {
+            MatchEvent::Shot {
+                side: Side::Home, ..
+            } => (home + 1, away),
+            MatchEvent::Shot {
                 side: Side::Away, ..
             } => (home, away + 1),
             _ => (home, away),
@@ -82,5 +108,34 @@ mod tests {
     #[test]
     fn score_de_lista_vazia_e_zero_a_zero() {
         assert_eq!(score(&[]), (0, 0));
+    }
+
+    #[test]
+    fn shots_conta_finalizacoes_por_lado_incluindo_as_que_nao_viraram_gol() {
+        let events = [
+            MatchEvent::KickOff,
+            MatchEvent::Shot {
+                minute: 5,
+                side: Side::Home,
+            },
+            MatchEvent::Shot {
+                minute: 10,
+                side: Side::Home,
+            },
+            MatchEvent::Goal {
+                minute: 10,
+                side: Side::Home,
+            },
+            MatchEvent::Shot {
+                minute: 45,
+                side: Side::Away,
+            },
+            MatchEvent::FullTime {
+                home_goals: 1,
+                away_goals: 0,
+            },
+        ];
+        // 2 finalizações do mandante (só 1 virou gol) + 1 do visitante.
+        assert_eq!(shots(&events), (2, 1));
     }
 }

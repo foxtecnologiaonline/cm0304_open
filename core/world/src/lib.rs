@@ -13,11 +13,13 @@
 mod finance;
 mod market;
 mod progression;
+mod quality;
 mod season;
 mod strength;
 
 pub use finance::generate_budgets;
 pub use market::run_market_day;
 pub use progression::{PlayerState, advance_season, initial_roster};
+pub use quality::{generate_match_profiles, generate_match_profiles_from_roster};
 pub use season::{SeasonResult, run_season, run_seasons};
 pub use strength::{generate_strengths, generate_strengths_from_roster, strength_of};

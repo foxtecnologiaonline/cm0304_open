@@ -8,25 +8,35 @@ ele é, o que ele não tenta ser, como é calibrado e quanto pode custar**.
 > Elifoot 98 funcionavam — e, principalmente, **os dois exploits históricos** ("Diablo"
 > no CM 03/04, "5-0-5" no Elifoot) que justificam a suíte anti-exploit da §4.3.
 >
-> **Estado de implementação:** o crate `engine` já tem uma primeira versão do
-> **v0** (`§7`): duas `TeamStrength`, sem tática nem posse, caminhando os 90
-> minutos e sorteando gol por minuto via `DeterministicRng::chance_per_mille`
-> (uma aproximação por *thinning* binomial de um processo de Poisson — dá no
-> mesmo resultado prático de amostrar Poisson direto, mas reaproveita RNG já
-> testado em vez de precisar de uma tabela de `exp(-λ)` só para isto). O
-> contrato de `MatchEvent` da `§5` ainda é só o subconjunto que o v0 de fato
-> produz (`KickOff`, `Goal`, `FullTime`) — `Shot`/`Foul`/`Injury`/`Sub`/
-> `Positions` esperam jogadores em campo (v1/v2). `TOTAL_GOALS_TARGET` e
-> `HOME_ADVANTAGE` são valores iniciais plausíveis, não uma calibração fina.
-> `managerfc-cli calibrate` já roda de ponta a ponta (carrega um pack,
-> simula N temporadas via `world::run_seasons`, imprime gols/partida e % de
-> vitória do mandante) — primeiros números contra o pack de exemplo: ~2,70
-> gols/partida (alvo 2,70) e 44–49% de vitórias do mandante (alvo ~44%) em
-> 200 temporadas, sem nenhum ajuste ainda. Não é a suíte de calibração
-> completa de `§4` (falta histórico versionado, distribuição de placares,
-> correlação CA×pontos — essa última sem sentido antes de CA de jogador
-> existir). Testes: `cargo test -p engine` e `-p world`, incluindo uma
-> sanidade estatística grosseira contra o alvo de gols/partida desta seção.
+> **Estado de implementação:** o crate `engine` passou do **v0** puro para
+> um **v0.5** (`§7`): o volume de finalizações por partida ainda vem só da
+> força relativa (`TeamStrength`, mesmo mecanismo do v0 — `DeterministicRng::chance_per_mille`
+> aproximando Poisson por *thinning*), mas agora cada finalização passa por
+> um segundo sorteio independente — a primeira comparação ponderada
+> atacante-vs-defensor de verdade da camada de evento (`§2.3`):
+> `FinishingQuality` (média de finalização+frieza dos atacantes titulares)
+> contra `GoalkeepingQuality` (média de reflexos+posicionamento+jogo aéreo
+> do goleiro titular), ambas calculadas por `world::quality` a partir dos
+> **36 atributos visíveis de verdade** de `pack::ResolvedPlayer` — a
+> primeira vez que algo além de CA agregado influencia uma partida.
+> `MatchEvent::Shot` chega ao contrato de `§5` por causa disso; `Foul`/
+> `Injury`/`Sub`/`Positions` continuam esperando jogadores em campo de
+> verdade (tática, zona — v1/v2). Nenhuma zona, ângulo, pressão, clima ou
+> pé entra ainda — a fórmula completa de `§2.3` fica para quando a camada
+> de posse por zona existir. `TOTAL_SHOTS_TARGET`, `HOME_ADVANTAGE` e
+> `BASELINE_CONVERSION_PERMILLE` são valores iniciais plausíveis, não uma
+> calibração fina — mas já batem de perto com os alvos publicados: contra
+> o pack de exemplo, 200 temporadas dão ~2,65 gols/partida (alvo 2,70),
+> ~12,5 finalizações/time (alvo 12,5, quase exato) e ~10,5% de conversão
+> (alvo 10,5%, exato) — as duas últimas métricas são novas, o v0 não tinha
+> como medi-las. `managerfc-cli calibrate` já reporta as quatro. Não é a
+> suíte de calibração completa de `§4` (falta histórico versionado,
+> distribuição de placares, cartões, lesões, correlação CA×pontos — essa
+> última ainda sem sentido sem progressão calibrada de verdade). Testes:
+> `cargo test -p engine` e `-p world`, incluindo sanidade estatística
+> grosseira contra os quatro alvos desta seção e um teste dedicado de que
+> um time com finalização muito melhor contra um goleiro muito pior marca
+> consistentemente mais, não só empata no volume de chutes.
 
 ---
 

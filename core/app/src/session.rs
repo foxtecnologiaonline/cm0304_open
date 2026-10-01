@@ -53,13 +53,15 @@ pub struct GameSession {
     /// (mesmo desenho de `world::season`, só que preservado entre
     /// despachos em vez de interno a uma chamada só).
     membership: Vec<CompetitionId>,
-    strengths: Vec<engine::TeamStrength>,
+    /// Força/finalização/goleiro de cada clube para o motor
+    /// (`engine::TeamMatchProfile`) — recalculado a cada `AdvanceSeason`
+    /// (`world::generate_match_profiles_from_roster`) a partir do roster
+    /// atual, então muda de temporada pra temporada mesmo sem promoção/
+    /// rebaixamento (progressão, `world::advance_season`) ou com (mercado,
+    /// `world::run_market_day`).
+    profiles: Vec<engine::TeamMatchProfile>,
     /// CA e idade de cada jogador nesta carreira (`world::progression`) —
-    /// separado de `pack.players`, que nunca muda. Recalculado em força de
-    /// clube a cada `AdvanceSeason` (`world::generate_strengths_from_roster`)
-    /// e envelhecido/progredido ao final de cada uma
-    /// (`world::advance_season`), então a força de um clube muda de
-    /// temporada pra temporada mesmo sem promoção/rebaixamento.
+    /// separado de `pack.players`, que nunca muda.
     roster: Vec<world::PlayerState>,
     /// Orçamento de cada clube, indexado por id denso (`world::generate_budgets`,
     /// sintético — pack ainda não declara finanças, `world::finance`). Só
@@ -89,7 +91,8 @@ impl GameSession {
 
         let roster = world::initial_roster(&report.pack);
         let budgets = world::generate_budgets(&report.pack, world_seed);
-        let strengths = world::generate_strengths_from_roster(&report.pack, &roster, world_seed);
+        let profiles =
+            world::generate_match_profiles_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
             report.pack.clubs.iter().map(|c| c.competition).collect();
 
@@ -98,7 +101,7 @@ impl GameSession {
             pack_id: report.manifest.id,
             pack_version: report.manifest.version,
             membership,
-            strengths,
+            profiles,
             roster,
             budgets,
             world_seed,
@@ -170,12 +173,12 @@ impl GameSession {
                 // jogar mais forte nesta mesma temporada.
                 let transfers = world::run_market_day(&mut self.roster, &mut self.budgets);
 
-                // Recalcula a força a partir do roster atual — reflete
+                // Recalcula o perfil a partir do roster atual — reflete
                 // tanto progressão (`world::advance_season`, abaixo) quanto
                 // as transferências que acabaram de acontecer. Em
                 // `season_index == 0` sem nenhuma transferência, é idêntico
                 // ao que `Self::new` já calculou.
-                self.strengths = world::generate_strengths_from_roster(
+                self.profiles = world::generate_match_profiles_from_roster(
                     &self.pack,
                     &self.roster,
                     self.world_seed,
@@ -183,7 +186,7 @@ impl GameSession {
                 let result = world::run_season(
                     &self.pack,
                     &self.membership,
-                    &self.strengths,
+                    &self.profiles,
                     self.world_seed,
                     season_index,
                 );
@@ -372,7 +375,7 @@ mod tests {
         // plausíveis mesmo com a força de clube congelada.
         let mut session = GameSession::new(&example_pack_path(), 5).unwrap();
         let initial_ages: Vec<i32> = session.roster.iter().map(|p| p.age_years).collect();
-        let initial_strengths = session.strengths.clone();
+        let initial_profiles = session.profiles.clone();
 
         for _ in 0..5 {
             session.dispatch(Command::AdvanceSeason).unwrap();
@@ -387,8 +390,8 @@ mod tests {
             "cada jogador deveria ter envelhecido exatamente 5 anos"
         );
         assert_ne!(
-            initial_strengths, session.strengths,
-            "força dos clubes deveria mudar após 5 temporadas de progressão"
+            initial_profiles, session.profiles,
+            "perfil dos clubes deveria mudar após 5 temporadas de progressão"
         );
     }
 

@@ -26,6 +26,11 @@ pub struct SeasonResult {
     pub away_wins: u32,
     pub draws: u32,
     pub total_goals: u32,
+    /// Total de finalizações (gol ou não — `engine::MatchEvent::Shot`),
+    /// somando os dois lados de toda partida da temporada. Alimenta a
+    /// calibração de "finalizações por time"/"conversão" (`docs/04 §4.1`),
+    /// que o motor v0 (sem `Shot`) não tinha como medir.
+    pub total_shots: u32,
 }
 
 impl SeasonResult {
@@ -44,13 +49,14 @@ impl SeasonResult {
 /// Simula uma temporada. `membership[club.as_usize()]` é a competição atual
 /// do clube — normalmente vem de `pack` na primeira temporada e da
 /// [`SeasonResult::movements`] da anterior daí em diante ([`run_seasons`]
-/// já cuida disso). `strengths` vem de
-/// [`crate::strength::generate_strengths`].
+/// já cuida disso). `profiles` vem de
+/// [`crate::quality::generate_match_profiles`] (ou da versão com roster,
+/// `crate::quality::generate_match_profiles_from_roster`).
 #[must_use]
 pub fn run_season(
     pack: &LoadedPack,
     membership: &[CompetitionId],
-    strengths: &[engine::TeamStrength],
+    profiles: &[engine::TeamMatchProfile],
     world_seed: u64,
     season_index: u32,
 ) -> SeasonResult {
@@ -61,6 +67,7 @@ pub fn run_season(
     let mut away_wins = 0u32;
     let mut draws = 0u32;
     let mut total_goals = 0u32;
+    let mut total_shots = 0u32;
 
     for competition in &pack.competitions {
         // Clubes atualmente na competição, em ordem de id denso — nunca via
@@ -87,17 +94,19 @@ pub fn run_season(
 
         let mut results = Vec::with_capacity(fixtures.len());
         for fixture in fixtures {
-            let home = crate::strength::strength_of(strengths, fixture.home);
-            let away = crate::strength::strength_of(strengths, fixture.away);
+            let home = profiles[fixture.home.as_usize()];
+            let away = profiles[fixture.away.as_usize()];
             let ctx = engine::MatchContext {
                 world_seed,
                 fixture: fixture_key(season_index, &fixture),
             };
             let events = engine::simulate(home, away, ctx);
             let (home_goals, away_goals) = engine::score(&events);
+            let (home_shots, away_shots) = engine::shots(&events);
 
             matches_played += 1;
             total_goals += home_goals + away_goals;
+            total_shots += home_shots + away_shots;
             match home_goals.cmp(&away_goals) {
                 Ordering::Greater => home_wins += 1,
                 Ordering::Less => away_wins += 1,
@@ -141,21 +150,24 @@ pub fn run_season(
         away_wins,
         draws,
         total_goals,
+        total_shots,
     }
 }
 
 /// Simula `seasons` temporadas em sequência, aplicando promoção e
-/// rebaixamento entre elas. A força de cada clube é sorteada uma vez
-/// (`crate::strength::generate_strengths`) e permanece constante — ver o
-/// doc daquele módulo para o porquê.
+/// rebaixamento entre elas. O perfil de cada clube é calculado uma vez
+/// (`crate::quality::generate_match_profiles`, instantâneo do pack) e
+/// permanece constante — nenhuma progressão nem mercado aqui, só
+/// `app::GameSession` acompanha estado de carreira entre temporadas; isto
+/// é o caminho simples que `managerfc-cli calibrate` usa.
 #[must_use]
 pub fn run_seasons(pack: &LoadedPack, world_seed: u64, seasons: u32) -> Vec<SeasonResult> {
-    let strengths = crate::strength::generate_strengths(pack, world_seed);
+    let profiles = crate::quality::generate_match_profiles(pack, world_seed);
     let mut membership: Vec<CompetitionId> = pack.clubs.iter().map(|c| c.competition).collect();
     let mut reports = Vec::with_capacity(seasons as usize);
 
     for season_index in 0..seasons {
-        let result = run_season(pack, &membership, &strengths, world_seed, season_index);
+        let result = run_season(pack, &membership, &profiles, world_seed, season_index);
         for &(club, _from, to) in &result.movements {
             membership[club.as_usize()] = to;
         }
@@ -207,9 +219,9 @@ mod tests {
     #[test]
     fn roda_uma_temporada_no_pack_de_exemplo_sem_travar() {
         let p = example_pack();
-        let strengths = crate::strength::generate_strengths(&p, 42);
+        let profiles = crate::quality::generate_match_profiles(&p, 42);
         let membership = initial_membership(&p);
-        let result = run_season(&p, &membership, &strengths, 42, 0);
+        let result = run_season(&p, &membership, &profiles, 42, 0);
 
         assert_eq!(result.tables.len(), 2); // tier1 e tier2
         // 8 clubes, turno+returno = 8*7 = 56 jogos por competição.
@@ -223,9 +235,9 @@ mod tests {
     #[test]
     fn soma_de_pontos_bate_com_i5_no_pack_de_exemplo() {
         let p = example_pack();
-        let strengths = crate::strength::generate_strengths(&p, 7);
+        let profiles = crate::quality::generate_match_profiles(&p, 7);
         let membership = initial_membership(&p);
-        let result = run_season(&p, &membership, &strengths, 7, 0);
+        let result = run_season(&p, &membership, &profiles, 7, 0);
 
         for (_, table) in &result.tables {
             let total_wins: u32 = table.iter().map(|r| r.wins).sum();

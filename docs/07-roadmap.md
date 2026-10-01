@@ -72,12 +72,16 @@ trabalho da comunidade.
 > **Estado de implementação:** o crate `world` já faz o essencial deste marco
 > para uma competição de exemplo — calendário (`rules::round_robin`), tabela
 > com desempate (`rules::compute_table`) e promoção/rebaixamento entre
-> temporadas, tudo consumindo o motor v0 e testado com `world::run_seasons`
-> contra o pack de exemplo do M0. `managerfc-cli calibrate` já roda e imprime
-> gols/partida e % de vitória do mandante contra os alvos de `docs/04 §4.1`
-> (primeiros números: ~2,70 gols/partida e ~44-49% de vitórias do mandante em
-> 200 temporadas — dentro ou na borda da tolerância, sem nenhum ajuste fino
-> ainda). `pack` agora também carrega `people/*.json` (`docs/03 §3`/`§7`) —
+> temporadas, tudo consumindo o motor (v0.5 agora — ver `docs/04`, finalização
+> vs. goleiro decide conversão, não só a força bruta) e testado com
+> `world::run_seasons` contra o pack de exemplo do M0. `managerfc-cli
+> calibrate` já roda e imprime gols/partida, % de vitória do mandante,
+> finalizações/time e % de conversão contra os alvos de `docs/04 §4.1`
+> (números contra o pack de exemplo, 200 temporadas: ~2,65 gols/partida,
+> ~47% de vitórias do mandante, ~12,5 finalizações/time, ~10,5% de
+> conversão — as duas últimas quase exatas, as duas primeiras dentro ou na
+> borda da tolerância, sem nenhum ajuste fino ainda). `pack` agora também
+> carrega `people/*.json` (`docs/03 §3`/`§7`) —
 > jogadores de verdade, com atributos e CA/PA — e `world::strength_from_squad`
 > usa a média de CA do elenco declarado como força do clube, com o sorteio
 > sintético (`world::strength`) só de *fallback* para clubes sem elenco; o
@@ -130,7 +134,14 @@ trabalho da comunidade.
 > escalação em si não tem tática nenhuma (não sabe de marcação, zona,
 > plano B) — e a posição do jogador é um único campo primário
 > (`domain::Position`), não a familiaridade completa por posição de
-> `docs/03 §3`.
+> `docs/03 §3`. **O motor em si avançou de v0 para v0.5** (ver a nota
+> completa em `docs/04`): `world::quality` calcula `FinishingQuality`/
+> `GoalkeepingQuality` a partir dos 36 atributos visíveis dos titulares
+> (não só CA), e `engine::simulate` resolve cada finalização num segundo
+> sorteio contra o goleiro adversário — `MatchEvent::Shot` entra no
+> contrato, finalizações/time e conversão viram métricas calibráveis pela
+> primeira vez. Ainda sem zona, ângulo, pressão, clima ou tática de
+> verdade — isso é v1/v2 (`docs/04 §7`).
 ### M2 — MVP jogável (12 semanas)
 
 **Objetivo:** responder se o loop é divertido. Ver critérios em [`00`](00-escopo.md#7-mvp--a-menor-coisa-que-prova-a-tese).
