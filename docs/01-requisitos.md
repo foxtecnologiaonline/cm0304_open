@@ -72,6 +72,16 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 | RF-JG-11 | Regens: geração procedural de juniores por país/clube, com nacionalidade, nome e potencial plausíveis | M | M3 |
 | RF-JG-12 | Dupla nacionalidade e naturalização | C | M4 |
 
+> **Estado de implementação:** `world::progression` (M1) já cobre uma
+> fatia mínima de RF-JG-05 (idade só, sem jogos/treino/moral/clube — ver
+> `docs/03 §5.1`) e `world::injuries` cobre uma fatia mínima de RF-JG-08:
+> um sorteio sim/não por jogador por temporada (~6%, não calibrado contra
+> nenhum alvo publicado), sem tipo, gravidade, prazo de recuperação
+> granular nem risco de recaída — jogador machucado só fica fora da
+> escalação a temporada inteira (`ai::select_starting_eleven` nunca o vê)
+> e recupera automaticamente se não for sorteado de novo. Nenhuma das
+> outras variáveis de RF-JG-07 (moral, condição, fadiga) existe.
+
 ### 2.4 Transferências (`TR`)
 
 | ID | Requisito | Pri | Marco |

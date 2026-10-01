@@ -107,11 +107,21 @@ trabalho da comunidade.
 > inteiro; um reserva fraco não arrasta mais a força pra baixo (pego por
 > teste dedicado, `strength_from_squad_ignora_reservas_fracos_fora_da_escalacao`).
 > A dependência segue a direção documentada em `docs/02 §2`: `ai` só
-> depende de `domain`, é `world` quem depende de `ai`, não o contrário. O
-> que falta deste marco: **copa** (só liga existe), **cartão de desempenho
-> de CI cross-platform** (verificação de hash de estado entre plataformas,
-> `docs/08 §8`), **condição, moral, lesões, regens e aposentadoria** (só CA
-> e idade evoluem hoje), e **golden masters** (formato de arquivo ainda não
+> depende de `domain`, é `world` quem depende de `ai`, não o contrário.
+> **Lesões simples** também já são reais: `world::roll_injuries` sorteia,
+> uma vez por temporada e por jogador (~6%, fatia mínima de RF-JG-08,
+> `docs/01 §2.3`), se ele fica fora de combate a temporada inteira —
+> `strength_from_roster`/`profile_from_roster` excluem jogador machucado
+> do cálculo de força/qualidade (nunca é candidato a titular), e ele
+> recupera sozinho se não for sorteado de novo. Confirmado por teste que
+> lesões de fato acontecem em 5 temporadas no pack de exemplo (256
+> jogadores) e que `CommandReceipt::injuries` bate com o roster. O que
+> falta deste marco: **copa** (só liga existe), **cartão de desempenho de
+> CI cross-platform** (verificação de hash de estado entre plataformas,
+> `docs/08 §8`), **condição, moral, fadiga, regens e aposentadoria** (só
+> CA, idade e lesão sim/não evoluem hoje), **lesão com tipo/gravidade/
+> prazo de recuperação** (RF-JG-08 completo é M3; aqui é só sim/não por
+> temporada), e **golden masters** (formato de arquivo ainda não
 > desenhado). **A "primeira IA de mercado"** também já é real:
 > `ai::run_market_day` (subconjunto minúsculo de RF-TR-02/05, `docs/01
 > §2.4` — ambos marcados M2 lá porque a versão completa pede negociação,

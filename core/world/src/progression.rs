@@ -45,6 +45,15 @@ pub struct PlayerState {
     /// ligado a `world` ainda, ver o doc do módulo).
     pub age_years: i32,
     pub ability: Ability,
+    /// `true` se o jogador está machucado nesta temporada
+    /// (`crate::injuries::roll_injuries`) — uma fatia mínima de RF-JG-08
+    /// (`docs/01 §2.3`, lesão completa com tipo/gravidade/recuperação é
+    /// M3): aqui é só sim/não por temporada inteira, sem granularidade de
+    /// dias (não há calendário mensal, ver o doc do módulo). Jogador
+    /// machucado é excluído da escalação
+    /// (`crate::strength::strength_from_roster`,
+    /// `crate::quality::profile_from_roster`).
+    pub injured: bool,
 }
 
 /// Constrói o estado inicial de carreira a partir do pack: um
@@ -63,6 +72,7 @@ pub fn initial_roster(pack: &LoadedPack) -> Vec<PlayerState> {
             position: p.position,
             age_years: pack.reference_year - p.birth.year(),
             ability: p.ability,
+            injured: false,
         })
         .collect()
 }

@@ -37,6 +37,9 @@ pub struct CommandReceipt {
     /// (`world::run_market_day`, `ai::run_market_day` — `docs/07-roadmap.md`
     /// M1: "primeira IA de mercado").
     pub transfers: usize,
+    /// Quantos jogadores estão machucados nesta temporada
+    /// (`world::roll_injuries` — `docs/01 §2.3`, RF-JG-08, fatia mínima).
+    pub injuries: usize,
 }
 
 /// Uma carreira carregada em memória.
@@ -173,11 +176,20 @@ impl GameSession {
                 // jogar mais forte nesta mesma temporada.
                 let transfers = world::run_market_day(&mut self.roster, &mut self.budgets);
 
+                // Lesões da temporada: substitui completamente o estado
+                // anterior (`world::roll_injuries`), então um jogador
+                // recuperado não some do roster — só volta a ser elegível
+                // pra escalação.
+                world::roll_injuries(&mut self.roster, self.world_seed, season_index);
+                let injuries = self.roster.iter().filter(|p| p.injured).count();
+
                 // Recalcula o perfil a partir do roster atual — reflete
-                // tanto progressão (`world::advance_season`, abaixo) quanto
-                // as transferências que acabaram de acontecer. Em
-                // `season_index == 0` sem nenhuma transferência, é idêntico
-                // ao que `Self::new` já calculou.
+                // progressão (`world::advance_season`, abaixo), as
+                // transferências que acabaram de acontecer e as lesões
+                // desta temporada (jogador machucado nunca titulariza, ver
+                // `world::strength_from_roster`/`world::profile_from_roster`).
+                // Em `season_index == 0` sem transferência nem lesão, é
+                // idêntico ao que `Self::new` já calculou.
                 self.profiles = world::generate_match_profiles_from_roster(
                     &self.pack,
                     &self.roster,
@@ -201,6 +213,7 @@ impl GameSession {
                     matches_played: result.matches_played,
                     movements: result.movements.len(),
                     transfers: transfers.len(),
+                    injuries,
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -431,6 +444,32 @@ mod tests {
         let total_before: i64 = initial_budgets.iter().map(|b| b.cents()).sum();
         let total_after: i64 = session.budgets.iter().map(|b| b.cents()).sum();
         assert_eq!(total_before, total_after);
+    }
+
+    #[test]
+    fn lesoes_de_fato_acontecem_e_excluem_jogador_da_escalacao() {
+        // Caixa branca: prova que `world::roll_injuries` está ligado ao
+        // dispatch (256 jogadores reais, ~6% de chance/temporada — esperar
+        // zero lesões em 5 temporadas seria ~1 em milhares) e que o
+        // CommandReceipt reporta a contagem certa.
+        let mut session = GameSession::new(&example_pack_path(), 13).unwrap();
+
+        let mut saw_injury = false;
+        for _ in 0..5 {
+            let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+            assert_eq!(
+                receipt.injuries,
+                session.roster.iter().filter(|p| p.injured).count(),
+                "receipt.injuries deveria bater com o roster logo após o dispatch"
+            );
+            if receipt.injuries > 0 {
+                saw_injury = true;
+            }
+        }
+        assert!(
+            saw_injury,
+            "esperava pelo menos uma lesão em 5 temporadas no pack de exemplo"
+        );
     }
 
     #[test]

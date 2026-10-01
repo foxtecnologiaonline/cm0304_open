@@ -366,11 +366,13 @@ fn play(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
     for _ in 0..seasons {
         match session.dispatch(app::Command::AdvanceSeason) {
             Ok(receipt) => println!(
-                "temporada {}: {} partidas, {} movimentação(ões) de acesso/queda, {} transferência(s)",
+                "temporada {}: {} partidas, {} movimentação(ões) de acesso/queda, \
+                 {} transferência(s), {} lesão(ões)",
                 receipt.season_index + 1,
                 receipt.matches_played,
                 receipt.movements,
-                receipt.transfers
+                receipt.transfers,
+                receipt.injuries
             ),
             Err(err) => {
                 eprintln!("managerfc-cli: falha ao avançar temporada: {err}");

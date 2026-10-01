@@ -174,6 +174,8 @@ pub fn profile_from_squad(pack: &LoadedPack, club: ClubId) -> Option<TeamMatchPr
 /// A partir do roster de carreira: CA de [`PlayerState`] (evolui com
 /// `crate::progression`, muda de clube com `crate::market`), atributos
 /// visíveis ainda vêm do pack (nunca evoluem, ver o doc de [`build_profile`]).
+/// Jogador machucado (`crate::injuries`) nunca entra no elenco considerado
+/// — mesma exclusão de [`crate::strength::strength_from_roster`].
 #[must_use]
 pub fn profile_from_roster(
     pack: &LoadedPack,
@@ -182,7 +184,7 @@ pub fn profile_from_roster(
 ) -> Option<TeamMatchProfile> {
     let squad: Vec<(Position, u8, domain::PlayerAttributes)> = roster
         .iter()
-        .filter(|p| p.club == club)
+        .filter(|p| p.club == club && !p.injured)
         .map(|p| {
             (
                 p.position,

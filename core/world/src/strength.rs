@@ -119,20 +119,20 @@ pub fn strength_of(strengths: &[TeamStrength], club: ClubId) -> TeamStrength {
 
 /// Igual a [`strength_from_squad`], mas lê o CA **e o clube atual** de um
 /// `roster` mutável (`crate::progression`) em vez do CA e do clube fixos
-/// declarados no pack — o que faz a força de um clube refletir tanto a
-/// progressão de jogadores quanto transferências (`crate::market`) ao
-/// longo de uma carreira, não o instantâneo do pack no dia em que foi
-/// carregado. Note que o elenco é agrupado por `roster[i].club`, **não**
-/// por `pack.players_of(club)`: depois de uma transferência, os dois
-/// divergem de propósito (o pack nunca muda; é assim que sabemos quem
-/// pertence a quem *agora*). `pack` só entra aqui pra saber quantos
-/// clubes existem no total (`generate_strengths_from_roster`), não pra
-/// filtrar elenco.
+/// declarados no pack — o que faz a força de um clube refletir progressão,
+/// transferências (`crate::market`) **e lesões** (`crate::injuries`:
+/// jogador machucado nunca é candidato a titular) ao longo de uma carreira,
+/// não o instantâneo do pack no dia em que foi carregado. Note que o
+/// elenco é agrupado por `roster[i].club`, **não** por
+/// `pack.players_of(club)`: depois de uma transferência, os dois divergem
+/// de propósito (o pack nunca muda; é assim que sabemos quem pertence a
+/// quem *agora*). `pack` só entra aqui pra saber quantos clubes existem no
+/// total (`generate_strengths_from_roster`), não pra filtrar elenco.
 #[must_use]
 pub fn strength_from_roster(roster: &[PlayerState], club: ClubId) -> Option<TeamStrength> {
     let squad: Vec<ai::PlayerRating> = roster
         .iter()
-        .filter(|p| p.club == club)
+        .filter(|p| p.club == club && !p.injured)
         .map(|p| ai::PlayerRating {
             player: p.player,
             position: p.position,
@@ -344,6 +344,35 @@ mod tests {
             strength_from_roster(&roster, p.clubs[1].id),
             Some(TeamStrength::new(Fixed::from_int(200)))
         );
+    }
+
+    #[test]
+    fn jogador_machucado_e_excluido_do_calculo_de_forca() {
+        let mut p = pack_without_players(1);
+        let club = p.clubs[0].id;
+        let nation = p.nations[0].id;
+        p.players = vec![
+            player_with_ca(0, club, nation, 200),
+            player_with_ca(1, club, nation, 100),
+        ];
+        let mut roster = crate::progression::initial_roster(&p);
+        // Com os dois disponíveis, os dois titularizam (só 2 meio-campistas,
+        // formação permite até 4) — média (200+100)/2 = 150.
+        assert_eq!(
+            strength_from_roster(&roster, club),
+            Some(TeamStrength::new(Fixed::from_int(150)))
+        );
+
+        roster[0].injured = true; // o de CA 200 se machuca
+        // Só o de CA 100 sobra disponível — a força cai pra 100, não fica
+        // em 150 nem o jogador machucado conta de alguma forma residual.
+        assert_eq!(
+            strength_from_roster(&roster, club),
+            Some(TeamStrength::new(Fixed::from_int(100)))
+        );
+
+        roster[1].injured = true; // os dois machucados
+        assert_eq!(strength_from_roster(&roster, club), None);
     }
 
     #[test]

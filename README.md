@@ -64,7 +64,7 @@ cm0304_open/
 │  ├─ rules/               # ✅ calendário round-robin + tabela com desempate (docs/03 §7)
 │  ├─ world/               # ✅ loop de temporada: calendário → partidas → tabela → acesso/queda
 │  │                       #    (força de clube a partir do elenco de verdade, com fallback sintético)
-│  │                       #    + progressão de jogador por idade (docs/03 §5.1) + mercado automático
+│  │                       #    + progressão por idade (docs/03 §5.1) + lesões simples + mercado automático
 │  ├─ app/                 # ✅ dispatch/query (GameSession) — a fronteira que a ponte vai expor
 │  │                       #    save/load por replay determinístico (docs/03 §8.1)
 │  ├─ persist/             # ✅ save binário versionado — checksum, escrita atômica, sem blocos ainda
@@ -82,7 +82,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 202 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 210 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
