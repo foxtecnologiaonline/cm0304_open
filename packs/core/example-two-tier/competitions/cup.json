@@ -1,0 +1,7 @@
+{
+  "id": "es.cup",
+  "name": "Copa de Estrelônia",
+  "nation": "es",
+  "tier": 0,
+  "format": { "type": "knockout", "teams": 16 }
+}

@@ -31,6 +31,13 @@ pub struct SeasonResult {
     /// calibração de "finalizações por time"/"conversão" (`docs/04 §4.1`),
     /// que o motor v0 (sem `Shot`) não tinha como medir.
     pub total_shots: u32,
+    /// Resultado de cada competição em formato `Format::Knockout` desta
+    /// temporada (`crate::cup`) — **não** inclui partidas de copa em
+    /// nenhuma das contagens acima (`matches_played`/`total_goals`/etc):
+    /// essas são as contagens de calibração de liga (`docs/04 §4.1`), e
+    /// misturar copa ali enviesaria sem avisar. Uma entrada por competição
+    /// de mata-mata do pack, na mesma ordem de `pack.competitions`.
+    pub cups: Vec<crate::cup::CupResult>,
 }
 
 impl SeasonResult {
@@ -62,6 +69,7 @@ pub fn run_season(
 ) -> SeasonResult {
     let mut tables = Vec::with_capacity(pack.competitions.len());
     let mut movements = Vec::new();
+    let mut cups = Vec::new();
     let mut matches_played = 0u32;
     let mut home_wins = 0u32;
     let mut away_wins = 0u32;
@@ -70,81 +78,103 @@ pub fn run_season(
     let mut total_shots = 0u32;
 
     for competition in &pack.competitions {
-        // Clubes atualmente na competição, em ordem de id denso — nunca via
-        // iteração de um `HashMap` (`ADR 0002`: calendário e tabela não
-        // podem depender de uma ordem não-determinística).
-        let clubs: Vec<ClubId> = membership
-            .iter()
-            .enumerate()
-            .filter(|&(_, &comp)| comp == competition.id)
-            .map(|(idx, _)| ClubId::new(idx as u32))
-            .collect();
+        match competition.format {
+            Format::RoundRobin { legs, .. } => {
+                // Clubes atualmente na competição, em ordem de id denso —
+                // nunca via iteração de um `HashMap` (`ADR 0002`: calendário
+                // e tabela não podem depender de ordem não-determinística).
+                let clubs: Vec<ClubId> = membership
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &comp)| comp == competition.id)
+                    .map(|(idx, _)| ClubId::new(idx as u32))
+                    .collect();
 
-        let Format::RoundRobin { legs, .. } = competition.format;
-        let Ok(fixtures) = rules::round_robin(&clubs, legs) else {
-            // Número de clubes ímpar ou < 2 na competição — não deveria
-            // acontecer com um pack validado (`docs/03 §7`), mas também
-            // pode surgir se `promotion.slots`/`relegation.slots` de duas
-            // competições emparelhadas não baterem entre si (validação que
-            // o `pack` ainda não faz — dívida técnica conhecida, não um
-            // `panic!` escondido). Pular a competição nesta temporada é
-            // mais seguro que travar o mundo inteiro por causa de uma liga.
-            continue;
-        };
+                let Ok(fixtures) = rules::round_robin(&clubs, legs) else {
+                    // Número de clubes ímpar ou < 2 na competição — não
+                    // deveria acontecer com um pack validado (`docs/03 §7`),
+                    // mas também pode surgir se `promotion.slots`/
+                    // `relegation.slots` de duas competições emparelhadas
+                    // não baterem entre si (validação que o `pack` ainda não
+                    // faz — dívida técnica conhecida, não um `panic!`
+                    // escondido). Pular a competição nesta temporada é mais
+                    // seguro que travar o mundo inteiro por causa de uma liga.
+                    continue;
+                };
 
-        let mut results = Vec::with_capacity(fixtures.len());
-        for fixture in fixtures {
-            let home = profiles[fixture.home.as_usize()];
-            let away = profiles[fixture.away.as_usize()];
-            let ctx = engine::MatchContext {
-                world_seed,
-                fixture: fixture_key(season_index, &fixture),
-            };
-            let events = engine::simulate(home, away, ctx);
-            let (home_goals, away_goals) = engine::score(&events);
-            let (home_shots, away_shots) = engine::shots(&events);
+                let mut results = Vec::with_capacity(fixtures.len());
+                for fixture in fixtures {
+                    let home = profiles[fixture.home.as_usize()];
+                    let away = profiles[fixture.away.as_usize()];
+                    let ctx = engine::MatchContext {
+                        world_seed,
+                        fixture: fixture_key(season_index, &fixture),
+                    };
+                    let events = engine::simulate(home, away, ctx);
+                    let (home_goals, away_goals) = engine::score(&events);
+                    let (home_shots, away_shots) = engine::shots(&events);
 
-            matches_played += 1;
-            total_goals += home_goals + away_goals;
-            total_shots += home_shots + away_shots;
-            match home_goals.cmp(&away_goals) {
-                Ordering::Greater => home_wins += 1,
-                Ordering::Less => away_wins += 1,
-                Ordering::Equal => draws += 1,
+                    matches_played += 1;
+                    total_goals += home_goals + away_goals;
+                    total_shots += home_shots + away_shots;
+                    match home_goals.cmp(&away_goals) {
+                        Ordering::Greater => home_wins += 1,
+                        Ordering::Less => away_wins += 1,
+                        Ordering::Equal => draws += 1,
+                    }
+                    results.push((
+                        fixture,
+                        Score {
+                            home_goals,
+                            away_goals,
+                        },
+                    ));
+                }
+
+                let table = rules::compute_table(&clubs, &results, &competition.tiebreakers);
+
+                if let Some(target) = competition.promotion.to {
+                    for row in table.iter().take(competition.promotion.slots as usize) {
+                        movements.push((row.club, competition.id, target));
+                    }
+                }
+                if let Some(target) = competition.relegation.to {
+                    for row in table
+                        .iter()
+                        .rev()
+                        .take(competition.relegation.slots as usize)
+                    {
+                        movements.push((row.club, competition.id, target));
+                    }
+                }
+
+                tables.push((competition.id, table));
             }
-            results.push((
-                fixture,
-                Score {
-                    home_goals,
-                    away_goals,
-                },
-            ));
-        }
-
-        let table = rules::compute_table(&clubs, &results, &competition.tiebreakers);
-
-        if let Some(target) = competition.promotion.to {
-            for row in table.iter().take(competition.promotion.slots as usize) {
-                movements.push((row.club, competition.id, target));
+            Format::Knockout { .. } => {
+                // Participantes = todos os clubes do país, não `membership`
+                // (nenhum clube aponta `competition` pra uma copa —
+                // `crate::cup`). Partidas de copa **não** entram em
+                // `matches_played`/`total_goals`/etc — ver doc de
+                // `SeasonResult::cups`.
+                let participants = crate::cup::cup_participants(pack, competition);
+                if let Some(result) = crate::cup::run_cup(
+                    competition.id,
+                    &participants,
+                    profiles,
+                    world_seed,
+                    season_index,
+                ) {
+                    cups.push(result);
+                }
             }
         }
-        if let Some(target) = competition.relegation.to {
-            for row in table
-                .iter()
-                .rev()
-                .take(competition.relegation.slots as usize)
-            {
-                movements.push((row.club, competition.id, target));
-            }
-        }
-
-        tables.push((competition.id, table));
     }
 
     SeasonResult {
         season_index,
         tables,
         movements,
+        cups,
         matches_played,
         home_wins,
         away_wins,
@@ -334,7 +364,12 @@ mod tests {
         // congelado" não passa despercebido no nível mais alto.
         let p = example_pack();
         let reports = run_seasons(&p, 99, 3);
-        let tier1_id = p.competitions[0].id;
+        let tier1_id = p
+            .competitions
+            .iter()
+            .find(|c| c.external_id == "es.tier1")
+            .unwrap()
+            .id;
 
         let tables_by_season: Vec<Vec<TableRow>> = reports
             .iter()

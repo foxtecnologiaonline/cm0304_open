@@ -35,7 +35,7 @@ fn pack_de_exemplo_do_repositorio_carrega_sem_problemas() {
     );
     assert_eq!(report.manifest.id, "example.two-tier");
     assert_eq!(report.pack.nations.len(), 1);
-    assert_eq!(report.pack.competitions.len(), 2);
+    assert_eq!(report.pack.competitions.len(), 3); // 2 ligas + 1 copa (docs/07 M1)
     assert_eq!(report.pack.clubs.len(), 16);
 
     // As duas divisões têm o número de clubes que declaram, e promoção/
@@ -56,4 +56,14 @@ fn pack_de_exemplo_do_repositorio_carrega_sem_problemas() {
     assert_eq!(report.pack.clubs_in(tier2.id).len(), 8);
     assert_eq!(tier1.relegation.to, Some(tier2.id));
     assert_eq!(tier2.promotion.to, Some(tier1.id));
+
+    // A copa usa todos os clubes do país (16 = 8 + 8), não uma inscrição
+    // própria — `docs/03 §7`, `pack::Format::Knockout`.
+    let cup = report
+        .pack
+        .competitions
+        .iter()
+        .find(|c| c.external_id == "es.cup")
+        .unwrap();
+    assert_eq!(cup.format, pack::Format::Knockout { teams: 16 });
 }

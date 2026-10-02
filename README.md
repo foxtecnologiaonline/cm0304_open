@@ -61,10 +61,12 @@ cm0304_open/
 │  ├─ domain/              # ✅ ids, ponto fixo, calendário, RNG determinístico, atributos
 │  ├─ pack/                # ✅ carregador + validador de data pack (nações, competições, clubes, jogadores)
 │  ├─ engine/              # ✅ motor de partida v0.5 (força → chutes, finalização vs. goleiro → gol, docs/04 §7)
-│  ├─ rules/               # ✅ calendário round-robin + tabela com desempate (docs/03 §7)
+│  ├─ rules/               # ✅ calendário round-robin + chaveamento de mata-mata + tabela com
+│  │                       #    desempate (docs/03 §7)
 │  ├─ world/               # ✅ loop de temporada: calendário → partidas → tabela → acesso/queda
 │  │                       #    (força de clube a partir do elenco de verdade, com fallback sintético)
-│  │                       #    + progressão por idade (docs/03 §5.1) + lesões simples + mercado automático
+│  │                       #    + progressão por idade (docs/03 §5.1) + lesões simples + mercado
+│  │                       #    automático + copa (mata-mata de fase única, docs/01 RF-MU-03)
 │  ├─ app/                 # ✅ dispatch/query (GameSession) — a fronteira que a ponte vai expor
 │  │                       #    save/load por replay determinístico (docs/03 §8.1)
 │  ├─ persist/             # ✅ save binário versionado — checksum, escrita atômica, sem blocos ainda
@@ -83,7 +85,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 221 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 245 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier

@@ -155,18 +155,30 @@ fn resolve_competitions(
 }
 
 fn resolve_format(competition_id: &str, raw: RawFormat, issues: &mut Vec<String>) -> Format {
-    let RawFormat::RoundRobin { legs, teams } = raw;
-    if !(1..=2).contains(&legs) {
-        issues.push(format!(
-            "competição '{competition_id}': 'legs' deve ser 1 ou 2 (veio {legs})"
-        ));
+    match raw {
+        RawFormat::RoundRobin { legs, teams } => {
+            if !(1..=2).contains(&legs) {
+                issues.push(format!(
+                    "competição '{competition_id}': 'legs' deve ser 1 ou 2 (veio {legs})"
+                ));
+            }
+            if teams == 0 {
+                issues.push(format!(
+                    "competição '{competition_id}': 'teams' deve ser maior que zero"
+                ));
+            }
+            Format::RoundRobin { legs, teams }
+        }
+        RawFormat::Knockout { teams } => {
+            if teams < 2 || !teams.is_power_of_two() {
+                issues.push(format!(
+                    "competição '{competition_id}': 'teams' de mata-mata deve ser potência de 2, \
+                     maior ou igual a 2 (veio {teams}) — bracket sem bye não aceita outro valor"
+                ));
+            }
+            Format::Knockout { teams }
+        }
     }
-    if teams == 0 {
-        issues.push(format!(
-            "competição '{competition_id}': 'teams' deve ser maior que zero"
-        ));
-    }
-    Format::RoundRobin { legs, teams }
 }
 
 fn resolve_tiebreakers(
@@ -398,20 +410,37 @@ fn is_leap_year(year: i32) -> bool {
 
 /// Verificação final: o número de clubes de fato inscritos numa competição
 /// precisa bater com `format.teams` declarado — é o tipo de inconsistência
-/// de digitação que só aparece jogando, se ninguém checar antes.
+/// de digitação que só aparece jogando, se ninguém checar antes. Para
+/// `Knockout`, "inscrito" não existe como conceito próprio (nenhum clube
+/// aponta `competition` para uma copa) — os participantes são todos os
+/// clubes do país da competição, então é essa contagem que precisa bater.
 fn check_competition_club_counts(
     competitions: &[ResolvedCompetition],
     clubs: &[ResolvedClub],
     issues: &mut Vec<String>,
 ) {
     for comp in competitions {
-        let Format::RoundRobin { teams, .. } = comp.format;
-        let actual = clubs.iter().filter(|c| c.competition == comp.id).count();
-        if actual as u32 != teams {
-            issues.push(format!(
-                "competição '{}' declara {teams} times em 'format.teams', mas tem {actual} clube(s) inscrito(s)",
-                comp.external_id
-            ));
+        match comp.format {
+            Format::RoundRobin { teams, .. } => {
+                let actual = clubs.iter().filter(|c| c.competition == comp.id).count();
+                if actual as u32 != teams {
+                    issues.push(format!(
+                        "competição '{}' declara {teams} times em 'format.teams', mas tem {actual} clube(s) inscrito(s)",
+                        comp.external_id
+                    ));
+                }
+            }
+            Format::Knockout { teams } => {
+                let actual = clubs.iter().filter(|c| c.nation == comp.nation).count();
+                if actual as u32 != teams {
+                    issues.push(format!(
+                        "competição '{}' (mata-mata) declara {teams} times em 'format.teams', mas o \
+                         país tem {actual} clube(s) no total — mata-mata usa todos os clubes do país, \
+                         não uma inscrição própria",
+                        comp.external_id
+                    ));
+                }
+            }
         }
     }
 }
@@ -429,13 +458,25 @@ fn check_competition_club_counts(
 /// (`docs/03 §7`).
 fn check_movement_slots(competitions: &[ResolvedCompetition], issues: &mut Vec<String>) {
     for comp in competitions {
-        let Format::RoundRobin { teams, .. } = comp.format;
-        let overlap = comp.promotion.slots + comp.relegation.slots;
-        if overlap > teams {
-            issues.push(format!(
-                "competição '{}': promotion.slots ({}) + relegation.slots ({}) > format.teams ({teams}) — os grupos de acesso e queda se sobrepõem",
-                comp.external_id, comp.promotion.slots, comp.relegation.slots
-            ));
+        match comp.format {
+            Format::RoundRobin { teams, .. } => {
+                let overlap = comp.promotion.slots + comp.relegation.slots;
+                if overlap > teams {
+                    issues.push(format!(
+                        "competição '{}': promotion.slots ({}) + relegation.slots ({}) > format.teams ({teams}) — os grupos de acesso e queda se sobrepõem",
+                        comp.external_id, comp.promotion.slots, comp.relegation.slots
+                    ));
+                }
+            }
+            Format::Knockout { .. } => {
+                if comp.promotion.to.is_some() || comp.relegation.to.is_some() {
+                    issues.push(format!(
+                        "competição '{}' (mata-mata) declara promoção/rebaixamento — não faz \
+                         sentido para um formato de copa, que não é dividido em níveis",
+                        comp.external_id
+                    ));
+                }
+            }
         }
     }
 }
@@ -462,6 +503,19 @@ mod tests {
             tier: 1,
             format: RawFormat::RoundRobin { legs: 2, teams },
             tiebreakers: vec!["points".to_string()],
+            promotion: RawMovement::default(),
+            relegation: RawMovement::default(),
+        }
+    }
+
+    fn knockout_competition(id: &str, nation: &str, teams: u32) -> RawCompetition {
+        RawCompetition {
+            id: id.to_string(),
+            name: format!("Competição {id}"),
+            nation: nation.to_string(),
+            tier: 0,
+            format: RawFormat::Knockout { teams },
+            tiebreakers: vec![],
             promotion: RawMovement::default(),
             relegation: RawMovement::default(),
         }
@@ -569,6 +623,84 @@ mod tests {
         };
         let (_pack, issues) = resolve(raw, 2026);
         assert!(issues.iter().any(|i| i.contains("declara 4 times")));
+    }
+
+    #[test]
+    fn knockout_com_teams_que_nao_e_potencia_de_dois_vira_problema() {
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![knockout_competition("ex.cup", "ex", 6)],
+            clubs: vec![],
+            players: vec![],
+        };
+        let (pack, issues) = resolve(raw, 2026);
+        assert_eq!(pack.competitions.len(), 1); // continua aceita, só com aviso
+        assert!(
+            issues.iter().any(|i| i.contains("potência de 2")),
+            "issues: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn knockout_usa_todos_os_clubes_do_pais_nao_so_os_inscritos_na_propria_competicao() {
+        // Nenhum clube aponta `competition` para a copa — os 4 clubes do
+        // país "ex" (inscritos em ligas diferentes) é que contam.
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![
+                competition("ex.t1", "ex", 2),
+                competition("ex.t2", "ex", 2),
+                knockout_competition("ex.cup", "ex", 4),
+            ],
+            clubs: vec![
+                club("ex.a", "ex", "ex.t1"),
+                club("ex.b", "ex", "ex.t1"),
+                club("ex.c", "ex", "ex.t2"),
+                club("ex.d", "ex", "ex.t2"),
+            ],
+            players: vec![],
+        };
+        let (_pack, issues) = resolve(raw, 2026);
+        assert!(issues.is_empty(), "issues inesperadas: {issues:?}");
+    }
+
+    #[test]
+    fn knockout_com_contagem_de_pais_divergente_vira_problema() {
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![knockout_competition("ex.cup", "ex", 8)], // declara 8
+            clubs: vec![club("ex.a", "ex", "ex.cup")],                   // só 1 clube no país
+            players: vec![],
+        };
+        let (_pack, issues) = resolve(raw, 2026);
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("mata-mata") && i.contains("declara 8 times")),
+            "issues: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn knockout_com_promocao_ou_rebaixamento_declarado_vira_problema() {
+        let mut cup = knockout_competition("ex.cup", "ex", 2);
+        cup.relegation = RawMovement {
+            to: Some("ex.t1".to_string()),
+            slots: 1,
+        };
+        let raw = RawPack {
+            nations: vec![nation("ex")],
+            competitions: vec![cup, competition("ex.t1", "ex", 2)],
+            clubs: vec![club("ex.a", "ex", "ex.t1"), club("ex.b", "ex", "ex.t1")],
+            players: vec![],
+        };
+        let (_pack, issues) = resolve(raw, 2026);
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("mata-mata") && i.contains("promoção/rebaixamento")),
+            "issues: {issues:?}"
+        );
     }
 
     #[test]

@@ -9,8 +9,10 @@
 //! é o `world` (M1).
 #![warn(clippy::all)]
 
+mod bracket;
 mod fixture;
 mod table;
 
+pub use bracket::{BracketError, pair_round};
 pub use fixture::{Fixture, FixtureError, round_robin, single_round_robin};
 pub use table::{Score, TableRow, compute_table};

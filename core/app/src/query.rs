@@ -13,8 +13,13 @@ pub enum Query {
     /// para a UI montar um seletor sem tocar em `pack` diretamente.
     Competitions,
     /// Tabela de classificação de uma competição, na temporada mais
-    /// recente já simulada.
+    /// recente já simulada. `None` também para uma competição em formato
+    /// de copa (`pack::Format::Knockout`) — copa não tem tabela, usar
+    /// [`Query::CupChampion`] para essa (`world::cup`).
     Standings { competition: CompetitionId },
+    /// Campeão de uma competição em formato de copa, na temporada mais
+    /// recente já simulada. `None` também para uma competição de liga.
+    CupChampion { competition: CompetitionId },
     /// Em que temporada a sessão está agora (quantas já foram simuladas).
     CurrentSeason,
 }
@@ -26,9 +31,23 @@ pub enum Query {
 pub enum QueryResult {
     Competitions(Vec<CompetitionSummary>),
     /// `None` quando a competição existe mas nenhuma temporada rodou ainda,
-    /// ou quando o id não existe neste pack.
+    /// quando o id não existe neste pack, ou quando é uma competição de
+    /// copa (sem tabela — ver [`QueryResult::CupChampion`]).
     Standings(Option<Vec<StandingsRow>>),
+    /// `None` pelos mesmos motivos de [`QueryResult::Standings`], ou quando
+    /// a competição é uma liga (sem campeão único por mata-mata).
+    CupChampion(Option<CupChampionRow>),
     CurrentSeason(u32),
+}
+
+/// O campeão de uma copa, já com o nome do clube resolvido — a UI não
+/// recalcula nada (`docs/02 §4`), só mostra. `matches_played` é só as
+/// partidas da copa (não conta na calibração de liga, `world::cup`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CupChampionRow {
+    pub champion_club_name: String,
+    pub rounds_played: u32,
+    pub matches_played: u32,
 }
 
 /// Uma competição, já com o nome resolvido — o suficiente para popular um

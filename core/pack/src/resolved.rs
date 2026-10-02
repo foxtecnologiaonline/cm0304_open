@@ -18,7 +18,16 @@ pub struct ResolvedNation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
-    RoundRobin { legs: u8, teams: u32 },
+    RoundRobin {
+        legs: u8,
+        teams: u32,
+    },
+    /// Mata-mata de fase única — ver `crate::raw::RawFormat::Knockout` para
+    /// o porquê e as simplificações. Participantes = todos os clubes do
+    /// país da competição, não um subconjunto declarado por clube.
+    Knockout {
+        teams: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

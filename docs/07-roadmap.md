@@ -130,11 +130,23 @@ trabalho da comunidade.
 > §8`, cobrindo a fatia de hash de estado entre plataformas. Escopo ainda
 > fora: hash **por dia** (sem calendário diário em `world`), artilheiros
 > (`MatchEvent::Goal` não carrega autor) e distribuição de CA (nenhum
-> `app::Query` expõe isso). O que falta deste marco: **copa** (só liga
-> existe), **condição, moral, fadiga, regens e aposentadoria** (só CA,
-> idade e lesão sim/não evoluem hoje), e **lesão com tipo/gravidade/
-> prazo de recuperação** (RF-JG-08 completo é M3; aqui é só sim/não por
-> temporada). **A "primeira IA de mercado"** também já é real:
+> `app::Query` expõe isso). **Copa** também já é real:
+> `pack::Format::Knockout` + `world::cup` simulam mata-mata de fase única
+> (sem sorteio de chave, pareamento fixo por `ClubId` — `rules::pair_round`)
+> com participantes = todos os clubes do país da competição (não uma
+> inscrição própria: nenhum clube aponta `competition` pra uma copa).
+> Escopo bem mais estreito que RF-MU-03 completo (`docs/01 §2.1`): um jogo
+> só por confronto (sem replay, sem ida-e-volta, sem gol fora), empate no
+> tempo normal resolvido por sorteio de moeda 50/50 em vez de prorrogação
+> simulada. Partidas de copa não entram nas contagens de calibração de liga
+> (`docs/04 §4.1`) — confirmado por teste que os números de `calibrate` não
+> mudam nem um dígito com a copa ligada. O pack de exemplo ganhou uma copa
+> de 16 times (`es.cup`, as duas divisões inteiras); `managerfc-cli play` e
+> `app::Query::CupChampion` mostram o campeão. O que falta deste marco:
+> **condição, moral, fadiga, regens e aposentadoria** (só CA, idade e lesão
+> sim/não evoluem hoje), e **lesão com tipo/gravidade/prazo de
+> recuperação** (RF-JG-08 completo é M3; aqui é só sim/não por temporada).
+> **A "primeira IA de mercado"** também já é real:
 > `ai::run_market_day` (subconjunto minúsculo de RF-TR-02/05, `docs/01
 > §2.4` — ambos marcados M2 lá porque a versão completa pede negociação,
 > disputa, reputação e contratos, nada disso existe) roda antes de cada

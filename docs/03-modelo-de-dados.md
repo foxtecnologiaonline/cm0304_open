@@ -245,6 +245,11 @@ Regras do formato:
 > clube (`packs/core/example-two-tier/people/<clube>.json`), mas o formato aceita
 > qualquer agrupamento. `rules/*.toml`, `names/*.json` e `cosmetics/` ainda não existem;
 > `.fmpack` zipado também não — hoje é sempre um diretório (M4, `docs/07-roadmap.md`).
+> `format.type` aceita um segundo valor além de `round_robin`: `"knockout"` (só `teams`,
+> potência de 2) — mata-mata de fase única para copa (`docs/01` RF-MU-03, escopo
+> estreito documentado lá e em `world::cup`). `qualifies`, `squad_rules` e `calendar`
+> do exemplo acima ainda não existem — só `format`, `tiebreakers`, `promotion` e
+> `relegation` são lidos hoje.
 
 ---
 

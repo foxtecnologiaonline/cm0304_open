@@ -33,7 +33,21 @@ pub struct RawCompetition {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RawFormat {
-    RoundRobin { legs: u8, teams: u32 },
+    RoundRobin {
+        legs: u8,
+        teams: u32,
+    },
+    /// Mata-mata de fase única (`docs/03 §7`) — sem ida-e-volta, sem
+    /// sorteio de confronto (pareamento fixo por `ClubId`, `rules::bracket`)
+    /// e sem prorrogação/pênaltis simulados evento a evento (empate no
+    /// tempo normal decide por sorteio de moeda, `world::cup`). `teams`
+    /// deve ser potência de 2 — participantes vêm de **todos os clubes do
+    /// país** da competição (`comp.nation`), não de uma inscrição própria
+    /// como em `RoundRobin` (nenhum clube aponta `competition` para uma
+    /// copa: um clube só tem uma competição "de origem", a liga).
+    Knockout {
+        teams: u32,
+    },
 }
 
 /// Promoção ou rebaixamento — `to: null`/campo ausente é o padrão (nenhum
@@ -293,8 +307,22 @@ mod tests {
                 assert_eq!(legs, 2);
                 assert_eq!(teams, 8);
             }
+            RawFormat::Knockout { .. } => panic!("esperava RoundRobin"),
         }
         assert_eq!(comp.relegation.to.as_deref(), Some("ex.tier2"));
         assert_eq!(comp.promotion.to, None); // ausente no JSON -> default
+    }
+
+    #[test]
+    fn formato_knockout_desserializa_corretamente() {
+        let json = r#"{
+            "id": "ex.cup", "name": "Copa de Exemplo", "nation": "ex", "tier": 0,
+            "format": { "type": "knockout", "teams": 16 }
+        }"#;
+        let comp: RawCompetition = serde_json::from_str(json).unwrap();
+        match comp.format {
+            RawFormat::Knockout { teams } => assert_eq!(teams, 16),
+            RawFormat::RoundRobin { .. } => panic!("esperava Knockout"),
+        }
     }
 }

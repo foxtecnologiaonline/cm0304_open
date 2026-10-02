@@ -12,7 +12,7 @@ use std::path::Path;
 use domain::CompetitionId;
 
 use crate::error::AppError;
-use crate::query::{CompetitionSummary, Query, QueryResult, StandingsRow};
+use crate::query::{CompetitionSummary, CupChampionRow, Query, QueryResult, StandingsRow};
 
 /// Comando: muda o estado da sessão. Hoje só existe um — mais chegam junto
 /// de elenco/transferências/treino (M2, `docs/07-roadmap.md`).
@@ -227,6 +227,9 @@ impl GameSession {
         match query {
             Query::Competitions => QueryResult::Competitions(self.competitions()),
             Query::Standings { competition } => QueryResult::Standings(self.standings(competition)),
+            Query::CupChampion { competition } => {
+                QueryResult::CupChampion(self.cup_champion(competition))
+            }
             Query::CurrentSeason => QueryResult::CurrentSeason(self.history.len() as u32),
         }
     }
@@ -265,6 +268,16 @@ impl GameSession {
                 .collect(),
         )
     }
+
+    fn cup_champion(&self, competition: CompetitionId) -> Option<CupChampionRow> {
+        let latest = self.history.last()?;
+        let cup = latest.cups.iter().find(|c| c.competition == competition)?;
+        Some(CupChampionRow {
+            champion_club_name: self.pack.club(cup.champion).name.clone(),
+            rounds_played: cup.rounds.len() as u32,
+            matches_played: cup.rounds.iter().map(|r| r.len() as u32).sum(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -283,6 +296,15 @@ mod tests {
                     .find(|c| c.name.contains("Primeira"))
                     .unwrap()
                     .id
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn cup_id(session: &GameSession) -> CompetitionId {
+        match session.query(Query::Competitions) {
+            QueryResult::Competitions(list) => {
+                list.iter().find(|c| c.name.contains("Copa")).unwrap().id
             }
             _ => unreachable!(),
         }
@@ -309,7 +331,7 @@ mod tests {
         let QueryResult::Competitions(list) = session.query(Query::Competitions) else {
             panic!("esperava QueryResult::Competitions");
         };
-        assert_eq!(list.len(), 2);
+        assert_eq!(list.len(), 3); // 2 ligas + 1 copa (docs/07 M1)
         assert!(list.iter().all(|c| c.nation_name == "Estrelônia"));
     }
 
@@ -347,6 +369,39 @@ mod tests {
         assert_eq!(table[0].position, 1);
         // Tabela vem ordenada: posição 1 tem pontos >= posição 2, sempre.
         assert!(table[0].points >= table[1].points);
+    }
+
+    #[test]
+    fn copa_produz_campeao_consultavel_sem_contar_na_calibracao_de_liga() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        let cup = cup_id(&session);
+        let league = tier1_id(&session);
+
+        let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+        // 2 ligas (56 jogos cada) — a copa (15 jogos: 8+4+2+1) não entra
+        // aqui, por design (`world::cup`, `docs/04 §4.1`).
+        assert_eq!(receipt.matches_played, 56 * 2);
+
+        let QueryResult::CupChampion(Some(champion)) =
+            session.query(Query::CupChampion { competition: cup })
+        else {
+            panic!("esperava campeão de copa após avançar a temporada");
+        };
+        assert_eq!(champion.rounds_played, 4); // 16 clubes: oitavas/quartas/semi/final
+        assert_eq!(champion.matches_played, 15); // 8+4+2+1
+        assert!(!champion.champion_club_name.is_empty());
+
+        // Uma liga não tem campeão de copa, e uma copa não tem tabela.
+        assert_eq!(
+            session.query(Query::CupChampion {
+                competition: league
+            }),
+            QueryResult::CupChampion(None)
+        );
+        assert_eq!(
+            session.query(Query::Standings { competition: cup }),
+            QueryResult::Standings(None)
+        );
     }
 
     #[test]

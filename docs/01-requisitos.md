@@ -42,6 +42,21 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 | RF-MU-10 | Regras de elegibilidade: estrangeiros, cria local, limite de inscritos, idade | S | M4 |
 | RF-MU-11 | Arbitragem com perfis (rigor, tendência a cartões) afetando a partida | C | M4 |
 
+> **Estado de implementação:** `pack::Format::Knockout` + `world::cup` (M1) cobrem um
+> subconjunto estreito de RF-MU-03: mata-mata de fase única, sem sorteio de chave
+> (pareamento fixo por `ClubId`, `rules::pair_round`), sem replay e sem jogos de ida e
+> volta — **um jogo só** decide, e empate no tempo normal é resolvido por sorteio de
+> moeda determinístico 50/50 (sem viés de força), não por prorrogação/gol fora
+> simulados (pediriam um subsistema novo do motor para uma fração pequena dos jogos).
+> Participantes são **todos os clubes do país** da competição, não uma inscrição
+> própria — nenhum clube aponta `competition` para uma copa; validado em
+> `pack::resolve` (contagem bate com `format.teams`, que precisa ser potência de 2).
+> Partidas de copa não entram nas contagens de calibração de liga (`docs/04 §4.1`),
+> de propósito. `managerfc-cli play`/`app::Query::CupChampion` já mostram o campeão; o
+> pack de exemplo ganhou uma copa de 16 times (`es.cup`, todos os clubes das duas
+> divisões). "Replays, jogos de ida e volta, gol fora (configurável)" do requisito
+> completo ficam para quando houver motivo real de calibração para o custo extra.
+
 ### 2.2 Clube e elenco (`CL`)
 
 | ID | Requisito | Pri | Marco |

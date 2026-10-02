@@ -3,12 +3,13 @@
 //! contra regressão de simulação silenciosa (desbalanceamento sem crash).
 //!
 //! Escopo real desta primeira versão, mais estreito que o documento
-//! completo: grava e verifica a tabela final de cada competição (via
-//! `app::GameSession`, as mesmas `dispatch`/`query` que `play` usa — pega
-//! regressão em qualquer parte do pipeline: motor, progressão, mercado,
-//! lesões) mais os totais agregados de partidas/movimentações/
-//! transferências/lesões, resumidos num único hash determinístico. **Não**
-//! cobre "artilheiros" nem "distribuição de CA" (`docs/08 §3` completo):
+//! completo: grava e verifica a tabela final de cada competição de liga e
+//! o campeão de cada copa (via `app::GameSession`, as mesmas
+//! `dispatch`/`query` que `play` usa — pega regressão em qualquer parte do
+//! pipeline: motor, progressão, mercado, lesões, mata-mata) mais os totais
+//! agregados de partidas/movimentações/transferências/lesões, resumidos
+//! num único hash determinístico. **Não** cobre "artilheiros" nem
+//! "distribuição de CA" (`docs/08 §3` completo):
 //! nenhum dos dois é consultável hoje — `MatchEvent::Goal` não tem autor
 //! (precisa de jogadores em campo de verdade, M2/M3) e `app::Query` não
 //! expõe CA de elenco (nenhuma tela de elenco existe ainda pra precisar
@@ -23,7 +24,9 @@ use serde::{Deserialize, Serialize};
 
 /// Versão do formato do arquivo golden — bump exige nova gravação de todos
 /// os goldens existentes (mesma disciplina de `persist::SCHEMA_VERSION`).
-const SCHEMA_VERSION: u16 = 1;
+/// Bump 1→2: `CompetitionSnapshot` ganhou `cup_champion` (`pack::Format::Knockout`,
+/// `docs/07-roadmap.md` M1 — copa).
+const SCHEMA_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct TableRowSnapshot {
@@ -42,9 +45,22 @@ struct TableRowSnapshot {
 struct CompetitionSnapshot {
     name: String,
     nation_name: String,
-    /// Vazio se a competição não rodou nenhuma partida (não deveria
-    /// acontecer com `seasons >= 1`, mas não é um `panic` se acontecer).
+    /// Vazio se a competição não rodou nenhuma partida, ou se é uma copa
+    /// (`pack::Format::Knockout` não tem tabela — ver `cup_champion`
+    /// abaixo).
     table: Vec<TableRowSnapshot>,
+    /// `Some` só para uma competição de copa que já rodou — o campeão e o
+    /// total de partidas de mata-mata (`app::Query::CupChampion`,
+    /// `world::cup`). `None` para liga, ou para copa que ainda não rodou.
+    #[serde(default)]
+    cup_champion: Option<CupChampionSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct CupChampionSnapshot {
+    champion_club_name: String,
+    rounds_played: u32,
+    matches_played: u32,
 }
 
 /// O conteúdo de um golden master — tudo exceto `state_hash` é dado
@@ -139,10 +155,21 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
                 .collect(),
             _ => Vec::new(),
         };
+        let cup_champion = match session.query(app::Query::CupChampion {
+            competition: competition.id,
+        }) {
+            app::QueryResult::CupChampion(Some(champion)) => Some(CupChampionSnapshot {
+                champion_club_name: champion.champion_club_name,
+                rounds_played: champion.rounds_played,
+                matches_played: champion.matches_played,
+            }),
+            _ => None,
+        };
         competitions.push(CompetitionSnapshot {
             name: competition.name,
             nation_name: competition.nation_name,
             table,
+            cup_champion,
         });
     }
 
@@ -308,6 +335,12 @@ fn report_competition_diff(expected: &[CompetitionSnapshot], actual: &[Competiti
             continue;
         }
         eprintln!("  competição '{}' diverge:", exp_comp.name);
+        if exp_comp.cup_champion != act_comp.cup_champion {
+            eprintln!(
+                "    campeão de copa: esperado {:?}, obtido {:?}",
+                exp_comp.cup_champion, act_comp.cup_champion
+            );
+        }
         for (exp_row, act_row) in exp_comp.table.iter().zip(&act_comp.table) {
             if exp_row != act_row {
                 eprintln!(

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "pack_id": "example.two-tier",
   "pack_version": "0.1.0",
   "world_seed": 42,
@@ -9,6 +9,16 @@
   "total_transfers": 22,
   "total_injuries": 42,
   "competitions": [
+    {
+      "name": "Copa de Estrelônia",
+      "nation_name": "Estrelônia",
+      "table": [],
+      "cup_champion": {
+        "champion_club_name": "Vale Dourado FC",
+        "rounds_played": 4,
+        "matches_played": 15
+      }
+    },
     {
       "name": "Primeira Divisão de Estrelônia",
       "nation_name": "Estrelônia",
@@ -101,7 +111,8 @@
           "goals_against": 23,
           "points": 12
         }
-      ]
+      ],
+      "cup_champion": null
     },
     {
       "name": "Segunda Divisão de Estrelônia",
@@ -195,8 +206,9 @@
           "goals_against": 20,
           "points": 12
         }
-      ]
+      ],
+      "cup_champion": null
     }
   ],
-  "state_hash": "da88b7bc372938d4"
+  "state_hash": "c7e1f0afe260a238"
 }
