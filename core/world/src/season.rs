@@ -220,15 +220,11 @@ pub fn run_seasons(pack: &LoadedPack, world_seed: u64, seasons: u32) -> Vec<Seas
 /// por isso `season_index` entra na mistura. O empacotamento é exato (sem
 /// perda, sem colisão) dentro dos limites verificados pelos `debug_assert`
 /// — bem acima de qualquer pack real (`docs/03 §9`: ~25 mil clubes no
-/// total, e nenhuma calibração roda milhões de temporadas).
+/// total, e nenhuma calibração roda milhões de temporadas). O empacotamento
+/// em si mora em `crate::fixture_key`, compartilhado com `crate::cup`
+/// (`cup::cup_fixture_key`) — ver lá o porquê de não duplicar `BITS`.
 fn fixture_key(season_index: u32, fixture: &Fixture) -> u64 {
-    const BITS: u32 = 20; // 2^20 ≈ 1 milhão — folga generosa sobre docs/03 §9
-    debug_assert!(fixture.home.index() < (1 << BITS));
-    debug_assert!(fixture.away.index() < (1 << BITS));
-    debug_assert!(season_index < (1 << BITS));
-    (u64::from(season_index) << (2 * BITS))
-        | (u64::from(fixture.home.index()) << BITS)
-        | u64::from(fixture.away.index())
+    crate::fixture_key::pack(season_index, fixture.home, fixture.away, false)
 }
 
 #[cfg(test)]
@@ -450,14 +446,14 @@ mod proptests {
         /// documentados — decompor a chave devolve os três valores originais.
         #[test]
         fn fixture_key_e_reversivel_dentro_dos_limites(
-            season in 0u32..(1 << 20),
-            home in 0u32..(1 << 20),
-            away in 0u32..(1 << 20),
+            season in 0u32..(1 << crate::fixture_key::BITS),
+            home in 0u32..(1 << crate::fixture_key::BITS),
+            away in 0u32..(1 << crate::fixture_key::BITS),
         ) {
             let f = Fixture { round: 0, home: ClubId::new(home), away: ClubId::new(away) };
             let key = fixture_key(season, &f);
 
-            const BITS: u32 = 20;
+            const BITS: u32 = crate::fixture_key::BITS;
             const MASK: u64 = (1 << BITS) - 1;
             let decoded_away = (key & MASK) as u32;
             let decoded_home = ((key >> BITS) & MASK) as u32;

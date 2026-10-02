@@ -14,6 +14,7 @@
 
 mod cup;
 mod finance;
+mod fixture_key;
 mod injuries;
 mod market;
 mod progression;

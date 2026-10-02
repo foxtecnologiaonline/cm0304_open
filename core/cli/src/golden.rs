@@ -136,34 +136,45 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
 
     let mut competitions = Vec::with_capacity(competitions_list.len());
     for competition in competitions_list {
-        let table = match session.query(app::Query::Standings {
-            competition: competition.id,
-        }) {
-            app::QueryResult::Standings(Some(rows)) => rows
-                .into_iter()
-                .map(|row| TableRowSnapshot {
-                    position: row.position,
-                    club_name: row.club_name,
-                    played: row.played,
-                    wins: row.wins,
-                    draws: row.draws,
-                    losses: row.losses,
-                    goals_for: row.goals_for,
-                    goals_against: row.goals_against,
-                    points: row.points,
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        let cup_champion = match session.query(app::Query::CupChampion {
-            competition: competition.id,
-        }) {
-            app::QueryResult::CupChampion(Some(champion)) => Some(CupChampionSnapshot {
-                champion_club_name: champion.champion_club_name,
-                rounds_played: champion.rounds_played,
-                matches_played: champion.matches_played,
-            }),
-            _ => None,
+        // `kind` já diz qual das duas consultas faz sentido — poupa a outra
+        // (sempre devolveria `None`/vazio para o formato errado, ver
+        // `app::query::CompetitionKind`).
+        let (table, cup_champion) = match competition.kind {
+            app::CompetitionKind::League => {
+                let table = match session.query(app::Query::Standings {
+                    competition: competition.id,
+                }) {
+                    app::QueryResult::Standings(Some(rows)) => rows
+                        .into_iter()
+                        .map(|row| TableRowSnapshot {
+                            position: row.position,
+                            club_name: row.club_name,
+                            played: row.played,
+                            wins: row.wins,
+                            draws: row.draws,
+                            losses: row.losses,
+                            goals_for: row.goals_for,
+                            goals_against: row.goals_against,
+                            points: row.points,
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                (table, None)
+            }
+            app::CompetitionKind::Cup => {
+                let cup_champion = match session.query(app::Query::CupChampion {
+                    competition: competition.id,
+                }) {
+                    app::QueryResult::CupChampion(Some(champion)) => Some(CupChampionSnapshot {
+                        champion_club_name: champion.champion_club_name,
+                        rounds_played: champion.rounds_played,
+                        matches_played: champion.matches_played,
+                    }),
+                    _ => None,
+                };
+                (Vec::new(), cup_champion)
+            }
         };
         competitions.push(CompetitionSnapshot {
             name: competition.name,

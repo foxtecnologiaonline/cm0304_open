@@ -57,6 +57,22 @@ pub struct CompetitionSummary {
     pub id: CompetitionId,
     pub name: String,
     pub nation_name: String,
+    /// Qual das duas consultas específicas faz sentido pedir para esta
+    /// competição — [`Query::Standings`] para `League`,
+    /// [`Query::CupChampion`] para `Cup`. Evita que quem chama precise
+    /// tentar as duas e ver qual devolve `Some` (`pack::Format`, projetado
+    /// sem importar o tipo de `pack` aqui — `docs/02 §4`).
+    pub kind: CompetitionKind,
+}
+
+/// Projeção mínima de `pack::Format`: só o suficiente para a UI (ou outro
+/// consumidor do núcleo) saber qual consulta fazer para uma competição,
+/// sem precisar importar `pack` nem conhecer os parâmetros do formato
+/// (`legs`, `teams` — isso é detalhe de simulação, não de exibição).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompetitionKind {
+    League,
+    Cup,
 }
 
 /// Uma linha de tabela pronta para exibição — nome do clube já resolvido,

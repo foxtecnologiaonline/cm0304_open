@@ -143,25 +143,19 @@ pub fn run_cup(
 }
 
 /// Combina temporada + o par (mandante, visitante) num `u64` para
-/// `MatchContext.fixture` — mesma técnica de `world::season::fixture_key`,
-/// com um bit reservado (o mais alto) para nunca colidir com o espaço de
-/// chaves da liga: sem isso, uma partida de copa entre dois clubes que
-/// também se enfrentam na liga na mesma temporada reproduziria byte a byte
-/// o mesmo sorteio da partida de liga — dois jogos "diferentes" com o
-/// resultado idêntico por coincidência de implementação, não por acaso do
-/// mundo. `(temporada, mandante, visitante)` já é suficiente sem a rodada:
-/// o mesmo par nunca se repete duas vezes na mesma copa (eliminação), e
-/// temporadas diferentes nunca compartilham essa chave.
+/// `MatchContext.fixture`. Delega o empacotamento a `crate::fixture_key`
+/// (compartilhado com `world::season::fixture_key`) em vez de reimplementar
+/// os mesmos bits aqui — duas cópias da mesma constante `BITS` só ficam
+/// sincronizadas por comentário, e divergir uma delas silenciosamente
+/// colidiria chaves de partidas diferentes (ver doc de `crate::fixture_key`).
+/// `is_cup = true` seta o bit reservado que separa este espaço de chaves do
+/// da liga: sem isso, uma partida de copa entre dois clubes que também se
+/// enfrentam na liga na mesma temporada reproduziria byte a byte o mesmo
+/// sorteio da partida de liga. `(temporada, mandante, visitante)` já é
+/// suficiente sem a rodada: o mesmo par nunca se repete duas vezes na mesma
+/// copa (eliminação), e temporadas diferentes nunca compartilham chave.
 fn cup_fixture_key(season_index: u32, home: ClubId, away: ClubId) -> u64 {
-    const BITS: u32 = 20; // mesma folga de `world::season::fixture_key`
-    const CUP_FLAG: u64 = 1 << 63;
-    debug_assert!(home.index() < (1 << BITS));
-    debug_assert!(away.index() < (1 << BITS));
-    debug_assert!(season_index < (1 << BITS));
-    CUP_FLAG
-        | (u64::from(season_index) << (2 * BITS))
-        | (u64::from(home.index()) << BITS)
-        | u64::from(away.index())
+    crate::fixture_key::pack(season_index, home, away, true)
 }
 
 #[cfg(test)]
@@ -290,13 +284,12 @@ mod tests {
 
     #[test]
     fn cup_fixture_key_nunca_colide_com_fixture_key_da_liga() {
-        // O bit mais alto reservado (`CUP_FLAG`) garante isso por
-        // construção: replica aqui a mesma fórmula de
-        // `world::season::fixture_key` (sem acessar a função privada) só
-        // para provar que o bit extra realmente separa os dois espaços,
-        // nos limites documentados de `season_index`/`ClubId`.
-        const BITS: u32 = 20;
-        let league_key = (0u64 << (2 * BITS)) | (u64::from(1u32) << BITS) | u64::from(2u32);
+        // `crate::fixture_key` já prova a propriedade em geral
+        // (`liga_e_copa_nunca_colidem_para_a_mesma_entrada`) — este teste
+        // confirma que `cup_fixture_key` de fato delega pra lá com
+        // `is_cup = true`, não uma reimplementação local que poderia
+        // divergir.
+        let league_key = crate::fixture_key::pack(0, ClubId::new(1), ClubId::new(2), false);
         let cup_key = cup_fixture_key(0, ClubId::new(1), ClubId::new(2));
         assert_ne!(league_key, cup_key);
         assert_eq!(

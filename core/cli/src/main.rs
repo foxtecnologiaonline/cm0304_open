@@ -477,27 +477,26 @@ fn print_all_standings(session: &app::GameSession) {
             "\n=== {} ({}) ===",
             competition.name, competition.nation_name
         );
-        let table = match session.query(app::Query::Standings {
-            competition: competition.id,
-        }) {
-            app::QueryResult::Standings(Some(table)) => table,
-            _ => {
-                // Sem tabela: ou não rodou nenhuma partida, ou é uma copa
-                // (`pack::Format::Knockout`, sem tabela por natureza — ver
-                // `app::Query::CupChampion`).
-                match session.query(app::Query::CupChampion {
-                    competition: competition.id,
-                }) {
-                    app::QueryResult::CupChampion(Some(champion)) => println!(
-                        "campeão: {}  ({} partida(s) em {} rodada(s) de mata-mata)",
-                        champion.champion_club_name,
-                        champion.matches_played,
-                        champion.rounds_played
-                    ),
-                    _ => println!("(sem tabela — competição não rodou nenhuma partida)"),
-                }
-                continue;
+        // `kind` já diz qual consulta faz sentido para esta competição —
+        // poupa perguntar a outra, que sempre devolveria vazio/`None`
+        // (`app::CompetitionKind`).
+        if competition.kind == app::CompetitionKind::Cup {
+            match session.query(app::Query::CupChampion {
+                competition: competition.id,
+            }) {
+                app::QueryResult::CupChampion(Some(champion)) => println!(
+                    "campeão: {}  ({} partida(s) em {} rodada(s) de mata-mata)",
+                    champion.champion_club_name, champion.matches_played, champion.rounds_played
+                ),
+                _ => println!("(copa ainda não rodou nenhuma partida)"),
             }
+            continue;
+        }
+        let app::QueryResult::Standings(Some(table)) = session.query(app::Query::Standings {
+            competition: competition.id,
+        }) else {
+            println!("(sem tabela — competição não rodou nenhuma partida)");
+            continue;
         };
         println!("pos  clube                  J   V   E   D   GP  GC  PTS");
         for row in table {

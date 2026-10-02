@@ -12,7 +12,9 @@ use std::path::Path;
 use domain::CompetitionId;
 
 use crate::error::AppError;
-use crate::query::{CompetitionSummary, CupChampionRow, Query, QueryResult, StandingsRow};
+use crate::query::{
+    CompetitionKind, CompetitionSummary, CupChampionRow, Query, QueryResult, StandingsRow,
+};
 
 /// Comando: muda o estado da sessão. Hoje só existe um — mais chegam junto
 /// de elenco/transferências/treino (M2, `docs/07-roadmap.md`).
@@ -242,6 +244,10 @@ impl GameSession {
                 id: comp.id,
                 name: comp.name.clone(),
                 nation_name: self.pack.nation(comp.nation).name.clone(),
+                kind: match comp.format {
+                    pack::Format::RoundRobin { .. } => CompetitionKind::League,
+                    pack::Format::Knockout { .. } => CompetitionKind::Cup,
+                },
             })
             .collect()
     }
