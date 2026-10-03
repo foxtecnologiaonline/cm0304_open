@@ -11,11 +11,16 @@
 //! sem sorteio de confronto e com empate decidido por moeda — escopo mais
 //! estreito que uma copa de verdade, documentado em [`cup`]. Condição
 //! ([`condition`]) é por temporada, não cumulativa e não cobre fadiga
-//! acumulada de carreira nem frescor dia a dia — documentado em [`condition`].
+//! acumulada de carreira nem frescor dia a dia — documentado em
+//! [`condition`]. Suspensão ([`discipline`]) é a única coisa aqui com
+//! granularidade de rodada (liga simulada rodada a rodada no caminho de
+//! carreira, `season::run_season`) — sem cartão amarelo acumulado, sem
+//! reincidência, documentado em [`discipline`].
 #![warn(clippy::all)]
 
 mod condition;
 mod cup;
+mod discipline;
 mod finance;
 mod fixture_key;
 mod injuries;

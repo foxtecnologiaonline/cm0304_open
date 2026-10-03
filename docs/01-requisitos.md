@@ -104,7 +104,23 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > calendário diário (`docs/02 §5`) não dá pra calcular frescor real entre
 > partidas, então não é dia a dia, só por temporada — mesma disciplina de
 > `world::injuries`. Moral e fadiga acumulada de carreira (ao contrário de
-> condição por temporada) continuam não existindo.
+> condição por temporada) continuam não existindo. `world::discipline`
+> cobre uma fatia mínima de RF-JG-09: depois de cada rodada de liga, cada
+> time que jogou sofre um sorteio de expulsão (~4% por time por partida,
+> ordem de grandeza real de cartão vermelho); se acontece, um titular
+> daquele time (sorteado entre os 11, sem favorecer posição) fica fora da
+> rodada seguinte da mesma competição. Isso só tem efeito porque, no
+> caminho de carreira (`app::GameSession`), toda liga agora é simulada
+> **rodada a rodada** (`world::season::run_season`), recalculando o
+> perfil de cada clube a cada rodada — antes desta fatia, a temporada
+> inteira usava um perfil só, fixado no começo, e não havia nenhum ponto
+> intermediário onde "fora desta partida" pudesse ter efeito. O caminho
+> estático (`managerfc-cli calibrate`/`bench`, sem roster de carreira)
+> continua simulando a temporada inteira de uma vez, sem suspensão — por
+> isso "vermelhos/jogo" de `docs/04 §4.1` continua fora do que `calibrate`
+> mede. Sem cartão amarelo acumulado, sem reincidência, sem rigor de
+> árbitro (RF-MU-11) — um sorteio só, uma consequência só, e nunca
+> atravessa temporada (reinicia a cada uma).
 
 ### 2.4 Transferências (`TR`)
 

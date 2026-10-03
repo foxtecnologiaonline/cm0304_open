@@ -48,6 +48,10 @@ pub struct CommandReceipt {
     /// temporada que acabou de terminar (`world::apply_season_fatigue`,
     /// `docs/01 §2.1`, RF-JG-07, fatia mínima).
     pub tired_players: usize,
+    /// Quantas suspensões por expulsão aconteceram nesta temporada, em
+    /// partidas de liga (`world::season::SeasonResult::suspensions` —
+    /// `crate::discipline`, `docs/01 §2.3`, RF-JG-09, fatia mínima).
+    pub suspensions: usize,
 }
 
 /// Uma carreira carregada em memória.
@@ -209,10 +213,18 @@ impl GameSession {
                 // precisa saber exatamente quem jogou, não só o perfil
                 // agregado do time.
                 let starters = world::starters_from_roster_all_clubs(&self.pack, &self.roster);
+                // `Some(&self.roster)` liga o caminho de carreira
+                // (`world::season`, módulo): liga simulada rodada a
+                // rodada, perfil recalculado a cada uma a partir do
+                // roster — é o que dá a `world::discipline` (suspensões)
+                // um ponto na simulação onde "fora desta rodada" tem
+                // efeito de verdade. Copa continua usando `self.profiles`
+                // (instantâneo do início da temporada) de qualquer jeito.
                 let result = world::run_season(
                     &self.pack,
                     &self.membership,
                     &self.profiles,
+                    Some(&self.roster),
                     self.world_seed,
                     season_index,
                 );
@@ -248,6 +260,7 @@ impl GameSession {
                     transfers: transfers.len(),
                     injuries,
                     tired_players,
+                    suspensions: result.suspensions,
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -630,6 +643,27 @@ mod tests {
             receipt.tired_players > 0,
             "esperava pelo menos um jogador cansado após uma temporada inteira de liga \
              (256 jogadores, 16 × 11 titulares no pack de exemplo)"
+        );
+    }
+
+    #[test]
+    fn suspensoes_de_fato_acontecem_ligadas_ao_dispatch() {
+        // Caixa branca: prova que o caminho de carreira
+        // (`world::season::run_season` com `roster: Some`, rodada a
+        // rodada) está de fato ligado ao dispatch, não só existe isolado
+        // em `world::season`/`world::discipline`. ~4% por time por
+        // partida, 16 clubes de liga, 14 partidas cada: em 10 temporadas é
+        // extremamente improvável nunca acontecer nenhuma se o sorteio
+        // estivesse de fato rodando.
+        let mut session = GameSession::new(&example_pack_path(), 55).unwrap();
+        let mut total_suspensions = 0usize;
+        for _ in 0..10 {
+            let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+            total_suspensions += receipt.suspensions;
+        }
+        assert!(
+            total_suspensions > 0,
+            "esperava pelo menos uma suspensão em 10 temporadas no pack de exemplo"
         );
     }
 

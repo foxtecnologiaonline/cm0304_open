@@ -170,11 +170,28 @@ trabalho da comunidade.
 > completo com rotação é M3). `CommandReceipt::tired_players` e
 > `managerfc-cli play` já reportam quantos jogadores entram cansados —
 > confirmado por teste que, no pack de exemplo, a maioria dos 176 titulares
-> (16 clubes × 11) sai da primeira temporada com condição reduzida. O que
-> falta deste marco: **moral, fadiga acumulada de carreira, regens e
-> aposentadoria** (só CA, idade, lesão sim/não e condição por temporada
-> evoluem hoje), e **lesão com tipo/gravidade/prazo de recuperação**
-> (RF-JG-08 completo é M3; aqui é só sim/não por temporada).
+> (16 clubes × 11) sai da primeira temporada com condição reduzida.
+> **Suspensões** (RF-JG-09) também já são reais, e foram o motivo de uma
+> mudança estrutural maior: `world::season::run_season` agora simula toda
+> liga **rodada a rodada** no caminho de carreira (perfil de cada clube
+> recalculado a cada rodada a partir do roster, não mais uma vez por
+> temporada) — sem essa granularidade, "suspenso só na próxima rodada" não
+> teria onde ter efeito. Depois de cada rodada, `world::discipline` sorteia
+> ~4% de chance de expulsão por time (ordem de grandeza real de cartão
+> vermelho); se acontece, um titular daquele time (sorteado entre os 11)
+> fica fora da rodada seguinte da mesma competição — nunca atravessa
+> temporada, sem cartão amarelo acumulado, sem reincidência. O caminho
+> estático (`calibrate`/`bench`, sem roster) continua intacto: mesma
+> simulação de antes, confirmado que os números de calibração não mudam
+> nem um dígito. `CommandReceipt::suspensions` e `managerfc-cli play` já
+> reportam quantas expulsões aconteceram; confirmado por teste que
+> acontecem de fato em 10 temporadas no pack de exemplo. O que falta deste
+> marco: **moral, fadiga acumulada de carreira, regens e aposentadoria**
+> (só CA, idade, lesão sim/não e condição por temporada evoluem hoje), e
+> **lesão com tipo/gravidade/prazo de recuperação** (RF-JG-08 completo é
+> M3; aqui é só sim/não por temporada). Com suspensões, **o checklist de
+> objetivos deste marco está completo** — o que resta são simplificações
+> documentadas dentro de cada item, não itens inteiros faltando.
 > **A "primeira IA de mercado"** também já é real:
 > `ai::run_market_day` (subconjunto minúsculo de RF-TR-02/05, `docs/01
 > §2.4` — ambos marcados M2 lá porque a versão completa pede negociação,

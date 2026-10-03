@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "pack_id": "example.two-tier",
   "pack_version": "0.1.0",
   "world_seed": 42,
@@ -9,6 +9,7 @@
   "total_transfers": 22,
   "total_injuries": 42,
   "total_tired_players": 521,
+  "total_suspensions": 26,
   "competitions": [
     {
       "name": "Copa de Estrelônia",
@@ -121,17 +122,6 @@
       "table": [
         {
           "position": 1,
-          "club_name": "Pedra Branca FC",
-          "played": 14,
-          "wins": 8,
-          "draws": 2,
-          "losses": 4,
-          "goals_for": 29,
-          "goals_against": 11,
-          "points": 26
-        },
-        {
-          "position": 2,
           "club_name": "Serra Alta FC",
           "played": 14,
           "wins": 8,
@@ -140,6 +130,17 @@
           "goals_for": 27,
           "goals_against": 21,
           "points": 26
+        },
+        {
+          "position": 2,
+          "club_name": "Pedra Branca FC",
+          "played": 14,
+          "wins": 8,
+          "draws": 1,
+          "losses": 5,
+          "goals_for": 28,
+          "goals_against": 11,
+          "points": 25
         },
         {
           "position": 3,
@@ -200,16 +201,16 @@
           "position": 8,
           "club_name": "Fonte Nova FC",
           "played": 14,
-          "wins": 3,
-          "draws": 4,
+          "wins": 4,
+          "draws": 3,
           "losses": 7,
           "goals_for": 17,
-          "goals_against": 27,
-          "points": 13
+          "goals_against": 26,
+          "points": 15
         }
       ],
       "cup_champion": null
     }
   ],
-  "state_hash": "be0d239db3831f67"
+  "state_hash": "d84d86a5d005353a"
 }

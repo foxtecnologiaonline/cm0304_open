@@ -4,12 +4,29 @@
 //! rebaixamento para a temporada seguinte. É o que fecha o portão do M1:
 //! "um mundo que gira sozinho, sem uma única tela"
 //! (`docs/07-roadmap.md#m1--kick-off-headless-10-semanas`).
+//!
+//! Duas formas de simular uma liga, escolhidas por `run_season` conforme
+//! `roster` é passado ou não: **estática** (`roster: None` — perfil fixo a
+//! temporada inteira, o caminho de `managerfc-cli calibrate`/`bench`, sem
+//! mudança de comportamento desde antes desta fatia) e **de carreira**
+//! (`roster: Some` — `app::GameSession`, perfil recalculado **a cada
+//! rodada** a partir do roster atual, excluindo quem está suspenso
+//! naquela rodada). A segunda existe só por causa de `crate::discipline`:
+//! suspensão (`RF-JG-09`) só faz sentido em granularidade de partida, e
+//! até esta fatia toda liga era simulada de uma vez, sem nenhum ponto no
+//! meio da temporada onde "o jogador X está fora desta rodada" pudesse ter
+//! efeito. Cup (`crate::cup`) não ganha essa granularidade — continua
+//! usando o perfil estático do início da temporada em qualquer um dos dois
+//! casos, suspensão não a afeta (mesma exclusão de `crate::condition`).
 
 use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
-use domain::{ClubId, CompetitionId};
+use domain::{ClubId, CompetitionId, PlayerId};
 use pack::{Format, LoadedPack};
 use rules::{Fixture, Score, TableRow};
+
+use crate::progression::PlayerState;
 
 /// Resultado de simular uma temporada inteira, competição por competição.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +55,12 @@ pub struct SeasonResult {
     /// misturar copa ali enviesaria sem avisar. Uma entrada por competição
     /// de mata-mata do pack, na mesma ordem de `pack.competitions`.
     pub cups: Vec<crate::cup::CupResult>,
+    /// Quantas suspensões de verdade aconteceram esta temporada
+    /// (`crate::discipline::roll_suspensions`, uma por rodada em que uma
+    /// expulsão foi sorteada) — sempre `0` quando `run_season` é chamado
+    /// sem roster (caminho estático: sem granularidade de rodada, sem
+    /// como simular suspensão, ver o doc do módulo).
+    pub suspensions: usize,
 }
 
 impl SeasonResult {
@@ -58,12 +81,21 @@ impl SeasonResult {
 /// [`SeasonResult::movements`] da anterior daí em diante ([`run_seasons`]
 /// já cuida disso). `profiles` vem de
 /// [`crate::quality::generate_match_profiles`] (ou da versão com roster,
-/// `crate::quality::generate_match_profiles_from_roster`).
+/// `crate::quality::generate_match_profiles_from_roster`) — é sempre usado
+/// para copa, e para liga **apenas** quando `roster` é `None`.
+///
+/// `roster`, quando `Some`, muda como toda competição `Format::RoundRobin`
+/// é simulada: rodada a rodada, recalculando o perfil de cada clube que
+/// joga a partir do roster atual (excluindo quem está suspenso — ver o doc
+/// do módulo) em vez de usar `profiles` a temporada inteira. `None` é
+/// exatamente o comportamento de antes desta fatia (`managerfc-cli
+/// calibrate`/`bench`, via [`run_seasons`]).
 #[must_use]
 pub fn run_season(
     pack: &LoadedPack,
     membership: &[CompetitionId],
     profiles: &[engine::TeamMatchProfile],
+    roster: Option<&[PlayerState]>,
     world_seed: u64,
     season_index: u32,
 ) -> SeasonResult {
@@ -76,6 +108,7 @@ pub fn run_season(
     let mut draws = 0u32;
     let mut total_goals = 0u32;
     let mut total_shots = 0u32;
+    let mut suspensions = 0usize;
 
     for competition in &pack.competitions {
         match competition.format {
@@ -102,36 +135,28 @@ pub fn run_season(
                     continue;
                 };
 
-                let mut results = Vec::with_capacity(fixtures.len());
-                for fixture in fixtures {
-                    let home = profiles[fixture.home.as_usize()];
-                    let away = profiles[fixture.away.as_usize()];
-                    let ctx = engine::MatchContext {
-                        world_seed,
-                        fixture: fixture_key(season_index, &fixture),
-                    };
-                    let events = engine::simulate(home, away, ctx);
-                    let (home_goals, away_goals) = engine::score(&events);
-                    let (home_shots, away_shots) = engine::shots(&events);
-
-                    matches_played += 1;
-                    total_goals += home_goals + away_goals;
-                    total_shots += home_shots + away_shots;
-                    match home_goals.cmp(&away_goals) {
-                        Ordering::Greater => home_wins += 1,
-                        Ordering::Less => away_wins += 1,
-                        Ordering::Equal => draws += 1,
+                let outcome = match roster {
+                    None => {
+                        simulate_round_robin_static(profiles, fixtures, world_seed, season_index)
                     }
-                    results.push((
-                        fixture,
-                        Score {
-                            home_goals,
-                            away_goals,
-                        },
-                    ));
-                }
+                    Some(roster) => simulate_round_robin_for_career(
+                        pack,
+                        roster,
+                        fixtures,
+                        world_seed,
+                        season_index,
+                    ),
+                };
+                matches_played += outcome.matches_played;
+                home_wins += outcome.home_wins;
+                away_wins += outcome.away_wins;
+                draws += outcome.draws;
+                total_goals += outcome.total_goals;
+                total_shots += outcome.total_shots;
+                suspensions += outcome.suspensions;
 
-                let table = rules::compute_table(&clubs, &results, &competition.tiebreakers);
+                let table =
+                    rules::compute_table(&clubs, &outcome.results, &competition.tiebreakers);
 
                 if let Some(target) = competition.promotion.to {
                     for row in table.iter().take(competition.promotion.slots as usize) {
@@ -155,7 +180,9 @@ pub fn run_season(
                 // (nenhum clube aponta `competition` pra uma copa —
                 // `crate::cup`). Partidas de copa **não** entram em
                 // `matches_played`/`total_goals`/etc — ver doc de
-                // `SeasonResult::cups`.
+                // `SeasonResult::cups`. Sempre usa o perfil estático do
+                // início da temporada, mesmo no caminho de carreira —
+                // suspensão não afeta copa (doc do módulo).
                 let participants = crate::cup::cup_participants(pack, competition);
                 if let Some(result) = crate::cup::run_cup(
                     competition.id,
@@ -181,7 +208,139 @@ pub fn run_season(
         draws,
         total_goals,
         total_shots,
+        suspensions,
     }
+}
+
+/// Acumulador de uma liga simulada — comum aos dois caminhos
+/// ([`simulate_round_robin_static`]/[`simulate_round_robin_for_career`]),
+/// pra `run_season` somar nos totais da temporada sem repetir seis
+/// `+=` por caminho.
+#[derive(Default)]
+struct RoundRobinOutcome {
+    results: Vec<(Fixture, Score)>,
+    matches_played: u32,
+    home_wins: u32,
+    away_wins: u32,
+    draws: u32,
+    total_goals: u32,
+    total_shots: u32,
+    suspensions: usize,
+}
+
+impl RoundRobinOutcome {
+    fn record_match(&mut self, fixture: Fixture, score: Score, shots: (u32, u32)) {
+        self.matches_played += 1;
+        self.total_goals += score.home_goals + score.away_goals;
+        self.total_shots += shots.0 + shots.1;
+        match score.home_goals.cmp(&score.away_goals) {
+            Ordering::Greater => self.home_wins += 1,
+            Ordering::Less => self.away_wins += 1,
+            Ordering::Equal => self.draws += 1,
+        }
+        self.results.push((fixture, score));
+    }
+}
+
+/// Simula um turno/returno inteiro com o perfil estático de `profiles`,
+/// igual a antes desta fatia — nenhuma mudança de comportamento para quem
+/// chama sem roster (`managerfc-cli calibrate`/`bench`, via
+/// [`run_seasons`]).
+fn simulate_round_robin_static(
+    profiles: &[engine::TeamMatchProfile],
+    fixtures: Vec<Fixture>,
+    world_seed: u64,
+    season_index: u32,
+) -> RoundRobinOutcome {
+    let mut outcome = RoundRobinOutcome::default();
+    for fixture in fixtures {
+        let home = profiles[fixture.home.as_usize()];
+        let away = profiles[fixture.away.as_usize()];
+        let (score, shots) = simulate_fixture(home, away, world_seed, season_index, &fixture);
+        outcome.record_match(fixture, score, shots);
+    }
+    outcome
+}
+
+/// Simula um turno/returno inteiro **rodada a rodada**: o perfil de cada
+/// clube que joga é recalculado a cada rodada a partir de `roster`,
+/// excluindo quem está suspenso (ver o doc do módulo) — é o que torna
+/// `crate::discipline::roll_suspensions` capaz de ter efeito de verdade na
+/// simulação, não só existir isolado. Suspensão nunca atravessa rodada de
+/// competições diferentes nem temporada (reinicia vazia a cada chamada).
+fn simulate_round_robin_for_career(
+    pack: &LoadedPack,
+    roster: &[PlayerState],
+    fixtures: Vec<Fixture>,
+    world_seed: u64,
+    season_index: u32,
+) -> RoundRobinOutcome {
+    let mut outcome = RoundRobinOutcome::default();
+    let mut fixtures_by_round: BTreeMap<u32, Vec<Fixture>> = BTreeMap::new();
+    for fixture in fixtures {
+        fixtures_by_round
+            .entry(fixture.round)
+            .or_default()
+            .push(fixture);
+    }
+
+    let mut suspended: HashSet<PlayerId> = HashSet::new();
+    for (round, round_fixtures) in fixtures_by_round {
+        let playing_clubs: HashSet<ClubId> = round_fixtures
+            .iter()
+            .flat_map(|f| [f.home, f.away])
+            .collect();
+
+        let mut round_profiles: HashMap<ClubId, engine::TeamMatchProfile> = HashMap::new();
+        let mut starters_by_club: Vec<(ClubId, Vec<PlayerId>)> =
+            Vec::with_capacity(playing_clubs.len());
+        for &club in &playing_clubs {
+            let profile = crate::quality::profile_from_roster_excluding_or_synthetic(
+                pack, roster, club, &suspended, world_seed,
+            );
+            round_profiles.insert(club, profile);
+            let starters = crate::quality::starters_from_roster_excluding(roster, club, &suspended);
+            starters_by_club.push((club, starters));
+        }
+
+        for fixture in round_fixtures {
+            let home = round_profiles[&fixture.home];
+            let away = round_profiles[&fixture.away];
+            let (score, shots) = simulate_fixture(home, away, world_seed, season_index, &fixture);
+            outcome.record_match(fixture, score, shots);
+        }
+
+        suspended =
+            crate::discipline::roll_suspensions(world_seed, season_index, round, &starters_by_club);
+        outcome.suspensions += suspended.len();
+    }
+    outcome
+}
+
+/// Simula uma partida e devolve o placar e as finalizações de cada lado —
+/// o núcleo sensível a RNG compartilhado pelos dois caminhos acima
+/// (`engine::simulate`, `ADR 0002`): só existe aqui, nunca duplicado.
+fn simulate_fixture(
+    home_profile: engine::TeamMatchProfile,
+    away_profile: engine::TeamMatchProfile,
+    world_seed: u64,
+    season_index: u32,
+    fixture: &Fixture,
+) -> (Score, (u32, u32)) {
+    let ctx = engine::MatchContext {
+        world_seed,
+        fixture: fixture_key(season_index, fixture),
+    };
+    let events = engine::simulate(home_profile, away_profile, ctx);
+    let (home_goals, away_goals) = engine::score(&events);
+    let shots = engine::shots(&events);
+    (
+        Score {
+            home_goals,
+            away_goals,
+        },
+        shots,
+    )
 }
 
 /// Simula `seasons` temporadas em sequência, aplicando promoção e
@@ -197,7 +356,7 @@ pub fn run_seasons(pack: &LoadedPack, world_seed: u64, seasons: u32) -> Vec<Seas
     let mut reports = Vec::with_capacity(seasons as usize);
 
     for season_index in 0..seasons {
-        let result = run_season(pack, &membership, &profiles, world_seed, season_index);
+        let result = run_season(pack, &membership, &profiles, None, world_seed, season_index);
         for &(club, _from, to) in &result.movements {
             membership[club.as_usize()] = to;
         }
@@ -247,7 +406,7 @@ mod tests {
         let p = example_pack();
         let profiles = crate::quality::generate_match_profiles(&p, 42);
         let membership = initial_membership(&p);
-        let result = run_season(&p, &membership, &profiles, 42, 0);
+        let result = run_season(&p, &membership, &profiles, None, 42, 0);
 
         assert_eq!(result.tables.len(), 2); // tier1 e tier2
         // 8 clubes, turno+returno = 8*7 = 56 jogos por competição.
@@ -256,6 +415,69 @@ mod tests {
             result.home_wins + result.away_wins + result.draws,
             result.matches_played
         );
+        assert_eq!(
+            result.suspensions, 0,
+            "caminho estático (roster: None) nunca simula suspensão"
+        );
+    }
+
+    #[test]
+    fn caminho_de_carreira_produz_as_mesmas_contagens_agregadas_que_o_estatico() {
+        // O loop por rodada (`roster: Some`) tem que continuar simulando o
+        // mesmo número de partidas e produzindo tabelas do mesmo tamanho
+        // que o caminho estático — só a *origem* do perfil por rodada
+        // muda, não a estrutura da competição.
+        let p = example_pack();
+        let profiles = crate::quality::generate_match_profiles(&p, 42);
+        let roster = crate::progression::initial_roster(&p);
+        let membership = initial_membership(&p);
+        let result = run_season(&p, &membership, &profiles, Some(&roster), 42, 0);
+
+        assert_eq!(result.tables.len(), 2);
+        assert_eq!(result.matches_played, 56 * 2);
+        assert_eq!(
+            result.home_wins + result.away_wins + result.draws,
+            result.matches_played
+        );
+        for (_, table) in &result.tables {
+            assert_eq!(table.len(), 8);
+        }
+    }
+
+    #[test]
+    fn caminho_de_carreira_e_deterministico_para_a_mesma_entrada() {
+        let p = example_pack();
+        let profiles = crate::quality::generate_match_profiles(&p, 7);
+        let roster = crate::progression::initial_roster(&p);
+        let membership = initial_membership(&p);
+
+        let a = run_season(&p, &membership, &profiles, Some(&roster), 7, 0);
+        let b = run_season(&p, &membership, &profiles, Some(&roster), 7, 0);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn suspensoes_de_fato_acontecem_em_varias_temporadas_de_carreira() {
+        // Sanidade estatística (como `world::injuries`'s
+        // `em_um_elenco_grande_algum_jogador_se_machuca`): ~4% por time por
+        // partida, 16 clubes, 14 partidas de liga por clube por temporada —
+        // esperar zero suspensões em 10 temporadas seria extremamente
+        // improvável se `crate::discipline` estivesse de fato ligado ao
+        // loop por rodada.
+        let p = example_pack();
+        let roster = crate::progression::initial_roster(&p);
+        let membership = initial_membership(&p);
+        let profiles = crate::quality::generate_match_profiles(&p, 1);
+
+        let total_suspensions: usize = (0..10)
+            .map(|season_index| {
+                run_season(&p, &membership, &profiles, Some(&roster), 1, season_index).suspensions
+            })
+            .sum();
+        assert!(
+            total_suspensions > 0,
+            "esperava pelo menos uma suspensão em 10 temporadas no pack de exemplo"
+        );
     }
 
     #[test]
@@ -263,7 +485,7 @@ mod tests {
         let p = example_pack();
         let profiles = crate::quality::generate_match_profiles(&p, 7);
         let membership = initial_membership(&p);
-        let result = run_season(&p, &membership, &profiles, 7, 0);
+        let result = run_season(&p, &membership, &profiles, None, 7, 0);
 
         for (_, table) in &result.tables {
             let total_wins: u32 = table.iter().map(|r| r.wins).sum();

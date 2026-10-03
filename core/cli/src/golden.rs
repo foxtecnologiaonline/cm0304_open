@@ -26,8 +26,12 @@ use serde::{Deserialize, Serialize};
 /// os goldens existentes (mesma disciplina de `persist::SCHEMA_VERSION`).
 /// Bump 1→2: `CompetitionSnapshot` ganhou `cup_champion` (`pack::Format::Knockout`,
 /// `docs/07-roadmap.md` M1 — copa). Bump 2→3: `total_tired_players`
-/// (`world::apply_season_fatigue`, RF-JG-07 — condição física).
-const SCHEMA_VERSION: u16 = 3;
+/// (`world::apply_season_fatigue`, RF-JG-07 — condição física). Bump 3→4:
+/// `total_suspensions` (`world::discipline`, RF-JG-09 — suspensão por
+/// expulsão; liga agora simulada rodada a rodada no caminho de carreira,
+/// ver `world::season`, então o hash de qualquer golden anterior já não
+/// bateria mesmo sem esse campo novo).
+const SCHEMA_VERSION: u16 = 4;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct TableRowSnapshot {
@@ -85,6 +89,11 @@ struct GoldenMaster {
     /// semântica de `total_injuries`: soma de instantâneos por temporada,
     /// não uma contagem de eventos distintos — `world::apply_season_fatigue`).
     total_tired_players: usize,
+    /// Soma de `CommandReceipt::suspensions` de cada temporada — ao
+    /// contrário de `total_tired_players`, esta é mesmo uma contagem de
+    /// eventos distintos (uma expulsão por rodada em que aconteceu,
+    /// `world::discipline::roll_suspensions`), não um instantâneo.
+    total_suspensions: usize,
     /// Tabela final (depois da última temporada) de cada competição do
     /// pack, na mesma ordem que `app::Query::Competitions` devolve —
     /// determinística (ordem de id denso, `docs/02 §6.1`).
@@ -125,6 +134,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
     let mut total_transfers = 0usize;
     let mut total_injuries = 0usize;
     let mut total_tired_players = 0usize;
+    let mut total_suspensions = 0usize;
     for _ in 0..seasons {
         let receipt = session
             .dispatch(app::Command::AdvanceSeason)
@@ -134,6 +144,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_transfers += receipt.transfers;
         total_injuries += receipt.injuries;
         total_tired_players += receipt.tired_players;
+        total_suspensions += receipt.suspensions;
     }
 
     let app::QueryResult::Competitions(competitions_list) = session.query(app::Query::Competitions)
@@ -203,6 +214,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_transfers,
         total_injuries,
         total_tired_players,
+        total_suspensions,
         competitions,
         state_hash: String::new(),
     };
@@ -333,6 +345,10 @@ pub fn verify(seed: u64, pack_path: Option<std::path::PathBuf>, expect_path: &Pa
     eprintln!(
         "  jogadores cansados: esperado {}, obtido {}",
         expected.total_tired_players, actual.total_tired_players
+    );
+    eprintln!(
+        "  suspensões: esperado {}, obtido {}",
+        expected.total_suspensions, actual.total_suspensions
     );
     report_competition_diff(&expected.competitions, &actual.competitions);
     eprintln!(

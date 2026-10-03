@@ -71,6 +71,23 @@ pub fn generate_match_profiles_from_roster(
         .collect()
 }
 
+/// [`profile_from_roster_excluding`] com o mesmo *fallback* sintético de
+/// [`generate_match_profiles_from_roster`] (clube sem elenco elegível —
+/// todos lesionados/suspensos, ou pack sem jogadores pro clube). Usado por
+/// `crate::season` no loop por rodada, onde cada rodada pode excluir um
+/// conjunto de suspensos diferente (`crate::discipline`).
+#[must_use]
+pub fn profile_from_roster_excluding_or_synthetic(
+    pack: &LoadedPack,
+    roster: &[PlayerState],
+    club: ClubId,
+    excluded: &HashSet<PlayerId>,
+    world_seed: u64,
+) -> TeamMatchProfile {
+    profile_from_roster_excluding(pack, roster, club, excluded)
+        .unwrap_or_else(|| synthetic_profile(club, world_seed))
+}
+
 fn synthetic_profile(club: ClubId, world_seed: u64) -> TeamMatchProfile {
     TeamMatchProfile {
         strength: synthetic_strength(club, world_seed),
@@ -201,16 +218,33 @@ pub fn profile_from_squad(pack: &LoadedPack, club: ClubId) -> Option<TeamMatchPr
 /// `crate::progression`, muda de clube com `crate::market`), atributos
 /// visíveis ainda vêm do pack (nunca evoluem, ver o doc de [`build_profile`]).
 /// Jogador machucado (`crate::injuries`) nunca entra no elenco considerado
-/// — mesma exclusão de [`crate::strength::strength_from_roster`].
+/// — mesma exclusão de [`crate::strength::strength_from_roster`]. Atalho de
+/// [`profile_from_roster_excluding`] sem ninguém suspenso — a maioria de
+/// quem chama (fora de `crate::season`, que recalcula por rodada) não tem
+/// suspensão pra excluir.
 #[must_use]
 pub fn profile_from_roster(
     pack: &LoadedPack,
     roster: &[PlayerState],
     club: ClubId,
 ) -> Option<TeamMatchProfile> {
+    profile_from_roster_excluding(pack, roster, club, &HashSet::new())
+}
+
+/// Igual a [`profile_from_roster`], mas também exclui todo `PlayerId` em
+/// `excluded` da escalação — usado por `crate::season` para tirar jogador
+/// suspenso (`crate::discipline`) da rodada em que cumpre a suspensão,
+/// sem duplicar a lógica de seleção de [`build_profile`].
+#[must_use]
+pub fn profile_from_roster_excluding(
+    pack: &LoadedPack,
+    roster: &[PlayerState],
+    club: ClubId,
+    excluded: &HashSet<PlayerId>,
+) -> Option<TeamMatchProfile> {
     let squad: Vec<(Position, u8, domain::PlayerAttributes, u8)> = roster
         .iter()
-        .filter(|p| p.club == club && !p.injured)
+        .filter(|p| p.club == club && !p.injured && !excluded.contains(&p.player))
         .map(|p| {
             (
                 p.position,
@@ -228,12 +262,24 @@ pub fn profile_from_roster(
 /// jogador machucado nunca candidato), mas devolvendo o [`PlayerId`] real
 /// em vez do índice local que [`build_profile`] usa por dentro. É o que
 /// `crate::condition::apply_season_fatigue` precisa pra saber quem de fato
-/// jogou — `build_profile` não expõe isso, só o perfil agregado.
+/// jogou — `build_profile` não expõe isso, só o perfil agregado. Atalho de
+/// [`starters_from_roster_excluding`] sem ninguém suspenso.
 #[must_use]
 pub fn starters_from_roster(roster: &[PlayerState], club: ClubId) -> Vec<PlayerId> {
+    starters_from_roster_excluding(roster, club, &HashSet::new())
+}
+
+/// Igual a [`starters_from_roster`], mas também exclui todo `PlayerId` em
+/// `excluded` — mesmo motivo de [`profile_from_roster_excluding`].
+#[must_use]
+pub fn starters_from_roster_excluding(
+    roster: &[PlayerState],
+    club: ClubId,
+    excluded: &HashSet<PlayerId>,
+) -> Vec<PlayerId> {
     let squad: Vec<&PlayerState> = roster
         .iter()
-        .filter(|p| p.club == club && !p.injured)
+        .filter(|p| p.club == club && !p.injured && !excluded.contains(&p.player))
         .collect();
     let ratings: Vec<ai::PlayerRating> = squad
         .iter()
@@ -458,6 +504,65 @@ mod tests {
         let mut roster = crate::progression::initial_roster(&p);
         roster[0].injured = true;
         assert!(starters_from_roster(&roster, p.clubs[0].id).is_empty());
+    }
+
+    #[test]
+    fn excluding_tira_o_titular_sorteado_e_promove_o_reserva() {
+        // FORMATION pede 4 meio-campistas — 5 candidatos aqui, então o de
+        // menor CA (50) fica de fora por padrão. Excluir o de maior CA
+        // (150) promove exatamente esse reserva, sem mudar o tamanho do
+        // time titular (continua 4 meio-campistas, agora os 4 seguintes).
+        let p = pack_with_players(&[
+            (Position::Midfielder, 150, PlayerAttributes::default()),
+            (Position::Midfielder, 140, PlayerAttributes::default()),
+            (Position::Midfielder, 130, PlayerAttributes::default()),
+            (Position::Midfielder, 120, PlayerAttributes::default()),
+            (Position::Midfielder, 50, PlayerAttributes::default()), // reserva
+        ]);
+        let roster = crate::progression::initial_roster(&p);
+        let club = p.clubs[0].id;
+
+        let starters = starters_from_roster(&roster, club);
+        assert_eq!(starters.len(), 4);
+        assert!(starters.contains(&PlayerId::new(0))); // CA 150 titulariza
+        assert!(!starters.contains(&PlayerId::new(4))); // CA 50 fica de fora
+
+        let excluded = HashSet::from([PlayerId::new(0)]);
+        let starters_excluding = starters_from_roster_excluding(&roster, club, &excluded);
+        assert_eq!(starters_excluding.len(), 4);
+        assert!(!starters_excluding.contains(&PlayerId::new(0))); // excluído de fato
+        assert!(starters_excluding.contains(&PlayerId::new(4))); // reserva promovido
+
+        let fresh = profile_from_roster(&p, &roster, club).unwrap().strength;
+        let with_backup = profile_from_roster_excluding(&p, &roster, club, &excluded)
+            .unwrap()
+            .strength;
+        assert!(
+            with_backup.value() < fresh.value(),
+            "perfil com o reserva de CA menor deveria render força menor"
+        );
+    }
+
+    #[test]
+    fn excluding_todos_os_candidatos_usa_o_fallback_sintetico() {
+        let p = pack_with_players(&[(Position::Midfielder, 100, PlayerAttributes::default())]);
+        let roster = crate::progression::initial_roster(&p);
+        let club = p.clubs[0].id;
+        let excluded = HashSet::from([PlayerId::new(0)]);
+
+        assert_eq!(
+            profile_from_roster_excluding(&p, &roster, club, &excluded),
+            None
+        );
+        // Com todo mundo fora, o fallback sintético assume — nunca `None`
+        // pra quem chama o caminho por rodada (`crate::season`), que não
+        // tem como lidar com "sem perfil pra simular esta partida".
+        let synthetic = profile_from_roster_excluding_or_synthetic(&p, &roster, club, &excluded, 7);
+        assert_eq!(
+            synthetic,
+            profile_from_roster_excluding_or_synthetic(&p, &roster, club, &excluded, 7),
+            "fallback sintético deveria ser determinístico pra mesma seed"
+        );
     }
 
     #[test]
