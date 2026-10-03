@@ -10,11 +10,19 @@
 //! g(goleiro: reflexos, posicionamento, jogo aéreo)`): sem ângulo, pressão
 //! ou pé (pedem zona e lado dominante, que não existem ainda), só a média
 //! dos atributos que já existem e já fazem sentido sem eles.
+//!
+//! `strength` também é escalado pela condição física média dos titulares
+//! (`crate::condition`) — um time desgastado rende um pouco menos que o
+//! CA bruto sugeriria. `finishing`/`goalkeeping` não são escalados (fatia
+//! mínima: fadiga afeta volume/força, não necessariamente técnica).
 
-use domain::{Attribute, ClubId, DeterministicRng, Fixed, Position};
+use std::collections::HashSet;
+
+use domain::{Attribute, ClubId, DeterministicRng, Fixed, PlayerId, Position};
 use engine::{FinishingQuality, GoalkeepingQuality, TeamMatchProfile};
 use pack::{LoadedPack, ResolvedPlayer};
 
+use crate::condition::FULL_CONDITION;
 use crate::progression::PlayerState;
 use crate::strength::synthetic_strength;
 
@@ -95,20 +103,24 @@ fn average_three(attrs: domain::PlayerAttributes, a: Attribute, b: Attribute, c:
     (i32::from(attrs.get(a)) + i32::from(attrs.get(b)) + i32::from(attrs.get(c))) / 3
 }
 
-/// Constrói o perfil a partir de uma lista de `(posição, CA, atributos)` —
-/// o núcleo comum entre [`profile_from_squad`] (atributos do pack, CA do
-/// pack) e [`profile_from_roster`] (atributos do pack, CA do roster): os
-/// 36 atributos visíveis nunca evoluem na carreira ainda (sem treino), só
-/// o CA evolui (`crate::progression`), então "de onde vem o CA" é a única
-/// diferença real entre os dois caminhos.
-fn build_profile(squad: &[(Position, u8, domain::PlayerAttributes)]) -> Option<TeamMatchProfile> {
+/// Constrói o perfil a partir de uma lista de `(posição, CA, atributos,
+/// condição)` — o núcleo comum entre [`profile_from_squad`] (atributos do
+/// pack, CA do pack, sempre `FULL_CONDITION`: pack estático não tem estado
+/// de carreira) e [`profile_from_roster`] (atributos do pack, CA e
+/// condição do roster): os 36 atributos visíveis nunca evoluem na carreira
+/// ainda (sem treino), só o CA e a condição evoluem (`crate::progression`,
+/// `crate::condition`), então "de onde vêm esses dois" é a única diferença
+/// real entre os dois caminhos.
+fn build_profile(
+    squad: &[(Position, u8, domain::PlayerAttributes, u8)],
+) -> Option<TeamMatchProfile> {
     if squad.is_empty() {
         return None;
     }
     let ratings: Vec<ai::PlayerRating> = squad
         .iter()
         .enumerate()
-        .map(|(idx, &(position, ca, _))| ai::PlayerRating {
+        .map(|(idx, &(position, ca, _, _))| ai::PlayerRating {
             player: domain::PlayerId::new(idx as u32),
             position,
             current_ability: ca,
@@ -119,7 +131,14 @@ fn build_profile(squad: &[(Position, u8, domain::PlayerAttributes)]) -> Option<T
         .map(|id| id.as_usize())
         .collect();
 
-    let total: u32 = starter_indices.iter().map(|&i| u32::from(squad[i].1)).sum();
+    // CA efetivo de cada titular já escalado pela própria condição, depois
+    // a média de 11 — não a média de CA bruto escalada por uma condição de
+    // time única, que trataria um titular cansado e um descansado como se
+    // tivessem o mesmo desgaste.
+    let total: u32 = starter_indices
+        .iter()
+        .map(|&i| u32::from(squad[i].1) * u32::from(squad[i].3) / u32::from(FULL_CONDITION))
+        .sum();
     let strength = engine::TeamStrength::new(Fixed::from_int(
         (total / starter_indices.len() as u32) as i32,
     ));
@@ -163,10 +182,17 @@ fn build_profile(squad: &[(Position, u8, domain::PlayerAttributes)]) -> Option<T
 /// carreira) — `None` se o clube não tem nenhum jogador no pack.
 #[must_use]
 pub fn profile_from_squad(pack: &LoadedPack, club: ClubId) -> Option<TeamMatchProfile> {
-    let squad: Vec<(Position, u8, domain::PlayerAttributes)> = pack
+    let squad: Vec<(Position, u8, domain::PlayerAttributes, u8)> = pack
         .players_of(club)
         .iter()
-        .map(|p: &&ResolvedPlayer| (p.position, p.ability.current(), p.attributes))
+        .map(|p: &&ResolvedPlayer| {
+            (
+                p.position,
+                p.ability.current(),
+                p.attributes,
+                FULL_CONDITION,
+            )
+        })
         .collect();
     build_profile(&squad)
 }
@@ -182,7 +208,7 @@ pub fn profile_from_roster(
     roster: &[PlayerState],
     club: ClubId,
 ) -> Option<TeamMatchProfile> {
-    let squad: Vec<(Position, u8, domain::PlayerAttributes)> = roster
+    let squad: Vec<(Position, u8, domain::PlayerAttributes, u8)> = roster
         .iter()
         .filter(|p| p.club == club && !p.injured)
         .map(|p| {
@@ -190,10 +216,52 @@ pub fn profile_from_roster(
                 p.position,
                 p.ability.current(),
                 pack.players[p.player.as_usize()].attributes,
+                p.condition,
             )
         })
         .collect();
     build_profile(&squad)
+}
+
+/// Titulares de `club` no `roster` — mesma seleção que [`profile_from_roster`]
+/// faz internamente (maior CA por posição, `ai::select_starting_eleven`,
+/// jogador machucado nunca candidato), mas devolvendo o [`PlayerId`] real
+/// em vez do índice local que [`build_profile`] usa por dentro. É o que
+/// `crate::condition::apply_season_fatigue` precisa pra saber quem de fato
+/// jogou — `build_profile` não expõe isso, só o perfil agregado.
+#[must_use]
+pub fn starters_from_roster(roster: &[PlayerState], club: ClubId) -> Vec<PlayerId> {
+    let squad: Vec<&PlayerState> = roster
+        .iter()
+        .filter(|p| p.club == club && !p.injured)
+        .collect();
+    let ratings: Vec<ai::PlayerRating> = squad
+        .iter()
+        .enumerate()
+        .map(|(idx, p)| ai::PlayerRating {
+            player: PlayerId::new(idx as u32),
+            position: p.position,
+            current_ability: p.ability.current(),
+        })
+        .collect();
+    ai::select_starting_eleven(&ratings)
+        .into_iter()
+        .map(|local_id| squad[local_id.as_usize()].player)
+        .collect()
+}
+
+/// [`starters_from_roster`] de todo clube do pack, achatado num único
+/// conjunto — o que `app::GameSession` passa para
+/// `crate::condition::apply_season_fatigue` no fim de cada temporada.
+#[must_use]
+pub fn starters_from_roster_all_clubs(
+    pack: &LoadedPack,
+    roster: &[PlayerState],
+) -> HashSet<PlayerId> {
+    pack.clubs
+        .iter()
+        .flat_map(|club| starters_from_roster(roster, club.id))
+        .collect()
 }
 
 #[cfg(test)]
@@ -346,5 +414,59 @@ mod tests {
             generate_match_profiles(&p, 7),
             generate_match_profiles(&p, 7)
         );
+    }
+
+    #[test]
+    fn condicao_reduzida_do_titular_reduz_a_forca_efetiva() {
+        let p = pack_with_players(&[(Position::Midfielder, 100, PlayerAttributes::default())]);
+        let mut roster = crate::progression::initial_roster(&p);
+        let fresh = profile_from_roster(&p, &roster, p.clubs[0].id)
+            .unwrap()
+            .strength;
+
+        roster[0].condition = 70;
+        let tired = profile_from_roster(&p, &roster, p.clubs[0].id)
+            .unwrap()
+            .strength;
+
+        assert!(
+            tired.value() < fresh.value(),
+            "titular com condição 70 deveria render menos que com condição 100"
+        );
+        // CA 100 × condição 70/100 = 70, exato.
+        assert_eq!(tired.value(), Fixed::from_int(70));
+    }
+
+    #[test]
+    fn starters_from_roster_bate_com_quem_profile_from_roster_de_fato_escalou() {
+        // `profile_from_squad`'s teste de goleiro/atacante já prova que
+        // `build_profile` escolhe por CA; este prova que
+        // `starters_from_roster` (usada só por `crate::condition`) escolhe
+        // exatamente os mesmos titulares, não uma seleção divergente.
+        let p = pack_with_players(&[
+            (Position::Goalkeeper, 150, PlayerAttributes::default()),
+            (Position::Goalkeeper, 50, PlayerAttributes::default()), // reserva, CA menor
+        ]);
+        let roster = crate::progression::initial_roster(&p);
+        let starters = starters_from_roster(&roster, p.clubs[0].id);
+        assert_eq!(starters, vec![PlayerId::new(0)]); // só o de CA 150
+    }
+
+    #[test]
+    fn starters_from_roster_ignora_jogador_machucado() {
+        let p = pack_with_players(&[(Position::Midfielder, 100, PlayerAttributes::default())]);
+        let mut roster = crate::progression::initial_roster(&p);
+        roster[0].injured = true;
+        assert!(starters_from_roster(&roster, p.clubs[0].id).is_empty());
+    }
+
+    #[test]
+    fn starters_from_roster_all_clubs_cobre_todos_os_clubes_do_pack_de_exemplo() {
+        let p = example_pack();
+        let roster = crate::progression::initial_roster(&p);
+        let starters = starters_from_roster_all_clubs(&p, &roster);
+        // 16 clubes × 11 titulares = 176, sem repetição (jogadores são
+        // exclusivos de um clube).
+        assert_eq!(starters.len(), 16 * 11);
     }
 }

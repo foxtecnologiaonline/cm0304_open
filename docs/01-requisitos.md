@@ -94,8 +94,17 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > nenhum alvo publicado), sem tipo, gravidade, prazo de recuperação
 > granular nem risco de recaída — jogador machucado só fica fora da
 > escalação a temporada inteira (`ai::select_starting_eleven` nunca o vê)
-> e recupera automaticamente se não for sorteado de novo. Nenhuma das
-> outras variáveis de RF-JG-07 (moral, condição, fadiga) existe.
+> e recupera automaticamente se não for sorteado de novo. `world::condition`
+> cobre uma fatia mínima de RF-JG-07, só a parte de "condição física": a
+> condição de entrada de cada jogador na temporada é recalculada do zero a
+> cada uma (não é cumulativo entre temporadas) a partir de quantas partidas
+> de **liga** ele titularizou na temporada anterior (copa não conta —
+> `world::cup`) — um titular inabalável entra na seguinte com a força
+> efetiva reduzida (piso de 70%, nunca menos), um reserva entra pleno. Sem
+> calendário diário (`docs/02 §5`) não dá pra calcular frescor real entre
+> partidas, então não é dia a dia, só por temporada — mesma disciplina de
+> `world::injuries`. Moral e fadiga acumulada de carreira (ao contrário de
+> condição por temporada) continuam não existindo.
 
 ### 2.4 Transferências (`TR`)
 

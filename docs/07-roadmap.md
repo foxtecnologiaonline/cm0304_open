@@ -142,10 +142,23 @@ trabalho da comunidade.
 > (`docs/04 §4.1`) — confirmado por teste que os números de `calibrate` não
 > mudam nem um dígito com a copa ligada. O pack de exemplo ganhou uma copa
 > de 16 times (`es.cup`, as duas divisões inteiras); `managerfc-cli play` e
-> `app::Query::CupChampion` mostram o campeão. O que falta deste marco:
-> **condição, moral, fadiga, regens e aposentadoria** (só CA, idade e lesão
-> sim/não evoluem hoje), e **lesão com tipo/gravidade/prazo de
-> recuperação** (RF-JG-08 completo é M3; aqui é só sim/não por temporada).
+> `app::Query::CupChampion` mostram o campeão. **Condição física** também
+> já é real: `world::condition::apply_season_fatigue` recalcula a condição
+> de entrada de cada jogador na temporada seguinte a partir de quantas
+> partidas de liga ele titularizou na que acabou de terminar (não
+> cumulativo entre temporadas, piso de 70% mesmo pro titular mais usado —
+> sem calendário diário não dá pra calcular frescor real dia a dia, mesma
+> limitação documentada em `world::progression`). Entra como multiplicador
+> na força efetiva do titular (`world::quality::build_profile`), não na
+> escolha de quem joga (a escalação ainda ignora cansaço, RF-PA-01
+> completo com rotação é M3). `CommandReceipt::tired_players` e
+> `managerfc-cli play` já reportam quantos jogadores entram cansados —
+> confirmado por teste que, no pack de exemplo, a maioria dos 176 titulares
+> (16 clubes × 11) sai da primeira temporada com condição reduzida. O que
+> falta deste marco: **moral, fadiga acumulada de carreira, regens e
+> aposentadoria** (só CA, idade, lesão sim/não e condição por temporada
+> evoluem hoje), e **lesão com tipo/gravidade/prazo de recuperação**
+> (RF-JG-08 completo é M3; aqui é só sim/não por temporada).
 > **A "primeira IA de mercado"** também já é real:
 > `ai::run_market_day` (subconjunto minúsculo de RF-TR-02/05, `docs/01
 > §2.4` — ambos marcados M2 lá porque a versão completa pede negociação,

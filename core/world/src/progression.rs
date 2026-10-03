@@ -54,6 +54,15 @@ pub struct PlayerState {
     /// (`crate::strength::strength_from_roster`,
     /// `crate::quality::profile_from_roster`).
     pub injured: bool,
+    /// Condição física de 0 a 100 — fatia mínima de RF-JG-07 (`docs/01
+    /// §2.3`), recalculada a cada temporada por `crate::condition` a
+    /// partir de quantas partidas de liga o jogador titularizou na
+    /// temporada anterior (não é cumulativo entre temporadas: reseta a
+    /// cada uma, não acumula desgaste ao longo da carreira — ver o doc de
+    /// `crate::condition`). Começa em `crate::condition::FULL_CONDITION`
+    /// (100, descansado). Entra como multiplicador na força efetiva de
+    /// `crate::quality::build_profile`.
+    pub condition: u8,
 }
 
 /// Constrói o estado inicial de carreira a partir do pack: um
@@ -73,6 +82,7 @@ pub fn initial_roster(pack: &LoadedPack) -> Vec<PlayerState> {
             age_years: pack.reference_year - p.birth.year(),
             ability: p.ability,
             injured: false,
+            condition: crate::condition::FULL_CONDITION,
         })
         .collect()
 }

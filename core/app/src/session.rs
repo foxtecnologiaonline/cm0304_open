@@ -7,6 +7,7 @@
 //! (avançar a temporada) e **três** consultas, o suficiente para uma UI
 //! carregar um pack, rodar temporadas e mostrar uma tabela.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use domain::CompetitionId;
@@ -42,6 +43,11 @@ pub struct CommandReceipt {
     /// Quantos jogadores estão machucados nesta temporada
     /// (`world::roll_injuries` — `docs/01 §2.3`, RF-JG-08, fatia mínima).
     pub injuries: usize,
+    /// Quantos jogadores começam a **próxima** temporada com condição
+    /// abaixo de `world::FULL_CONDITION` — titulares que titularizaram a
+    /// temporada que acabou de terminar (`world::apply_season_fatigue`,
+    /// `docs/01 §2.1`, RF-JG-07, fatia mínima).
+    pub tired_players: usize,
 }
 
 /// Uma carreira carregada em memória.
@@ -197,6 +203,12 @@ impl GameSession {
                     &self.roster,
                     self.world_seed,
                 );
+                // Titulares desta temporada — a mesma seleção que o cálculo
+                // de perfil acima acabou de fazer clube a clube, guardada à
+                // parte porque `world::apply_season_fatigue` (abaixo)
+                // precisa saber exatamente quem jogou, não só o perfil
+                // agregado do time.
+                let starters = world::starters_from_roster_all_clubs(&self.pack, &self.roster);
                 let result = world::run_season(
                     &self.pack,
                     &self.membership,
@@ -208,6 +220,25 @@ impl GameSession {
                 for &(club, _from, to) in &result.movements {
                     self.membership[club.as_usize()] = to;
                 }
+
+                // Condição de entrada na próxima temporada
+                // (`world::apply_season_fatigue`, `docs/01 §2.1` RF-JG-07,
+                // fatia mínima): titular que jogou muita partida de liga
+                // rende um pouco menos na temporada seguinte, reserva entra
+                // descansado. Só partidas de liga contam — `result.tables`
+                // nunca inclui copa (`world::cup`, `SeasonResult::cups`).
+                let matches_played_by_club: HashMap<domain::ClubId, u32> = result
+                    .tables
+                    .iter()
+                    .flat_map(|(_, table)| table.iter().map(|row| (row.club, row.played)))
+                    .collect();
+                world::apply_season_fatigue(&mut self.roster, &starters, &matches_played_by_club);
+                let tired_players = self
+                    .roster
+                    .iter()
+                    .filter(|p| p.condition < world::FULL_CONDITION)
+                    .count();
+
                 world::advance_season(&mut self.roster, self.world_seed, season_index);
 
                 let receipt = CommandReceipt {
@@ -216,6 +247,7 @@ impl GameSession {
                     movements: result.movements.len(),
                     transfers: transfers.len(),
                     injuries,
+                    tired_players,
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -466,6 +498,40 @@ mod tests {
         assert_ne!(
             initial_profiles, session.profiles,
             "perfil dos clubes deveria mudar após 5 temporadas de progressão"
+        );
+    }
+
+    #[test]
+    fn titulares_de_fato_desgastam_e_reporte_de_cansados_bate_com_o_roster() {
+        // Caixa branca: prova que `world::apply_season_fatigue` está
+        // ligado ao dispatch (não só existe isolada em `world`) — depois
+        // de uma temporada inteira, pelo menos os titulares (que jogaram
+        // partidas de liga de verdade) deveriam entrar na próxima com
+        // condição abaixo de `FULL_CONDITION`.
+        let mut session = GameSession::new(&example_pack_path(), 21).unwrap();
+        assert!(
+            session
+                .roster
+                .iter()
+                .all(|p| p.condition == world::FULL_CONDITION),
+            "ninguém deveria começar a carreira cansado"
+        );
+
+        let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+
+        assert_eq!(
+            receipt.tired_players,
+            session
+                .roster
+                .iter()
+                .filter(|p| p.condition < world::FULL_CONDITION)
+                .count(),
+            "receipt.tired_players deveria bater com o roster logo após o dispatch"
+        );
+        assert!(
+            receipt.tired_players > 0,
+            "esperava pelo menos um jogador cansado após uma temporada inteira de liga \
+             (256 jogadores, 16 × 11 titulares no pack de exemplo)"
         );
     }
 
