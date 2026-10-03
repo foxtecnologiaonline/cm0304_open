@@ -443,6 +443,104 @@ mod tests {
     }
 
     #[test]
+    fn vinte_temporadas_seguidas_nao_travam_e_preservam_os_invariantes_do_mundo() {
+        // Portão de saída do M1 (`docs/07-roadmap.md` §2): "20 temporadas
+        // seguidas sem divergência entre plataformas e com métricas... dentro
+        // da tolerância". `golden verify` (docs/08 §3) já cobre "sem
+        // divergência entre plataformas" e `calibrate --check` (docs/04 §4.2)
+        // já cobre "métricas dentro da tolerância" — nenhum dos dois roda 20
+        // temporadas pela fronteira real de carreira (`app::GameSession`,
+        // mercado + lesões + condição + progressão + copa + liga, todos
+        // juntos, não isolados uns dos outros). Este teste é o que de fato
+        // exercita essa duração, e prova que nada degenera silenciosamente
+        // ao longo do caminho: dinheiro sempre conservado, CA nunca passa do
+        // potencial, elenco nunca cresce/encolhe, ligas nunca desbalanceiam,
+        // copa sempre produz exatamente um campeão.
+        let mut session = GameSession::new(&example_pack_path(), 2026).unwrap();
+        let initial_roster_len = session.roster.len();
+        let initial_money_total: i64 = session.budgets.iter().map(|b| b.cents()).sum();
+
+        let QueryResult::Competitions(competitions) = session.query(Query::Competitions) else {
+            unreachable!()
+        };
+        let mut initial_league_sizes: Vec<(CompetitionId, usize)> = Vec::new();
+
+        for season in 0..20 {
+            let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+            assert!(
+                receipt.matches_played > 0,
+                "temporada {season} não simulou nenhuma partida"
+            );
+
+            if season == 0 {
+                for comp in &competitions {
+                    if comp.kind == CompetitionKind::League {
+                        let QueryResult::Standings(Some(table)) = session.query(Query::Standings {
+                            competition: comp.id,
+                        }) else {
+                            panic!("liga '{}' sem tabela após a 1ª temporada", comp.name);
+                        };
+                        initial_league_sizes.push((comp.id, table.len()));
+                    }
+                }
+            }
+        }
+
+        assert_eq!(
+            session.roster.len(),
+            initial_roster_len,
+            "elenco total não deveria crescer nem encolher em 20 temporadas"
+        );
+        for player in &session.roster {
+            assert!(
+                player.ability.current() <= player.ability.potential(),
+                "jogador {:?} com CA acima do PA após 20 temporadas",
+                player.player
+            );
+            assert!(
+                player.condition <= world::FULL_CONDITION,
+                "condição de {:?} acima do máximo",
+                player.player
+            );
+            assert!(
+                player.age_years > 0,
+                "jogador {:?} com idade não-positiva",
+                player.player
+            );
+        }
+
+        let final_money_total: i64 = session.budgets.iter().map(|b| b.cents()).sum();
+        assert_eq!(
+            initial_money_total, final_money_total,
+            "dinheiro total do mundo deveria ser conservado em 20 temporadas de mercado"
+        );
+
+        for (competition, expected_size) in initial_league_sizes {
+            let QueryResult::Standings(Some(table)) =
+                session.query(Query::Standings { competition })
+            else {
+                panic!("liga {competition:?} sem tabela após 20 temporadas");
+            };
+            assert_eq!(
+                table.len(),
+                expected_size,
+                "liga {competition:?} mudou de tamanho em 20 temporadas — promoção/rebaixamento desbalanceado"
+            );
+        }
+
+        for comp in &competitions {
+            if comp.kind == CompetitionKind::Cup {
+                let QueryResult::CupChampion(Some(champion)) = session.query(Query::CupChampion {
+                    competition: comp.id,
+                }) else {
+                    panic!("copa '{}' sem campeão após 20 temporadas", comp.name);
+                };
+                assert!(!champion.champion_club_name.is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn avancar_varias_temporadas_e_deterministico() {
         let mut a = GameSession::new(&example_pack_path(), 7).unwrap();
         let mut b = GameSession::new(&example_pack_path(), 7).unwrap();

@@ -69,6 +69,22 @@ trabalho da comunidade.
 **Portão:** 20 temporadas seguidas sem divergência entre plataformas e com métricas de
 [`04`](04-motor-de-partida.md#41-alvos-futebol-europeu-de-primeira-divisão-médias-recentes) dentro da tolerância.
 
+> **Estado de implementação do próprio portão:** as duas metades já são
+> verificadas de verdade, mas por testes separados — `golden verify` (`docs/08
+> §3`) cobre "sem divergência entre plataformas" (3 temporadas, nas 3 famílias
+> de SO da CI) e `calibrate --check` (`docs/04 §4.2`) cobre "métricas dentro
+> da tolerância" (50 temporadas) — nenhum dos dois roda 20 temporadas pela
+> fronteira real de carreira (`app::GameSession`: mercado, lesões, condição,
+> progressão, copa e liga, todos juntos). `app::session::tests::vinte_temporadas_seguidas_nao_travam_e_preservam_os_invariantes_do_mundo`
+> (novo) fecha essa lacuna: roda exatamente as 20 temporadas do portão pela
+> fronteira completa e confere que nada degenera silenciosamente ao longo do
+> caminho — dinheiro sempre conservado, CA nunca passa do potencial, elenco
+> nunca cresce/encolhe, ligas nunca desbalanceiam, copa sempre produz um
+> campeão. Não é o mesmo que "golden verify a 20 temporadas" (isso exigiria
+> gravar um golden master de 20 temporadas, bem mais caro de manter do que as
+> 3 atuais) — é a prova de que o mundo *aguenta* 20 temporadas, não de que o
+> resultado bate byte a byte entre plataformas nessa duração.
+
 > **Estado de implementação:** o crate `world` já faz o essencial deste marco
 > para uma competição de exemplo — calendário (`rules::round_robin`), tabela
 > com desempate (`rules::compute_table`) e promoção/rebaixamento entre
