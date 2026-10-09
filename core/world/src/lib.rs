@@ -18,6 +18,9 @@
 //! reincidência, documentado em [`discipline`]. Folha salarial
 //! ([`finance::pay_salaries`]) é a primeira despesa recorrente de verdade
 //! — fatia mínima de RF-CL-02, sem contrato, duração, luvas ou cláusula.
+//! Bilheteria ([`finance::match_day_revenue`]) é a primeira receita
+//! recorrente de verdade — fatia mínima de RF-CL-03, só ingresso de
+//! partida em casa, sem TV, prêmio ou patrocínio.
 #![warn(clippy::all)]
 
 mod condition;
@@ -34,12 +37,12 @@ mod strength;
 
 pub use condition::{FULL_CONDITION, apply_season_fatigue};
 pub use cup::{CupMatch, CupResult, cup_participants, run_cup};
-pub use finance::{generate_budgets, pay_salaries, salary_per_season};
+pub use finance::{generate_budgets, generate_stadium_capacities, pay_salaries, salary_per_season};
 pub use injuries::roll_injuries;
 pub use market::run_market_day;
 pub use progression::{PlayerState, advance_season, initial_roster};
 pub use quality::{
     generate_match_profiles, generate_match_profiles_from_roster, starters_from_roster_all_clubs,
 };
-pub use season::{SeasonResult, run_season, run_seasons};
+pub use season::{CareerRound, SeasonResult, run_season, run_seasons};
 pub use strength::{generate_strengths, generate_strengths_from_roster, strength_of};

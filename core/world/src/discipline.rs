@@ -39,8 +39,13 @@ const EXPULSION_CHANCE_PERMILLE: u32 = 40;
 /// "world.discipline", `entity` = `club.index()`). Não precisa ser
 /// reversível nem evitar colisão com outro domínio (a string do domínio já
 /// separa os espaços de RNG, `docs/02 §5`) — só precisa ser estável e
-/// distinto por `(temporada, rodada)`.
-fn season_round_tick(season_index: u32, round: u32) -> u64 {
+/// distinto por `(temporada, rodada)`. `pub(crate)` porque
+/// `crate::finance::match_day_revenue` reaproveita a mesma combinação para
+/// o sorteio de público — não é um dado sensível a colisão como
+/// `crate::fixture_key` (cada domínio de RNG já é uma string distinta,
+/// `docs/02 §5`), só uma conveniência para não repetir o mesmo `<<`/`|`
+/// em dois lugares.
+pub(crate) fn season_round_tick(season_index: u32, round: u32) -> u64 {
     (u64::from(season_index) << 32) | u64::from(round)
 }
 

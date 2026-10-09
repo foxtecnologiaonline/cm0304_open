@@ -33,8 +33,10 @@ use serde::{Deserialize, Serialize};
 /// bateria mesmo sem esse campo novo). Bump 4→5: `total_payroll_paid_cents`
 /// (`world::pay_salaries`, RF-CL-02 — folha salarial; orçamento final dos
 /// clubes muda, então o hash de qualquer golden anterior também já não
-/// bateria mesmo sem esse campo novo).
-const SCHEMA_VERSION: u16 = 5;
+/// bateria mesmo sem esse campo novo). Bump 5→6: `total_match_day_revenue_cents`
+/// (`world::finance::match_day_revenue`, RF-CL-03 — bilheteria; orçamento
+/// final dos clubes muda de novo, mesma justificativa do bump anterior).
+const SCHEMA_VERSION: u16 = 6;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct TableRowSnapshot {
@@ -102,6 +104,10 @@ struct GoldenMaster {
     /// o golden master é JSON de leitura humana, não precisa do tipo de
     /// domínio, só do número.
     total_payroll_paid_cents: i64,
+    /// Soma de `CommandReceipt::match_day_revenue` (em centavos) de cada
+    /// temporada — `world::finance::match_day_revenue`, RF-CL-03. Mesma
+    /// justificativa de `i64` que `total_payroll_paid_cents`.
+    total_match_day_revenue_cents: i64,
     /// Tabela final (depois da última temporada) de cada competição do
     /// pack, na mesma ordem que `app::Query::Competitions` devolve —
     /// determinística (ordem de id denso, `docs/02 §6.1`).
@@ -144,6 +150,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
     let mut total_tired_players = 0usize;
     let mut total_suspensions = 0usize;
     let mut total_payroll_paid_cents = 0i64;
+    let mut total_match_day_revenue_cents = 0i64;
     for _ in 0..seasons {
         let receipt = session
             .dispatch(app::Command::AdvanceSeason)
@@ -155,6 +162,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_tired_players += receipt.tired_players;
         total_suspensions += receipt.suspensions;
         total_payroll_paid_cents += receipt.payroll_paid.cents();
+        total_match_day_revenue_cents += receipt.match_day_revenue.cents();
     }
 
     let app::QueryResult::Competitions(competitions_list) = session.query(app::Query::Competitions)
@@ -226,6 +234,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_tired_players,
         total_suspensions,
         total_payroll_paid_cents,
+        total_match_day_revenue_cents,
         competitions,
         state_hash: String::new(),
     };
@@ -364,6 +373,10 @@ pub fn verify(seed: u64, pack_path: Option<std::path::PathBuf>, expect_path: &Pa
     eprintln!(
         "  folha salarial (centavos): esperado {}, obtido {}",
         expected.total_payroll_paid_cents, actual.total_payroll_paid_cents
+    );
+    eprintln!(
+        "  bilheteria (centavos): esperado {}, obtido {}",
+        expected.total_match_day_revenue_cents, actual.total_match_day_revenue_cents
     );
     report_competition_diff(&expected.competitions, &actual.competitions);
     eprintln!(

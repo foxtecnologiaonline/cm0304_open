@@ -4,10 +4,13 @@
 //! disso existe em `pack::ResolvedClub` ainda). Mesma filosofia de
 //! `crate::strength`'s força sintética: um substituto sorteado
 //! deterministicamente, documentado, não uma simulação de finanças de
-//! verdade (receita de bilheteria, patrocínio — nenhuma existe, `docs/01
-//! §2.8`). Folha salarial ([`pay_salaries`]) é a primeira fatia real de
+//! verdade. Folha salarial ([`pay_salaries`]) é a primeira fatia real de
 //! despesa recorrente — fatia mínima de RF-CL-02 (`docs/01 §2.2`): só o
-//! custo, sem contrato, duração, luvas ou cláusula nenhuma.
+//! custo, sem contrato, duração, luvas ou cláusula nenhuma. Bilheteria
+//! ([`match_day_revenue`]) é a primeira fatia real de receita — fatia
+//! mínima de RF-CL-03 (`docs/01 §2.2`): só o ingresso de partida em casa,
+//! nada de TV, prêmio ou patrocínio ainda (o resto de RF-CL-03 fica para
+//! quando essas fontes existirem).
 
 use domain::{ClubId, DeterministicRng, Money};
 use pack::LoadedPack;
@@ -81,6 +84,84 @@ pub fn pay_salaries(roster: &[PlayerState], budgets: &mut [Money]) -> Money {
         total_paid = total_paid + paid;
     }
     total_paid
+}
+
+/// Piso e teto de capacidade de estádio sintética, em pessoas — mesma
+/// filosofia de `MIN_SYNTHETIC_BUDGET_CENTS`/`MAX_SYNTHETIC_BUDGET_CENTS`:
+/// magnitude plausível (clubes pequenos a grandes), não dado real (o pack
+/// só declara o *nome* do estádio — `pack::ResolvedClub::stadium` — nunca
+/// capacidade; isso é RF-CL-05, M4, não implementado).
+const MIN_SYNTHETIC_CAPACITY: u32 = 5_000;
+const MAX_SYNTHETIC_CAPACITY: u32 = 60_000;
+
+/// Gera a capacidade de estádio de cada clube, indexada pelo id denso do
+/// clube — mesmo layout de [`generate_budgets`]. Chamada uma vez por
+/// carreira (`app::GameSession::new`): não há obras de estádio ainda
+/// (RF-CL-05, M4), então a capacidade de um clube nunca muda depois de
+/// gerada.
+#[must_use]
+pub fn generate_stadium_capacities(pack: &LoadedPack, world_seed: u64) -> Vec<u32> {
+    pack.clubs
+        .iter()
+        .map(|club| synthetic_capacity(club.id, world_seed))
+        .collect()
+}
+
+fn synthetic_capacity(club: ClubId, world_seed: u64) -> u32 {
+    let mut rng = DeterministicRng::seeded(
+        world_seed,
+        "world.stadium_capacity",
+        u64::from(club.index()),
+        0,
+    );
+    let span = MAX_SYNTHETIC_CAPACITY - MIN_SYNTHETIC_CAPACITY;
+    MIN_SYNTHETIC_CAPACITY + rng.below(span)
+}
+
+/// Preço médio do ingresso, em centavos — **não** um preço realista (seria
+/// R$0,30): é um parâmetro de balanceamento, mesmo status de
+/// `CENTS_PER_CA_PER_SEASON`, escolhido pra manter o total de bilheteria de
+/// uma temporada na mesma ordem de grandeza da folha salarial que ela
+/// complementa (`pay_salaries`) — não dado calibrado nem realista. Com a
+/// faixa de capacidade/público abaixo, a bilheteria fica deliberadamente
+/// **menor** que a folha no pack de exemplo: a economia continua drenando
+/// dinheiro ao longo de uma carreira, só mais devagar do que antes desta
+/// fatia.
+const CENTS_PER_TICKET: i64 = 30; // 0,30
+
+/// Faixa de público por partida, em milésimos da capacidade do estádio —
+/// nunca casa cheia nem vazia (sem reputação de clube, posição na tabela
+/// ou rivalidade influenciando público ainda — `RF-MU-08`, futuro).
+const MIN_ATTENDANCE_PERMILLE: u32 = 300;
+const MAX_ATTENDANCE_PERMILLE: u32 = 950;
+
+/// Receita de bilheteria de uma partida de liga em casa — fatia mínima de
+/// RF-CL-03 (`docs/01 §2.2`): só o clube mandante recebe (sem "cota de
+/// visitante"), só bilheteria (sem TV, prêmio ou patrocínio). Determinístico
+/// por `(world_seed, clube mandante, temporada, rodada)` —
+/// `crate::discipline::season_round_tick` reaproveitado em vez de duplicado
+/// (ver o doc de lá); `"world.attendance"` é um domínio de RNG próprio, então
+/// nunca colide com `"world.discipline"` mesmo usando o mesmo tick
+/// (`docs/02 §5`).
+#[must_use]
+pub fn match_day_revenue(
+    home_club: ClubId,
+    stadium_capacities: &[u32],
+    world_seed: u64,
+    season_index: u32,
+    round: u32,
+) -> Money {
+    let capacity = stadium_capacities[home_club.as_usize()];
+    let mut rng = DeterministicRng::seeded(
+        world_seed,
+        "world.attendance",
+        u64::from(home_club.index()),
+        crate::discipline::season_round_tick(season_index, round),
+    );
+    let span = MAX_ATTENDANCE_PERMILLE - MIN_ATTENDANCE_PERMILLE;
+    let attendance_permille = MIN_ATTENDANCE_PERMILLE + rng.below(span);
+    let attendance = capacity * attendance_permille / 1000;
+    Money::from_cents(i64::from(attendance) * CENTS_PER_TICKET)
 }
 
 #[cfg(test)]
@@ -202,5 +283,75 @@ mod tests {
             total_after < total_before,
             "folha salarial deveria drenar dinheiro da economia, nunca aumentá-lo"
         );
+    }
+
+    #[test]
+    fn gera_uma_capacidade_por_clube_dentro_dos_limites() {
+        let p = example_pack();
+        let capacities = generate_stadium_capacities(&p, 42);
+        assert_eq!(capacities.len(), p.clubs.len());
+        for &c in &capacities {
+            assert!(c >= MIN_SYNTHETIC_CAPACITY);
+            assert!(c <= MAX_SYNTHETIC_CAPACITY);
+        }
+    }
+
+    #[test]
+    fn capacidade_e_deterministica_para_a_mesma_seed() {
+        let p = example_pack();
+        assert_eq!(
+            generate_stadium_capacities(&p, 7),
+            generate_stadium_capacities(&p, 7)
+        );
+    }
+
+    #[test]
+    fn match_day_revenue_e_sempre_positiva_e_dentro_do_teto_da_capacidade() {
+        let capacities = vec![MAX_SYNTHETIC_CAPACITY];
+        for round in 0..50u32 {
+            let revenue = match_day_revenue(ClubId::new(0), &capacities, 1, 0, round);
+            assert!(revenue.cents() > 0);
+            // Nunca mais do que casa cheia pagando o preço do ingresso.
+            assert!(revenue.cents() <= i64::from(MAX_SYNTHETIC_CAPACITY) * CENTS_PER_TICKET);
+        }
+    }
+
+    #[test]
+    fn match_day_revenue_e_deterministica_para_a_mesma_entrada() {
+        let capacities = vec![20_000];
+        assert_eq!(
+            match_day_revenue(ClubId::new(0), &capacities, 42, 3, 5),
+            match_day_revenue(ClubId::new(0), &capacities, 42, 3, 5)
+        );
+    }
+
+    #[test]
+    fn match_day_revenue_varia_com_a_rodada() {
+        let capacities = vec![20_000];
+        let revenues: Vec<Money> = (0..50)
+            .map(|round| match_day_revenue(ClubId::new(0), &capacities, 99, 0, round))
+            .collect();
+        assert!(
+            revenues.windows(2).any(|w| w[0] != w[1]),
+            "50 rodadas produziram sempre a mesma receita — RNG de público não está variando"
+        );
+    }
+
+    #[test]
+    fn match_day_revenue_cresce_com_a_capacidade_em_media() {
+        // Sanidade grosseira: um estádio maior deveria, em média, gerar
+        // mais bilheteria que um menor, para muitas rodadas independentes —
+        // não testa o valor exato (RNG varia o público dentro da faixa),
+        // só a direção do efeito.
+        let small = vec![MIN_SYNTHETIC_CAPACITY];
+        let big = vec![MAX_SYNTHETIC_CAPACITY];
+        let trials = 200u32;
+        let small_total: i64 = (0..trials)
+            .map(|round| match_day_revenue(ClubId::new(0), &small, 1, 0, round).cents())
+            .sum();
+        let big_total: i64 = (0..trials)
+            .map(|round| match_day_revenue(ClubId::new(0), &big, 1, 0, round).cents())
+            .sum();
+        assert!(big_total > small_total);
     }
 }

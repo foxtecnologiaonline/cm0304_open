@@ -79,12 +79,26 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > "contrato" aqui é implícito e eterno, só o custo existe. Primeira despesa real
 > da economia do mundo: antes desta fatia, orçamento só mudava por transferência
 > (conservado entre clubes); agora dinheiro de fato **sai** do sistema a cada
-> temporada (jogadores não têm orçamento próprio pra receber), então o total
-> de `budgets` cai monotonicamente ao longo de uma carreira — confirmado por
-> teste em `app::GameSession`. Clube sem caixa suficiente só zera (nunca fica
-> endividado — dívida de verdade é RF-CL-03, não implementada).
+> temporada (jogadores não têm orçamento próprio pra receber). Clube sem caixa
+> suficiente só zera (nunca fica endividado — dívida de verdade é parte de
+> RF-CL-03, não implementada; ver abaixo o que de RF-CL-03 já existe).
 > `CommandReceipt::payroll_paid` e `managerfc-cli play` já reportam o total pago
 > por temporada.
+>
+> `world::finance::match_day_revenue` cobre uma fatia mínima de RF-CL-03 — só
+> **bilheteria**, nenhuma outra fonte (TV, prêmio, patrocínio) ainda. Cada clube
+> tem uma capacidade de estádio sintética (`world::generate_stadium_capacities`,
+> mesma filosofia de orçamento sintético, pack não declara capacidade de
+> verdade — isso é RF-CL-05, M4); toda partida de **liga** em casa (copa não)
+> credita no orçamento do mandante um público sorteado (30%-95% da capacidade)
+> vezes um preço de ingresso — não um preço realista, um parâmetro de
+> balanceamento escolhido pra manter a bilheteria total de uma temporada numa
+> fração da folha salarial (RF-CL-02, acima), não maior que ela: no pack de
+> exemplo, bilheteria fica em torno de 35-40% da folha, então a economia do
+> mundo ainda drena dinheiro a cada temporada, só mais devagar que antes desta
+> fatia. Sem TV, prêmio, patrocínio, dívida ou saldo negativo — o resto de
+> RF-CL-03 fica para quando essas fontes existirem. `CommandReceipt::match_day_revenue`
+> e `managerfc-cli play` já reportam o total recebido por temporada.
 
 ### 2.3 Jogador e progressão (`JG`)
 

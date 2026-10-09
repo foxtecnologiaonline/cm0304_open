@@ -250,21 +250,29 @@ aqui e volta ao design** — é para isso que o marco existe.
 > que de fato lista os 3 slots) — o que este ambiente de desenvolvimento
 > não consegue fazer nem verificar por falta do SDK Flutter/Dart (ver
 > `app/README.md`, o diretório Flutter, não `core/app`). Do lado Rust, o
-> primeiro item deste marco já tem uma fatia real: **folha salarial**
-> (`world::pay_salaries`, fatia mínima de RF-CL-02, `docs/01 §2.2`) — cada
-> jogador custa ao clube por temporada, debitado antes do mercado rodar.
-> É a primeira despesa recorrente de verdade da economia do mundo: antes
-> dela, orçamento só mudava por transferência (conservado entre clubes);
-> agora dinheiro sai do sistema a cada temporada, então o total de
-> `budgets` cai monotonicamente ao longo de uma carreira (confirmado por
-> teste). Ainda sem contrato de verdade (duração, luvas, cláusula — só o
-> custo existe) e sem negociação (`RF-TR-03`/`04`): "transferências
-> jogáveis" continua fora — o mercado é automático e mecânico (`ai`), sem
-> nenhum ponto de decisão humana. Elenco jogável, treino e táticas também
-> continuam faltando — nenhum dos três tem estado ainda para o save
-> precisar guardar além do replay. `world`/`rules`/`engine`/`pack`/`persist`
-> seguem adiantados em relação à UI — o próximo passo de maior risco
-> continua sendo essa ponte, não mais lógica de núcleo.
+> primeiro item deste marco já tem duas fatias reais, as duas pontas de
+> RF-CL-02/03 (`docs/01 §2.2`): **folha salarial** (`world::pay_salaries`,
+> despesa) e **bilheteria** (`world::finance::match_day_revenue`, receita).
+> Folha: cada jogador custa ao clube por temporada, debitado antes do
+> mercado rodar — a primeira despesa recorrente de verdade da economia do
+> mundo (antes dela, orçamento só mudava por transferência, conservado
+> entre clubes). Bilheteria: cada partida de liga em casa credita um
+> público sintético (30%-95% de uma capacidade de estádio sintética) vezes
+> um preço de ingresso deliberadamente baixo — não realista, um parâmetro
+> de balanceamento escolhido pra manter a bilheteria de uma temporada numa
+> fração (≈35-40% no pack de exemplo) da folha, não maior. Juntas: dinheiro
+> sai do sistema a cada temporada por folha, uma fração dele volta por
+> bilheteria, e o total de `budgets` continua caindo ao longo de uma
+> carreira — só mais devagar que só com folha (confirmado por teste).
+> Ainda sem contrato de verdade (duração, luvas, cláusula — só o custo
+> existe), sem TV/prêmio/patrocínio/dívida, e sem negociação
+> (`RF-TR-03`/`04`): "transferências jogáveis" continua fora — o mercado é
+> automático e mecânico (`ai`), sem nenhum ponto de decisão humana. Elenco
+> jogável, treino e táticas também continuam faltando — nenhum dos três
+> tem estado ainda para o save precisar guardar além do replay.
+> `world`/`rules`/`engine`/`pack`/`persist` seguem adiantados em relação à
+> UI — o próximo passo de maior risco continua sendo essa ponte, não mais
+> lógica de núcleo.
 
 ### M3 — Alpha (14 semanas)
 

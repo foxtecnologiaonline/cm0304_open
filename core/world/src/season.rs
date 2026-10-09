@@ -6,27 +6,44 @@
 //! (`docs/07-roadmap.md#m1--kick-off-headless-10-semanas`).
 //!
 //! Duas formas de simular uma liga, escolhidas por `run_season` conforme
-//! `roster` é passado ou não: **estática** (`roster: None` — perfil fixo a
-//! temporada inteira, o caminho de `managerfc-cli calibrate`/`bench`, sem
-//! mudança de comportamento desde antes desta fatia) e **de carreira**
-//! (`roster: Some` — `app::GameSession`, perfil recalculado **a cada
-//! rodada** a partir do roster atual, excluindo quem está suspenso
-//! naquela rodada). A segunda existe só por causa de `crate::discipline`:
+//! [`CareerRound`] é passado ou não: **estática** (`career: None` — perfil
+//! fixo a temporada inteira, o caminho de `managerfc-cli calibrate`/`bench`,
+//! sem mudança de comportamento desde antes desta fatia) e **de carreira**
+//! (`career: Some` — `app::GameSession`, perfil recalculado **a cada
+//! rodada** a partir do roster atual, excluindo quem está suspenso naquela
+//! rodada, e bilheteria de cada partida em casa creditada no orçamento do
+//! mandante — `crate::finance::match_day_revenue`, RF-CL-03). A
+//! granularidade de rodada existe só por causa de `crate::discipline`:
 //! suspensão (`RF-JG-09`) só faz sentido em granularidade de partida, e
-//! até esta fatia toda liga era simulada de uma vez, sem nenhum ponto no
+//! até essa fatia toda liga era simulada de uma vez, sem nenhum ponto no
 //! meio da temporada onde "o jogador X está fora desta rodada" pudesse ter
-//! efeito. Cup (`crate::cup`) não ganha essa granularidade — continua
+//! efeito; bilheteria por rodada aproveitou o mesmo ponto de simulação, por
+//! já existir. Cup (`crate::cup`) não ganha essa granularidade — continua
 //! usando o perfil estático do início da temporada em qualquer um dos dois
-//! casos, suspensão não a afeta (mesma exclusão de `crate::condition`).
+//! casos, e não gera bilheteria nem é afetada por suspensão (mesma exclusão
+//! de `crate::condition`).
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use domain::{ClubId, CompetitionId, PlayerId};
+use domain::{ClubId, CompetitionId, Money, PlayerId};
 use pack::{Format, LoadedPack};
 use rules::{Fixture, Score, TableRow};
 
 use crate::progression::PlayerState;
+
+/// Entradas do caminho de carreira agrupadas numa só estrutura — em vez de
+/// `roster`/`budgets`/`stadium_capacities` como três parâmetros `Option`
+/// independentes de [`run_season`], o que deixaria passar uma combinação
+/// incoerente (ex.: `budgets` sem `roster`) um erro de compilação em vez de
+/// um bug silencioso em tempo de execução. `budgets` é mutável: cada
+/// partida em casa credita bilheteria nele (`crate::finance::match_day_revenue`,
+/// RF-CL-03) durante a simulação rodada a rodada.
+pub struct CareerRound<'a> {
+    pub roster: &'a [PlayerState],
+    pub budgets: &'a mut [Money],
+    pub stadium_capacities: &'a [u32],
+}
 
 /// Resultado de simular uma temporada inteira, competição por competição.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +78,13 @@ pub struct SeasonResult {
     /// sem roster (caminho estático: sem granularidade de rodada, sem
     /// como simular suspensão, ver o doc do módulo).
     pub suspensions: usize,
+    /// Total de bilheteria creditada nesta temporada
+    /// (`crate::finance::match_day_revenue`, RF-CL-03, fatia mínima) — só
+    /// partidas de **liga** em casa geram receita aqui (copa não, mesma
+    /// exclusão de suspensão/condição); sempre `Money::ZERO` quando
+    /// `run_season` é chamado sem [`CareerRound`] (caminho estático: sem
+    /// orçamento nenhum para creditar, ver o doc do módulo).
+    pub match_day_revenue: Money,
 }
 
 impl SeasonResult {
@@ -84,18 +108,20 @@ impl SeasonResult {
 /// `crate::quality::generate_match_profiles_from_roster`) — é sempre usado
 /// para copa, e para liga **apenas** quando `roster` é `None`.
 ///
-/// `roster`, quando `Some`, muda como toda competição `Format::RoundRobin`
+/// `career`, quando `Some`, muda como toda competição `Format::RoundRobin`
 /// é simulada: rodada a rodada, recalculando o perfil de cada clube que
 /// joga a partir do roster atual (excluindo quem está suspenso — ver o doc
-/// do módulo) em vez de usar `profiles` a temporada inteira. `None` é
-/// exatamente o comportamento de antes desta fatia (`managerfc-cli
-/// calibrate`/`bench`, via [`run_seasons`]).
+/// do módulo) em vez de usar `profiles` a temporada inteira, e creditando
+/// bilheteria de cada partida em casa no orçamento do mandante
+/// (`crate::finance::match_day_revenue`). `None` é exatamente o
+/// comportamento de antes desta fatia (`managerfc-cli calibrate`/`bench`,
+/// via [`run_seasons`]).
 #[must_use]
 pub fn run_season(
     pack: &LoadedPack,
     membership: &[CompetitionId],
     profiles: &[engine::TeamMatchProfile],
-    roster: Option<&[PlayerState]>,
+    mut career: Option<CareerRound<'_>>,
     world_seed: u64,
     season_index: u32,
 ) -> SeasonResult {
@@ -109,6 +135,7 @@ pub fn run_season(
     let mut total_goals = 0u32;
     let mut total_shots = 0u32;
     let mut suspensions = 0usize;
+    let mut match_day_revenue = Money::ZERO;
 
     for competition in &pack.competitions {
         match competition.format {
@@ -135,13 +162,13 @@ pub fn run_season(
                     continue;
                 };
 
-                let outcome = match roster {
+                let outcome = match career.as_mut() {
                     None => {
                         simulate_round_robin_static(profiles, fixtures, world_seed, season_index)
                     }
-                    Some(roster) => simulate_round_robin_for_career(
+                    Some(career) => simulate_round_robin_for_career(
                         pack,
-                        roster,
+                        career,
                         fixtures,
                         world_seed,
                         season_index,
@@ -154,6 +181,7 @@ pub fn run_season(
                 total_goals += outcome.total_goals;
                 total_shots += outcome.total_shots;
                 suspensions += outcome.suspensions;
+                match_day_revenue = match_day_revenue + outcome.match_day_revenue;
 
                 let table =
                     rules::compute_table(&clubs, &outcome.results, &competition.tiebreakers);
@@ -209,6 +237,7 @@ pub fn run_season(
         total_goals,
         total_shots,
         suspensions,
+        match_day_revenue,
     }
 }
 
@@ -226,6 +255,7 @@ struct RoundRobinOutcome {
     total_goals: u32,
     total_shots: u32,
     suspensions: usize,
+    match_day_revenue: Money,
 }
 
 impl RoundRobinOutcome {
@@ -263,14 +293,16 @@ fn simulate_round_robin_static(
 }
 
 /// Simula um turno/returno inteiro **rodada a rodada**: o perfil de cada
-/// clube que joga é recalculado a cada rodada a partir de `roster`,
+/// clube que joga é recalculado a cada rodada a partir de `career.roster`,
 /// excluindo quem está suspenso (ver o doc do módulo) — é o que torna
 /// `crate::discipline::roll_suspensions` capaz de ter efeito de verdade na
 /// simulação, não só existir isolado. Suspensão nunca atravessa rodada de
 /// competições diferentes nem temporada (reinicia vazia a cada chamada).
+/// Cada partida credita bilheteria no orçamento do mandante
+/// (`crate::finance::match_day_revenue`, RF-CL-03).
 fn simulate_round_robin_for_career(
     pack: &LoadedPack,
-    roster: &[PlayerState],
+    career: &mut CareerRound<'_>,
     fixtures: Vec<Fixture>,
     world_seed: u64,
     season_index: u32,
@@ -296,10 +328,15 @@ fn simulate_round_robin_for_career(
             Vec::with_capacity(playing_clubs.len());
         for &club in &playing_clubs {
             let profile = crate::quality::profile_from_roster_excluding_or_synthetic(
-                pack, roster, club, &suspended, world_seed,
+                pack,
+                career.roster,
+                club,
+                &suspended,
+                world_seed,
             );
             round_profiles.insert(club, profile);
-            let starters = crate::quality::starters_from_roster_excluding(roster, club, &suspended);
+            let starters =
+                crate::quality::starters_from_roster_excluding(career.roster, club, &suspended);
             starters_by_club.push((club, starters));
         }
 
@@ -307,6 +344,18 @@ fn simulate_round_robin_for_career(
             let home = round_profiles[&fixture.home];
             let away = round_profiles[&fixture.away];
             let (score, shots) = simulate_fixture(home, away, world_seed, season_index, &fixture);
+
+            let revenue = crate::finance::match_day_revenue(
+                fixture.home,
+                career.stadium_capacities,
+                world_seed,
+                season_index,
+                round,
+            );
+            let idx = fixture.home.as_usize();
+            career.budgets[idx] = career.budgets[idx] + revenue;
+            outcome.match_day_revenue = outcome.match_day_revenue + revenue;
+
             outcome.record_match(fixture, score, shots);
         }
 
@@ -401,6 +450,13 @@ mod tests {
         pack.clubs.iter().map(|c| c.competition).collect()
     }
 
+    /// Capacidades de estádio fixas (não vêm de `crate::finance` pra não
+    /// acoplar estes testes à sua faixa sintética) — só precisam ser
+    /// grandes o bastante para gerar bilheteria positiva em qualquer rodada.
+    fn example_capacities(pack: &LoadedPack) -> Vec<u32> {
+        vec![20_000; pack.clubs.len()]
+    }
+
     #[test]
     fn roda_uma_temporada_no_pack_de_exemplo_sem_travar() {
         let p = example_pack();
@@ -431,7 +487,14 @@ mod tests {
         let profiles = crate::quality::generate_match_profiles(&p, 42);
         let roster = crate::progression::initial_roster(&p);
         let membership = initial_membership(&p);
-        let result = run_season(&p, &membership, &profiles, Some(&roster), 42, 0);
+        let mut budgets = vec![Money::ZERO; p.clubs.len()];
+        let capacities = example_capacities(&p);
+        let career = CareerRound {
+            roster: &roster,
+            budgets: &mut budgets,
+            stadium_capacities: &capacities,
+        };
+        let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
         assert_eq!(result.tables.len(), 2);
         assert_eq!(result.matches_played, 56 * 2);
@@ -450,10 +513,25 @@ mod tests {
         let profiles = crate::quality::generate_match_profiles(&p, 7);
         let roster = crate::progression::initial_roster(&p);
         let membership = initial_membership(&p);
+        let capacities = example_capacities(&p);
 
-        let a = run_season(&p, &membership, &profiles, Some(&roster), 7, 0);
-        let b = run_season(&p, &membership, &profiles, Some(&roster), 7, 0);
+        let mut budgets_a = vec![Money::ZERO; p.clubs.len()];
+        let career_a = CareerRound {
+            roster: &roster,
+            budgets: &mut budgets_a,
+            stadium_capacities: &capacities,
+        };
+        let a = run_season(&p, &membership, &profiles, Some(career_a), 7, 0);
+
+        let mut budgets_b = vec![Money::ZERO; p.clubs.len()];
+        let career_b = CareerRound {
+            roster: &roster,
+            budgets: &mut budgets_b,
+            stadium_capacities: &capacities,
+        };
+        let b = run_season(&p, &membership, &profiles, Some(career_b), 7, 0);
         assert_eq!(a, b);
+        assert_eq!(budgets_a, budgets_b);
     }
 
     #[test]
@@ -468,16 +546,63 @@ mod tests {
         let roster = crate::progression::initial_roster(&p);
         let membership = initial_membership(&p);
         let profiles = crate::quality::generate_match_profiles(&p, 1);
+        let capacities = example_capacities(&p);
 
         let total_suspensions: usize = (0..10)
             .map(|season_index| {
-                run_season(&p, &membership, &profiles, Some(&roster), 1, season_index).suspensions
+                let mut budgets = vec![Money::ZERO; p.clubs.len()];
+                let career = CareerRound {
+                    roster: &roster,
+                    budgets: &mut budgets,
+                    stadium_capacities: &capacities,
+                };
+                run_season(&p, &membership, &profiles, Some(career), 1, season_index).suspensions
             })
             .sum();
         assert!(
             total_suspensions > 0,
             "esperava pelo menos uma suspensão em 10 temporadas no pack de exemplo"
         );
+    }
+
+    #[test]
+    fn caminho_de_carreira_credita_bilheteria_no_orcamento_do_mandante() {
+        // Caixa branca: prova que `crate::finance::match_day_revenue` está
+        // de fato ligado ao loop por rodada, não só existe isolado em
+        // `crate::finance` — todo orçamento tem que crescer (todo clube é
+        // mandante em algumas partidas do turno+returno).
+        let p = example_pack();
+        let roster = crate::progression::initial_roster(&p);
+        let membership = initial_membership(&p);
+        let profiles = crate::quality::generate_match_profiles(&p, 42);
+        let capacities = example_capacities(&p);
+        let mut budgets = vec![Money::ZERO; p.clubs.len()];
+
+        let career = CareerRound {
+            roster: &roster,
+            budgets: &mut budgets,
+            stadium_capacities: &capacities,
+        };
+        let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
+
+        assert!(result.match_day_revenue.cents() > 0);
+        for &b in &budgets {
+            assert!(
+                b.cents() > 0,
+                "todo clube deveria ter recebido bilheteria em algum turno+returno"
+            );
+        }
+        let total_in_budgets: i64 = budgets.iter().map(|b| b.cents()).sum();
+        assert_eq!(total_in_budgets, result.match_day_revenue.cents());
+    }
+
+    #[test]
+    fn caminho_estatico_nunca_credita_bilheteria() {
+        let p = example_pack();
+        let profiles = crate::quality::generate_match_profiles(&p, 42);
+        let membership = initial_membership(&p);
+        let result = run_season(&p, &membership, &profiles, None, 42, 0);
+        assert_eq!(result.match_day_revenue, Money::ZERO);
     }
 
     #[test]

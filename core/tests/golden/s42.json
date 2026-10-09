@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "pack_id": "example.two-tier",
   "pack_version": "0.1.0",
   "world_seed": 42,
@@ -11,6 +11,7 @@
   "total_tired_players": 521,
   "total_suspensions": 26,
   "total_payroll_paid_cents": 429095000,
+  "total_match_day_revenue_cents": 166658310,
   "competitions": [
     {
       "name": "Copa de Estrelônia",
@@ -63,12 +64,12 @@
           "position": 4,
           "club_name": "Lagoa Funda FC",
           "played": 14,
-          "wins": 6,
-          "draws": 5,
+          "wins": 5,
+          "draws": 6,
           "losses": 3,
-          "goals_for": 22,
+          "goals_for": 21,
           "goals_against": 19,
-          "points": 23
+          "points": 21
         },
         {
           "position": 5,
@@ -86,11 +87,11 @@
           "club_name": "Campo Real FC",
           "played": 14,
           "wins": 4,
-          "draws": 3,
-          "losses": 7,
+          "draws": 4,
+          "losses": 6,
           "goals_for": 16,
-          "goals_against": 20,
-          "points": 15
+          "goals_against": 19,
+          "points": 16
         },
         {
           "position": 7,
@@ -213,5 +214,5 @@
       "cup_champion": null
     }
   ],
-  "state_hash": "47492b3cb6fad229"
+  "state_hash": "76b0ace820345952"
 }

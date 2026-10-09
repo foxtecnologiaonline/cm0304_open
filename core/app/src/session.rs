@@ -57,6 +57,11 @@ pub struct CommandReceipt {
     /// mínima) — pode ser menor que a soma nominal dos salários se algum
     /// clube não tinha caixa suficiente (nunca fica negativo).
     pub payroll_paid: domain::Money,
+    /// Quanto os clubes receberam de bilheteria nesta temporada, no total
+    /// (`world::SeasonResult::match_day_revenue`, `docs/01 §2.2`, RF-CL-03,
+    /// fatia mínima) — só partidas de liga em casa, copa não gera receita
+    /// aqui.
+    pub match_day_revenue: domain::Money,
 }
 
 /// Uma carreira carregada em memória.
@@ -84,10 +89,17 @@ pub struct GameSession {
     /// separado de `pack.players`, que nunca muda.
     roster: Vec<world::PlayerState>,
     /// Orçamento de cada clube, indexado por id denso (`world::generate_budgets`,
-    /// sintético — pack ainda não declara finanças, `world::finance`). Só
-    /// muda por transferência (`world::run_market_day`): sem receita nem
-    /// despesa externas ainda, uma economia fechada.
+    /// sintético — pack ainda não declara finanças, `world::finance`). Muda
+    /// por transferência (`world::run_market_day`, conserva dinheiro entre
+    /// clubes), folha salarial (`world::pay_salaries`, só debita) e
+    /// bilheteria (`world::run_season` com `CareerRound`, só credita) — uma
+    /// economia aberta desde que a folha existe (`docs/07-roadmap.md` M2).
     budgets: Vec<domain::Money>,
+    /// Capacidade de estádio de cada clube, indexada por id denso
+    /// (`world::generate_stadium_capacities`, sintética — mesmo status de
+    /// `budgets`). Gerada uma vez em [`Self::new`] e nunca muda depois:
+    /// não há obras de estádio ainda (RF-CL-05, M4).
+    stadium_capacities: Vec<u32>,
     world_seed: u64,
     /// Uma entrada por temporada já simulada — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
@@ -111,6 +123,7 @@ impl GameSession {
 
         let roster = world::initial_roster(&report.pack);
         let budgets = world::generate_budgets(&report.pack, world_seed);
+        let stadium_capacities = world::generate_stadium_capacities(&report.pack, world_seed);
         let profiles =
             world::generate_match_profiles_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
@@ -124,6 +137,7 @@ impl GameSession {
             profiles,
             roster,
             budgets,
+            stadium_capacities,
             world_seed,
             history: Vec::new(),
         })
@@ -225,18 +239,25 @@ impl GameSession {
                 // precisa saber exatamente quem jogou, não só o perfil
                 // agregado do time.
                 let starters = world::starters_from_roster_all_clubs(&self.pack, &self.roster);
-                // `Some(&self.roster)` liga o caminho de carreira
+                // `Some(CareerRound { .. })` liga o caminho de carreira
                 // (`world::season`, módulo): liga simulada rodada a
                 // rodada, perfil recalculado a cada uma a partir do
-                // roster — é o que dá a `world::discipline` (suspensões)
-                // um ponto na simulação onde "fora desta rodada" tem
-                // efeito de verdade. Copa continua usando `self.profiles`
-                // (instantâneo do início da temporada) de qualquer jeito.
+                // roster — é o que dá a `world::discipline` (suspensões) e
+                // a `world::finance::match_day_revenue` (bilheteria) um
+                // ponto na simulação onde "fora desta rodada"/"mandante
+                // desta partida" têm efeito de verdade. Copa continua
+                // usando `self.profiles` (instantâneo do início da
+                // temporada) de qualquer jeito, e não gera bilheteria.
+                let career = world::CareerRound {
+                    roster: &self.roster,
+                    budgets: &mut self.budgets,
+                    stadium_capacities: &self.stadium_capacities,
+                };
                 let result = world::run_season(
                     &self.pack,
                     &self.membership,
                     &self.profiles,
-                    Some(&self.roster),
+                    Some(career),
                     self.world_seed,
                     season_index,
                 );
@@ -274,6 +295,7 @@ impl GameSession {
                     tired_players,
                     suspensions: result.suspensions,
                     payroll_paid,
+                    match_day_revenue: result.match_day_revenue,
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -703,17 +725,32 @@ mod tests {
             receipt.payroll_paid.cents() > 0,
             "esperava folha salarial positiva no pack de exemplo (256 jogadores com CA > 0)"
         );
-        // `payroll_paid` é só a folha; o orçamento também muda com
-        // transferências (`run_market_day`), então a queda total do
-        // orçamento tem que ser **pelo menos** a folha paga, não
-        // necessariamente igual (compra/venda também move o total entre
-        // clubes, mas o mercado em si conserva — só a folha drena).
+        // `payroll_paid` é a folha debitada, `match_day_revenue` é a
+        // bilheteria creditada (`world::finance::match_day_revenue`,
+        // RF-CL-03) — juntas explicam exatamente a variação do orçamento
+        // total: transferências (`run_market_day`) conservam dinheiro entre
+        // clubes, então não aparecem aqui.
         let budget_after: i64 = session.budgets.iter().map(|b| b.cents()).sum();
         assert_eq!(
             budget_before - budget_after,
-            receipt.payroll_paid.cents(),
-            "a queda do orçamento total deveria ser exatamente a folha paga, já que \
-             transferências conservam dinheiro entre clubes"
+            receipt.payroll_paid.cents() - receipt.match_day_revenue.cents(),
+            "a queda do orçamento total deveria ser exatamente folha paga menos bilheteria \
+             recebida, já que transferências conservam dinheiro entre clubes"
+        );
+    }
+
+    #[test]
+    fn bilheteria_de_fato_credita_o_orcamento_ligada_ao_dispatch() {
+        // Caixa branca: prova que `world::finance::match_day_revenue` está
+        // de fato ligado ao dispatch (não só existe isolado em
+        // `world::season`/`world::finance`) — toda temporada tem partidas
+        // de liga em casa pra todo clube, então a bilheteria reportada
+        // nunca pode ser zero.
+        let mut session = GameSession::new(&example_pack_path(), 8).unwrap();
+        let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+        assert!(
+            receipt.match_day_revenue.cents() > 0,
+            "esperava bilheteria positiva no pack de exemplo (16 clubes de liga, 112 partidas)"
         );
     }
 
