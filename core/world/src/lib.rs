@@ -15,7 +15,9 @@
 //! [`condition`]. Suspensão ([`discipline`]) é a única coisa aqui com
 //! granularidade de rodada (liga simulada rodada a rodada no caminho de
 //! carreira, `season::run_season`) — sem cartão amarelo acumulado, sem
-//! reincidência, documentado em [`discipline`].
+//! reincidência, documentado em [`discipline`]. Folha salarial
+//! ([`finance::pay_salaries`]) é a primeira despesa recorrente de verdade
+//! — fatia mínima de RF-CL-02, sem contrato, duração, luvas ou cláusula.
 #![warn(clippy::all)]
 
 mod condition;
@@ -32,7 +34,7 @@ mod strength;
 
 pub use condition::{FULL_CONDITION, apply_season_fatigue};
 pub use cup::{CupMatch, CupResult, cup_participants, run_cup};
-pub use finance::generate_budgets;
+pub use finance::{generate_budgets, pay_salaries, salary_per_season};
 pub use injuries::roll_injuries;
 pub use market::run_market_day;
 pub use progression::{PlayerState, advance_season, initial_roster};

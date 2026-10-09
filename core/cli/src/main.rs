@@ -446,14 +446,15 @@ fn play(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
             Ok(receipt) => println!(
                 "temporada {}: {} partidas, {} movimentação(ões) de acesso/queda, \
                  {} transferência(s), {} lesão(ões), {} jogador(es) cansado(s) pra próxima, \
-                 {} suspensão(ões)",
+                 {} suspensão(ões), {} em folha salarial",
                 receipt.season_index + 1,
                 receipt.matches_played,
                 receipt.movements,
                 receipt.transfers,
                 receipt.injuries,
                 receipt.tired_players,
-                receipt.suspensions
+                receipt.suspensions,
+                receipt.payroll_paid
             ),
             Err(err) => {
                 eprintln!("managerfc-cli: falha ao avançar temporada: {err}");

@@ -1,15 +1,16 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "pack_id": "example.two-tier",
   "pack_version": "0.1.0",
   "world_seed": 42,
   "seasons": 3,
   "total_matches_played": 336,
   "total_movements": 12,
-  "total_transfers": 22,
+  "total_transfers": 23,
   "total_injuries": 42,
   "total_tired_players": 521,
   "total_suspensions": 26,
+  "total_payroll_paid_cents": 429095000,
   "competitions": [
     {
       "name": "Copa de Estrelônia",
@@ -29,26 +30,15 @@
           "position": 1,
           "club_name": "Vale Dourado FC",
           "played": 14,
-          "wins": 8,
-          "draws": 3,
+          "wins": 9,
+          "draws": 2,
           "losses": 3,
-          "goals_for": 22,
+          "goals_for": 20,
           "goals_against": 8,
-          "points": 27
+          "points": 29
         },
         {
           "position": 2,
-          "club_name": "Lagoa Funda FC",
-          "played": 14,
-          "wins": 7,
-          "draws": 3,
-          "losses": 4,
-          "goals_for": 23,
-          "goals_against": 17,
-          "points": 24
-        },
-        {
-          "position": 3,
           "club_name": "Baía Nova FC",
           "played": 14,
           "wins": 7,
@@ -59,26 +49,37 @@
           "points": 24
         },
         {
-          "position": 4,
+          "position": 3,
           "club_name": "Costa Azul FC",
           "played": 14,
           "wins": 7,
           "draws": 2,
           "losses": 5,
           "goals_for": 21,
-          "goals_against": 20,
+          "goals_against": 19,
+          "points": 23
+        },
+        {
+          "position": 4,
+          "club_name": "Lagoa Funda FC",
+          "played": 14,
+          "wins": 6,
+          "draws": 5,
+          "losses": 3,
+          "goals_for": 22,
+          "goals_against": 19,
           "points": 23
         },
         {
           "position": 5,
           "club_name": "Terra Firme FC",
           "played": 14,
-          "wins": 5,
+          "wins": 4,
           "draws": 6,
-          "losses": 3,
-          "goals_for": 21,
-          "goals_against": 15,
-          "points": 21
+          "losses": 4,
+          "goals_for": 20,
+          "goals_against": 16,
+          "points": 18
         },
         {
           "position": 6,
@@ -107,11 +108,11 @@
           "club_name": "Porto Solar FC",
           "played": 14,
           "wins": 1,
-          "draws": 5,
-          "losses": 8,
-          "goals_for": 14,
-          "goals_against": 29,
-          "points": 8
+          "draws": 6,
+          "losses": 7,
+          "goals_for": 17,
+          "goals_against": 26,
+          "points": 9
         }
       ],
       "cup_champion": null
@@ -212,5 +213,5 @@
       "cup_champion": null
     }
   ],
-  "state_hash": "d84d86a5d005353a"
+  "state_hash": "47492b3cb6fad229"
 }

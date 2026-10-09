@@ -52,6 +52,11 @@ pub struct CommandReceipt {
     /// partidas de liga (`world::season::SeasonResult::suspensions` —
     /// `crate::discipline`, `docs/01 §2.3`, RF-JG-09, fatia mínima).
     pub suspensions: usize,
+    /// Quanto os clubes pagaram de folha salarial nesta temporada, no
+    /// total (`world::pay_salaries`, `docs/01 §2.2`, RF-CL-02, fatia
+    /// mínima) — pode ser menor que a soma nominal dos salários se algum
+    /// clube não tinha caixa suficiente (nunca fica negativo).
+    pub payroll_paid: domain::Money,
 }
 
 /// Uma carreira carregada em memória.
@@ -180,6 +185,13 @@ impl GameSession {
         match command {
             Command::AdvanceSeason => {
                 let season_index = self.history.len() as u32;
+                // Folha salarial antes de qualquer coisa: cada clube paga
+                // o elenco inteiro pelo CA atual (`world::pay_salaries`,
+                // `docs/01 §2.2` RF-CL-02, fatia mínima) — só então o que
+                // sobrar no orçamento entra no mercado. Nunca deixa um
+                // orçamento negativo (zera, não endivida).
+                let payroll_paid = world::pay_salaries(&self.roster, &mut self.budgets);
+
                 // Mercado antes da temporada: clubes tentam substituir seu
                 // titular mais fraco por um reserva melhor de outro clube
                 // que caiba no orçamento (`world::run_market_day`,
@@ -261,6 +273,7 @@ impl GameSession {
                     injuries,
                     tired_players,
                     suspensions: result.suspensions,
+                    payroll_paid,
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -522,10 +535,17 @@ mod tests {
             );
         }
 
+        // Transferência conserva dinheiro entre clubes, mas a folha
+        // salarial (`world::pay_salaries`, RF-CL-02) é um gasto real que
+        // sai da economia a cada temporada — o total só pode diminuir ao
+        // longo de 20 temporadas, nunca aumentar nem ficar igual (todo
+        // clube tem elenco com CA > 0, então todo clube paga algo).
         let final_money_total: i64 = session.budgets.iter().map(|b| b.cents()).sum();
-        assert_eq!(
-            initial_money_total, final_money_total,
-            "dinheiro total do mundo deveria ser conservado em 20 temporadas de mercado"
+        assert!(
+            final_money_total < initial_money_total,
+            "dinheiro total do mundo deveria diminuir (nunca aumentar) em 20 temporadas, por \
+             causa da folha salarial — ficou igual ou maior, algo está conservando demais ou \
+             criando dinheiro do nada"
         );
 
         for (competition, expected_size) in initial_league_sizes {
@@ -668,6 +688,36 @@ mod tests {
     }
 
     #[test]
+    fn folha_salarial_de_fato_debita_o_orcamento_e_bate_com_o_reporte() {
+        // Caixa branca: prova que `world::pay_salaries` está ligado ao
+        // dispatch — todo clube tem elenco com CA > 0, então o orçamento
+        // total tem que cair estritamente a cada temporada, e o valor
+        // reportado em `CommandReceipt::payroll_paid` tem que bater com
+        // a queda observada no orçamento.
+        let mut session = GameSession::new(&example_pack_path(), 3).unwrap();
+        let budget_before: i64 = session.budgets.iter().map(|b| b.cents()).sum();
+
+        let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+
+        assert!(
+            receipt.payroll_paid.cents() > 0,
+            "esperava folha salarial positiva no pack de exemplo (256 jogadores com CA > 0)"
+        );
+        // `payroll_paid` é só a folha; o orçamento também muda com
+        // transferências (`run_market_day`), então a queda total do
+        // orçamento tem que ser **pelo menos** a folha paga, não
+        // necessariamente igual (compra/venda também move o total entre
+        // clubes, mas o mercado em si conserva — só a folha drena).
+        let budget_after: i64 = session.budgets.iter().map(|b| b.cents()).sum();
+        assert_eq!(
+            budget_before - budget_after,
+            receipt.payroll_paid.cents(),
+            "a queda do orçamento total deveria ser exatamente a folha paga, já que \
+             transferências conservam dinheiro entre clubes"
+        );
+    }
+
+    #[test]
     fn mercado_de_transferencias_de_fato_move_jogadores_entre_clubes() {
         // Outro teste de caixa branca: prova que `world::run_market_day`
         // está ligado ao dispatch e produz transferências de verdade no
@@ -697,12 +747,17 @@ mod tests {
             initial_budgets, session.budgets,
             "orçamentos deveriam ter mudado com as transferências"
         );
-        // Conservação de dinheiro (mesma propriedade de
-        // `ai::market::proptests::dinheiro_total_e_conservado`, mas
-        // observada de fora, via `GameSession`).
+        // Transferência em si conserva dinheiro (mesma propriedade de
+        // `ai::market::proptests::dinheiro_total_e_conservado`), mas o
+        // total do mundo não fica mais igual depois de 5 temporadas: a
+        // folha salarial (`world::pay_salaries`, RF-CL-02) drena dinheiro
+        // da economia a cada uma — só pode diminuir, nunca aumentar.
         let total_before: i64 = initial_budgets.iter().map(|b| b.cents()).sum();
         let total_after: i64 = session.budgets.iter().map(|b| b.cents()).sum();
-        assert_eq!(total_before, total_after);
+        assert!(
+            total_after < total_before,
+            "folha salarial de 5 temporadas deveria ter drenado algum dinheiro da economia"
+        );
     }
 
     #[test]

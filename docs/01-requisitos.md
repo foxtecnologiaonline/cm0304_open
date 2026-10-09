@@ -70,6 +70,22 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 | RF-CL-07 | Time B / sub-19 com jogos próprios e promoção de atletas | S | M4 |
 | RF-CL-08 | Histórico do clube: títulos, recordes, ídolos, sequências | C | M5 |
 
+> **Estado de implementação:** `world::pay_salaries` cobre uma fatia mínima de
+> RF-CL-02 — só o lado de **despesa recorrente**: todo jogador do elenco (titular
+> ou reserva) custa `salary_per_season(CA atual)` por temporada ao seu clube
+> (função linear, não calibrada, mesmo status de `ai::market_value`), debitado do
+> orçamento antes do mercado de transferências rodar. Sem contrato de verdade
+> nenhum: sem duração, sem luvas, sem cláusula de rescisão/gols/aparições — o
+> "contrato" aqui é implícito e eterno, só o custo existe. Primeira despesa real
+> da economia do mundo: antes desta fatia, orçamento só mudava por transferência
+> (conservado entre clubes); agora dinheiro de fato **sai** do sistema a cada
+> temporada (jogadores não têm orçamento próprio pra receber), então o total
+> de `budgets` cai monotonicamente ao longo de uma carreira — confirmado por
+> teste em `app::GameSession`. Clube sem caixa suficiente só zera (nunca fica
+> endividado — dívida de verdade é RF-CL-03, não implementada).
+> `CommandReceipt::payroll_paid` e `managerfc-cli play` já reportam o total pago
+> por temporada.
+
 ### 2.3 Jogador e progressão (`JG`)
 
 | ID | Requisito | Pri | Marco |

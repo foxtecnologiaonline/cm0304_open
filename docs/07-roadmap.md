@@ -249,9 +249,19 @@ aqui e volta ao design** — é para isso que o marco existe.
 > `app` e construir as telas em cima (incluindo a tela de "carregar/salvar"
 > que de fato lista os 3 slots) — o que este ambiente de desenvolvimento
 > não consegue fazer nem verificar por falta do SDK Flutter/Dart (ver
-> `app/README.md`, o diretório Flutter, não `core/app`). Do lado Rust ainda
-> faltam: elenco jogável, transferências e treino (`ai` continua um
-> esqueleto) e táticas — nenhum dos três tem estado ainda para o save
+> `app/README.md`, o diretório Flutter, não `core/app`). Do lado Rust, o
+> primeiro item deste marco já tem uma fatia real: **folha salarial**
+> (`world::pay_salaries`, fatia mínima de RF-CL-02, `docs/01 §2.2`) — cada
+> jogador custa ao clube por temporada, debitado antes do mercado rodar.
+> É a primeira despesa recorrente de verdade da economia do mundo: antes
+> dela, orçamento só mudava por transferência (conservado entre clubes);
+> agora dinheiro sai do sistema a cada temporada, então o total de
+> `budgets` cai monotonicamente ao longo de uma carreira (confirmado por
+> teste). Ainda sem contrato de verdade (duração, luvas, cláusula — só o
+> custo existe) e sem negociação (`RF-TR-03`/`04`): "transferências
+> jogáveis" continua fora — o mercado é automático e mecânico (`ai`), sem
+> nenhum ponto de decisão humana. Elenco jogável, treino e táticas também
+> continuam faltando — nenhum dos três tem estado ainda para o save
 > precisar guardar além do replay. `world`/`rules`/`engine`/`pack`/`persist`
 > seguem adiantados em relação à UI — o próximo passo de maior risco
 > continua sendo essa ponte, não mais lógica de núcleo.
