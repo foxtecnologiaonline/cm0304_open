@@ -5,16 +5,19 @@
 //! `crate::strength`'s força sintética: um substituto sorteado
 //! deterministicamente, documentado, não uma simulação de finanças de
 //! verdade. Folha salarial ([`pay_salaries`]) é a primeira fatia real de
-//! despesa recorrente — fatia mínima de RF-CL-02 (`docs/01 §2.2`): só o
-//! custo, sem contrato, duração, luvas ou cláusula nenhuma. Bilheteria
-//! ([`match_day_revenue`]) é a primeira fatia real de receita — fatia
-//! mínima de RF-CL-03 (`docs/01 §2.2`): só o ingresso de partida em casa,
-//! nada de TV, prêmio ou patrocínio ainda (o resto de RF-CL-03 fica para
-//! quando essas fontes existirem).
+//! despesa recorrente — fatia mínima de RF-CL-02 (`docs/01 §2.2`): o
+//! salário usa o CA travado no contrato de cada jogador
+//! (`crate::contract::ContractState::signed_ability`), não o CA corrente —
+//! ver `crate::contract` para luvas/cláusula ainda não existirem.
+//! Bilheteria ([`match_day_revenue`]) é a primeira fatia real de receita —
+//! fatia mínima de RF-CL-03 (`docs/01 §2.2`): só o ingresso de partida em
+//! casa, nada de TV, prêmio ou patrocínio ainda (o resto de RF-CL-03 fica
+//! para quando essas fontes existirem).
 
 use domain::{ClubId, DeterministicRng, Money};
 use pack::LoadedPack;
 
+use crate::contract::ContractState;
 use crate::progression::PlayerState;
 
 /// Piso e teto do orçamento sintético, em centavos — magnitude escolhida
@@ -52,32 +55,38 @@ fn synthetic_budget(club: ClubId, world_seed: u64) -> Money {
 const CENTS_PER_CA_PER_SEASON: i64 = 5_000;
 
 /// Salário de um jogador por temporada, só função de CA — fatia mínima de
-/// RF-CL-02 (`docs/01 §2.2`): sem contrato, sem duração, sem luvas, sem
-/// cláusula de rescisão/gols/aparições. O resto de RF-CL-02 fica para
-/// quando houver negociação de verdade (`RF-TR-03`/`04`, M2) para decidir
-/// esses termos — aqui o "contrato" é implícito e eterno.
+/// RF-CL-02 (`docs/01 §2.2`): sem luvas, sem cláusula de
+/// rescisão/gols/aparições. Quem chama decide **qual** CA usar — ver
+/// [`pay_salaries`], que usa o CA travado no contrato (`crate::contract`),
+/// não o corrente.
 #[must_use]
-pub fn salary_per_season(current_ability: u8) -> Money {
-    Money::from_cents(i64::from(current_ability) * CENTS_PER_CA_PER_SEASON)
+pub fn salary_per_season(ability: u8) -> Money {
+    Money::from_cents(i64::from(ability) * CENTS_PER_CA_PER_SEASON)
 }
 
 /// Debita a folha salarial da temporada: todo jogador do `roster` —
 /// titular ou reserva, saudável, lesionado ou suspenso, o clube paga o
-/// elenco inteiro — desconta `salary_per_season(CA atual)` do orçamento
-/// do seu clube. Devolve o total de fato pago (pode ser menor que a soma
-/// nominal dos salários: um orçamento sem caixa suficiente só zera,
-/// nunca fica negativo — `Money::saturating_sub`, dívida de verdade é
-/// RF-CL-03, não implementada).
+/// elenco inteiro — desconta `salary_per_season(CA travado no contrato)`
+/// do orçamento do seu clube. `contracts` tem que estar no mesmo índice
+/// denso que `roster` (`crate::contract`, invariante do módulo). Devolve
+/// o total de fato pago (pode ser menor que a soma nominal dos salários:
+/// um orçamento sem caixa suficiente só zera, nunca fica negativo —
+/// `Money::saturating_sub`, dívida de verdade é RF-CL-03, não
+/// implementada).
 ///
 /// Diferente de uma transferência (`crate::market`), isto **não conserva
 /// dinheiro** entre clubes: a folha é um gasto real que sai da economia
 /// modelada (jogadores não têm orçamento próprio aqui), não uma troca
 /// entre duas partes — o total de `budgets` só pode diminuir ou ficar
 /// igual a cada chamada, nunca aumentar.
-pub fn pay_salaries(roster: &[PlayerState], budgets: &mut [Money]) -> Money {
+pub fn pay_salaries(
+    roster: &[PlayerState],
+    contracts: &[ContractState],
+    budgets: &mut [Money],
+) -> Money {
     let mut total_paid = Money::ZERO;
-    for player in roster {
-        let salary = salary_per_season(player.ability.current());
+    for (player, contract) in roster.iter().zip(contracts) {
+        let salary = salary_per_season(contract.signed_ability);
         let idx = player.club.as_usize();
         let paid = budgets[idx].min(salary);
         budgets[idx] = budgets[idx] - salary;
@@ -224,12 +233,23 @@ mod tests {
         }
     }
 
+    /// Contrato travado no mesmo CA de `player(..., ca)` — pros testes de
+    /// `pay_salaries` abaixo que não testam a própria trava de contrato,
+    /// só a folha, o CA travado bate com o CA do jogador.
+    fn contract(ca: u8) -> ContractState {
+        ContractState {
+            seasons_remaining: 3,
+            signed_ability: ca,
+        }
+    }
+
     #[test]
     fn pay_salaries_debita_o_orcamento_do_clube_certo() {
         let roster = vec![player(ClubId::new(0), 100), player(ClubId::new(1), 50)];
+        let contracts = vec![contract(100), contract(50)];
         let mut budgets = vec![Money::from_cents(10_000_000), Money::from_cents(10_000_000)];
 
-        let total_paid = pay_salaries(&roster, &mut budgets);
+        let total_paid = pay_salaries(&roster, &contracts, &mut budgets);
 
         assert_eq!(
             budgets[0].cents(),
@@ -246,13 +266,27 @@ mod tests {
     }
 
     #[test]
+    fn pay_salaries_usa_o_ca_travado_no_contrato_nao_o_corrente() {
+        // O jogador "cresceu" pra CA 150, mas o contrato ainda está
+        // travado no CA 100 de quando foi assinado — a folha tem que
+        // seguir o contrato, não o CA corrente.
+        let roster = vec![player(ClubId::new(0), 150)];
+        let contracts = vec![contract(100)];
+        let mut budgets = vec![Money::from_cents(10_000_000)];
+        let total_paid = pay_salaries(&roster, &contracts, &mut budgets);
+        assert_eq!(total_paid, salary_per_season(100));
+        assert_ne!(total_paid, salary_per_season(150));
+    }
+
+    #[test]
     fn pay_salaries_paga_o_elenco_inteiro_nao_so_titulares() {
         // Dois reservas do mesmo clube, nenhum titulariza sozinho (só um
         // jogador por posição não enche a formação) — ambos precisam ser
         // cobrados mesmo assim.
         let roster = vec![player(ClubId::new(0), 100), player(ClubId::new(0), 80)];
+        let contracts = vec![contract(100), contract(80)];
         let mut budgets = vec![Money::from_cents(10_000_000)];
-        pay_salaries(&roster, &mut budgets);
+        pay_salaries(&roster, &contracts, &mut budgets);
         assert_eq!(
             budgets[0].cents(),
             10_000_000 - salary_per_season(100).cents() - salary_per_season(80).cents()
@@ -262,8 +296,9 @@ mod tests {
     #[test]
     fn pay_salaries_nunca_deixa_orcamento_negativo() {
         let roster = vec![player(ClubId::new(0), 200)]; // salário bem maior que o caixa
+        let contracts = vec![contract(200)];
         let mut budgets = vec![Money::from_cents(100)];
-        let total_paid = pay_salaries(&roster, &mut budgets);
+        let total_paid = pay_salaries(&roster, &contracts, &mut budgets);
         assert_eq!(budgets[0], Money::ZERO);
         // Só o que de fato havia no caixa foi "pago", não o salário
         // nominal inteiro.
@@ -273,10 +308,11 @@ mod tests {
     #[test]
     fn pay_salaries_nunca_aumenta_o_total_de_dinheiro() {
         let roster = vec![player(ClubId::new(0), 120), player(ClubId::new(1), 90)];
+        let contracts = vec![contract(120), contract(90)];
         let mut budgets = vec![Money::from_cents(5_000_000), Money::from_cents(5_000_000)];
         let total_before: i64 = budgets.iter().map(|b| b.cents()).sum();
 
-        pay_salaries(&roster, &mut budgets);
+        pay_salaries(&roster, &contracts, &mut budgets);
 
         let total_after: i64 = budgets.iter().map(|b| b.cents()).sum();
         assert!(

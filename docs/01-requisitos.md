@@ -70,20 +70,31 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 | RF-CL-07 | Time B / sub-19 com jogos próprios e promoção de atletas | S | M4 |
 | RF-CL-08 | Histórico do clube: títulos, recordes, ídolos, sequências | C | M5 |
 
-> **Estado de implementação:** `world::pay_salaries` cobre uma fatia mínima de
-> RF-CL-02 — só o lado de **despesa recorrente**: todo jogador do elenco (titular
-> ou reserva) custa `salary_per_season(CA atual)` por temporada ao seu clube
-> (função linear, não calibrada, mesmo status de `ai::market_value`), debitado do
-> orçamento antes do mercado de transferências rodar. Sem contrato de verdade
-> nenhum: sem duração, sem luvas, sem cláusula de rescisão/gols/aparições — o
-> "contrato" aqui é implícito e eterno, só o custo existe. Primeira despesa real
-> da economia do mundo: antes desta fatia, orçamento só mudava por transferência
-> (conservado entre clubes); agora dinheiro de fato **sai** do sistema a cada
-> temporada (jogadores não têm orçamento próprio pra receber). Clube sem caixa
-> suficiente só zera (nunca fica endividado — dívida de verdade é parte de
-> RF-CL-03, não implementada; ver abaixo o que de RF-CL-03 já existe).
-> `CommandReceipt::payroll_paid` e `managerfc-cli play` já reportam o total pago
-> por temporada.
+> **Estado de implementação:** `world::pay_salaries` + `world::contract` cobrem
+> as duas fatias mínimas de RF-CL-02 — **despesa** e **duração**. Despesa: todo
+> jogador do elenco (titular ou reserva) custa `salary_per_season(CA travado no
+> contrato)` por temporada ao seu clube (função linear, não calibrada, mesmo
+> status de `ai::market_value`), debitado do orçamento antes do mercado de
+> transferências rodar. Duração: `world::ContractState` guarda, por jogador,
+> quantas temporadas restam de contrato e o CA travado no momento da última
+> assinatura — sorteado entre 1 e 5 temporadas na criação da carreira
+> (`world::generate_initial_contracts`); `world::advance_contracts` decrementa
+> a cada `AdvanceSeason` e, ao chegar a zero, **renova automaticamente** (nova
+> duração sorteada, salário travado no CA já pós-progressão da temporada) —
+> sem negociação de verdade ainda (`RF-TR-03`/`04`, M2/M3), o "contrato" só
+> impede que o salário acompanhe o CA corrente continuamente: ele só reajusta
+> na renovação, como um contrato de verdade. Toda transferência
+> (`world::run_market_day`) também assina contrato novo no clube comprador
+> (duração máxima, salário no CA do momento da venda). Sem luvas, sem cláusula
+> de rescisão/gols/aparições, sem agente livre (`RF-TR-07`, M3) — um contrato
+> aqui nunca termina sem renovar, só muda de duração/salário. Primeira despesa
+> real da economia do mundo: antes da fatia de folha, orçamento só mudava por
+> transferência (conservado entre clubes); agora dinheiro de fato **sai** do
+> sistema a cada temporada (jogadores não têm orçamento próprio pra receber).
+> Clube sem caixa suficiente só zera (nunca fica endividado — dívida de verdade
+> é parte de RF-CL-03, não implementada; ver abaixo o que de RF-CL-03 já
+> existe). `CommandReceipt::payroll_paid`/`contracts_renewed` e `managerfc-cli
+> play` já reportam os totais por temporada.
 >
 > `world::finance::match_day_revenue` cobre uma fatia mínima de RF-CL-03 — só
 > **bilheteria**, nenhuma outra fonte (TV, prêmio, patrocínio) ainda. Cada clube

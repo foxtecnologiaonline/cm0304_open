@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "pack_id": "example.two-tier",
   "pack_version": "0.1.0",
   "world_seed": 42,
@@ -10,8 +10,9 @@
   "total_injuries": 42,
   "total_tired_players": 522,
   "total_suspensions": 26,
-  "total_payroll_paid_cents": 432820000,
+  "total_payroll_paid_cents": 431870000,
   "total_match_day_revenue_cents": 166658310,
+  "total_contracts_renewed": 182,
   "competitions": [
     {
       "name": "Copa de Estrelônia",
@@ -214,5 +215,5 @@
       "cup_champion": null
     }
   ],
-  "state_hash": "58978f98893dc949"
+  "state_hash": "a360c93228d2186c"
 }

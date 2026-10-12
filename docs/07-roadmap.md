@@ -264,12 +264,24 @@ aqui e volta ao design** — é para isso que o marco existe.
 > sai do sistema a cada temporada por folha, uma fração dele volta por
 > bilheteria, e o total de `budgets` continua caindo ao longo de uma
 > carreira — só mais devagar que só com folha (confirmado por teste).
-> Ainda sem contrato de verdade (duração, luvas, cláusula — só o custo
-> existe), sem TV/prêmio/patrocínio/dívida, e sem negociação
-> (`RF-TR-03`/`04`): "transferências jogáveis" continua fora — o mercado é
-> automático e mecânico (`ai`), sem nenhum ponto de decisão humana. Elenco
-> jogável, treino e táticas também continuam faltando — nenhum dos três
-> tem estado ainda para o save precisar guardar além do replay.
+> Ainda sem luvas, cláusula ou negociação de verdade (`RF-TR-03`/`04`):
+> "transferências jogáveis" continua fora — o mercado é automático e
+> mecânico (`ai`), sem nenhum ponto de decisão humana. Elenco jogável,
+> treino e táticas também continuam faltando — nenhum dos três tem estado
+> ainda para o save precisar guardar além do replay.
+>
+> A **duração** de RF-CL-02 também já é real: `world::ContractState`
+> (`world::contract`) guarda, por jogador, temporadas restantes de
+> contrato e o CA travado na última assinatura — sorteado entre 1 e 5 na
+> criação da carreira, decrementado a cada temporada
+> (`world::advance_contracts`), renovando automaticamente ao chegar a
+> zero (nova duração, salário travado no CA pós-progressão) e também ao
+> transferir (`world::run_market_day`, contrato novo de duração máxima no
+> comprador). O efeito real: `world::pay_salaries` agora usa o CA
+> travado, não o corrente — o salário de um jogador fica parado entre
+> renovações mesmo que o CA suba, só reajustando quando o contrato de
+> fato muda, como um contrato de verdade. Ainda sem agente livre
+> (`RF-TR-07`, M3): um contrato aqui nunca termina sem renovar.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da

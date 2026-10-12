@@ -62,6 +62,11 @@ pub struct CommandReceipt {
     /// fatia mínima) — só partidas de liga em casa, copa não gera receita
     /// aqui.
     pub match_day_revenue: domain::Money,
+    /// Quantos contratos renovaram automaticamente por chegar a zero de
+    /// duração nesta temporada (`world::advance_contracts`, `docs/01 §2.2`,
+    /// RF-CL-02, fatia de duração) — não conta renovação por transferência
+    /// (`world::run_market_day`), essa já sai do mercado com contrato novo.
+    pub contracts_renewed: usize,
 }
 
 /// Uma carreira carregada em memória.
@@ -100,6 +105,13 @@ pub struct GameSession {
     /// `budgets`). Gerada uma vez em [`Self::new`] e nunca muda depois:
     /// não há obras de estádio ainda (RF-CL-05, M4).
     stadium_capacities: Vec<u32>,
+    /// Contrato de cada jogador, no mesmo índice denso que `roster`
+    /// (`world::ContractState`, invariante do módulo `world::contract`) —
+    /// duração restante e CA travado pro salário (`world::pay_salaries`
+    /// usa o CA travado, não o corrente). Muda a cada `AdvanceSeason`
+    /// (`world::advance_contracts`, renovação automática) e a cada
+    /// transferência (`world::run_market_day`, contrato novo no comprador).
+    contracts: Vec<world::ContractState>,
     world_seed: u64,
     /// Uma entrada por temporada já simulada — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
@@ -124,6 +136,7 @@ impl GameSession {
         let roster = world::initial_roster(&report.pack);
         let budgets = world::generate_budgets(&report.pack, world_seed);
         let stadium_capacities = world::generate_stadium_capacities(&report.pack, world_seed);
+        let contracts = world::generate_initial_contracts(&report.pack, world_seed);
         let profiles =
             world::generate_match_profiles_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
@@ -138,6 +151,7 @@ impl GameSession {
             roster,
             budgets,
             stadium_capacities,
+            contracts,
             world_seed,
             history: Vec::new(),
         })
@@ -200,19 +214,24 @@ impl GameSession {
             Command::AdvanceSeason => {
                 let season_index = self.history.len() as u32;
                 // Folha salarial antes de qualquer coisa: cada clube paga
-                // o elenco inteiro pelo CA atual (`world::pay_salaries`,
-                // `docs/01 §2.2` RF-CL-02, fatia mínima) — só então o que
-                // sobrar no orçamento entra no mercado. Nunca deixa um
-                // orçamento negativo (zera, não endivida).
-                let payroll_paid = world::pay_salaries(&self.roster, &mut self.budgets);
+                // o elenco inteiro pelo CA travado no contrato de cada um
+                // (`world::pay_salaries`, `docs/01 §2.2` RF-CL-02) — só
+                // então o que sobrar no orçamento entra no mercado. Nunca
+                // deixa um orçamento negativo (zera, não endivida).
+                let payroll_paid =
+                    world::pay_salaries(&self.roster, &self.contracts, &mut self.budgets);
 
                 // Mercado antes da temporada: clubes tentam substituir seu
                 // titular mais fraco por um reserva melhor de outro clube
                 // que caiba no orçamento (`world::run_market_day`,
                 // `docs/07-roadmap.md` M1: "primeira IA de mercado"). Feito
                 // antes de recalcular a força, pra quem comprou reforço já
-                // jogar mais forte nesta mesma temporada.
-                let transfers = world::run_market_day(&mut self.roster, &mut self.budgets);
+                // jogar mais forte nesta mesma temporada. Todo jogador
+                // transferido assina contrato novo no comprador (duração
+                // máxima, salário no CA do momento da venda — ver
+                // `world::run_market_day`).
+                let transfers =
+                    world::run_market_day(&mut self.roster, &mut self.contracts, &mut self.budgets);
 
                 // Lesões da temporada: substitui completamente o estado
                 // anterior (`world::roll_injuries`), então um jogador
@@ -286,6 +305,18 @@ impl GameSession {
 
                 world::advance_season(&mut self.roster, &starters, self.world_seed, season_index);
 
+                // Duração de contrato (`world::advance_contracts`, `docs/01
+                // §2.2` RF-CL-02): decrementa a duração restante de todo
+                // contrato; quem chega a zero renova automaticamente com o
+                // CA pós-progressão desta temporada (por isso vem depois
+                // de `world::advance_season`, acima).
+                let contracts_renewed = world::advance_contracts(
+                    &mut self.contracts,
+                    &self.roster,
+                    self.world_seed,
+                    season_index,
+                );
+
                 let receipt = CommandReceipt {
                     season_index,
                     matches_played: result.matches_played,
@@ -296,6 +327,7 @@ impl GameSession {
                     suspensions: result.suspensions,
                     payroll_paid,
                     match_day_revenue: result.match_day_revenue,
+                    contracts_renewed,
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -751,6 +783,24 @@ mod tests {
         assert!(
             receipt.match_day_revenue.cents() > 0,
             "esperava bilheteria positiva no pack de exemplo (16 clubes de liga, 112 partidas)"
+        );
+    }
+
+    #[test]
+    fn contratos_de_fato_renovam_ligados_ao_dispatch() {
+        // Caixa branca: prova que `world::advance_contracts` está de fato
+        // ligado ao dispatch — duração inicial sorteada entre 1 e 5
+        // temporadas pra 256 jogadores, em 10 temporadas é extremamente
+        // improvável que nenhum contrato chegue a zero e renove.
+        let mut session = GameSession::new(&example_pack_path(), 21).unwrap();
+        let mut total_renewed = 0usize;
+        for _ in 0..10 {
+            let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+            total_renewed += receipt.contracts_renewed;
+        }
+        assert!(
+            total_renewed > 0,
+            "esperava pelo menos uma renovação de contrato em 10 temporadas no pack de exemplo"
         );
     }
 

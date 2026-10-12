@@ -20,10 +20,15 @@
 //! — fatia mínima de RF-CL-02, sem contrato, duração, luvas ou cláusula.
 //! Bilheteria ([`finance::match_day_revenue`]) é a primeira receita
 //! recorrente de verdade — fatia mínima de RF-CL-03, só ingresso de
-//! partida em casa, sem TV, prêmio ou patrocínio.
+//! partida em casa, sem TV, prêmio ou patrocínio. Duração de contrato
+//! ([`contract`]) complementa a folha salarial: salário travado no CA do
+//! momento da assinatura, não no CA corrente, só reajustando quando o
+//! contrato de fato renova (automático, sem negociação) ou o jogador é
+//! transferido — sem agente livre ainda (`RF-TR-07`, M3).
 #![warn(clippy::all)]
 
 mod condition;
+mod contract;
 mod cup;
 mod discipline;
 mod finance;
@@ -36,6 +41,7 @@ mod season;
 mod strength;
 
 pub use condition::{FULL_CONDITION, apply_season_fatigue};
+pub use contract::{ContractState, advance_contracts, generate_initial_contracts};
 pub use cup::{CupMatch, CupResult, cup_participants, run_cup};
 pub use finance::{generate_budgets, generate_stadium_capacities, pay_salaries, salary_per_season};
 pub use injuries::roll_injuries;

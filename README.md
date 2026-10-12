@@ -70,7 +70,8 @@ cm0304_open/
 │  │                       #    automático + copa (mata-mata de fase única, docs/01 RF-MU-03) +
 │  │                       #    condição física por temporada (docs/01 RF-JG-07) + suspensões
 │  │                       #    por expulsão (liga simulada rodada a rodada, docs/01 RF-JG-09) +
-│  │                       #    folha salarial (M2, docs/01 RF-CL-02) + bilheteria (M2, docs/01 RF-CL-03)
+│  │                       #    folha salarial + duração de contrato (M2, docs/01 RF-CL-02) +
+│  │                       #    bilheteria (M2, docs/01 RF-CL-03)
 │  ├─ app/                 # ✅ dispatch/query (GameSession) — a fronteira que a ponte vai expor
 │  │                       #    save/load por replay determinístico (docs/03 §8.1)
 │  ├─ persist/             # ✅ save binário versionado — checksum, escrita atômica, sem blocos ainda
@@ -89,7 +90,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 293 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 305 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
