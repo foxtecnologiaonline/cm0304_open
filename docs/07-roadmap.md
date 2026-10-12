@@ -283,6 +283,15 @@ aqui e volta ao design** — é para isso que o marco existe.
 > fato muda, como um contrato de verdade. Ainda sem agente livre
 > (`RF-TR-07`, M3): um contrato aqui nunca termina sem renovar.
 >
+> Esse mesmo `ContractState` já alimenta `ai::market_value` (RF-TR-02,
+> `docs/01 §2.4`): duração restante de contrato agora entra como desconto
+> no valor de transferência — pouco contrato sobrando vale menos. Não é
+> só cosmético: o desconto pode baixar o preço o suficiente pra caber no
+> orçamento de um comprador que não conseguiria pagar o preço cheio,
+> mudando o resultado real do mercado (`ai::run_market_day`), não só o
+> número reportado. Idade, PA, reputação e demanda ainda faltam do
+> RF-TR-02 completo.
+>
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da
 > temporada (o mesmo conjunto que `world::condition` já usa pra fadiga) e

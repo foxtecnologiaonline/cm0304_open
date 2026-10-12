@@ -183,12 +183,20 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 | RF-TR-09 | Inflação de mercado coerente ao longo de 20+ temporadas | M | M4 |
 
 > **Estado de implementação:** `ai::run_market_day` (M1, `docs/07-roadmap.md`)
-> já cobre uma fatia mecânica de RF-TR-02 (valor de mercado — só CA, fórmula
-> não calibrada) e RF-TR-05 (clube identifica carência e compra se couber no
-> orçamento) — sem janela por país (RF-TR-01), sem negociação/disputa/
-> desistência de verdade (o "dono" sempre vende se o preço bate) e sem
-> nenhum dos RF-TR-03/04/06/07/08/09. É automático e roda toda temporada em
-> `GameSession::dispatch`, não uma tela jogável ainda.
+> já cobre uma fatia mecânica de RF-TR-02 (valor de mercado) e RF-TR-05
+> (clube identifica carência e compra se couber no orçamento) — sem janela
+> por país (RF-TR-01), sem negociação/disputa/desistência de verdade (o
+> "dono" sempre vende se o preço bate) e sem nenhum dos RF-TR-03/04/06/07/08/09.
+> É automático e roda toda temporada em `GameSession::dispatch`, não uma
+> tela jogável ainda. `ai::market_value` cobria só CA (fórmula não
+> calibrada); agora também considera **contrato** — a duração restante
+> (`world::ContractState`, RF-CL-02) entra como desconto (jogador com
+> pouco contrato sobrando vale menos, mesmo sem agente livre implementado
+> ainda, `RF-TR-07`): efeito real, não só decorativo — um jogador que não
+> caberia no orçamento do comprador pelo preço cheio pode passar a caber
+> com o desconto de contrato curto, mudando o resultado real do mercado,
+> não só o número reportado. Idade, PA, reputação e demanda ainda faltam
+> do RF-TR-02 completo.
 
 ### 2.5 Táticas e partida (`PA`)
 

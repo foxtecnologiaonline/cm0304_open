@@ -6,13 +6,13 @@
   "seasons": 3,
   "total_matches_played": 336,
   "total_movements": 12,
-  "total_transfers": 21,
+  "total_transfers": 20,
   "total_injuries": 42,
   "total_tired_players": 522,
   "total_suspensions": 26,
-  "total_payroll_paid_cents": 431870000,
+  "total_payroll_paid_cents": 431815000,
   "total_match_day_revenue_cents": 166658310,
-  "total_contracts_renewed": 182,
+  "total_contracts_renewed": 181,
   "competitions": [
     {
       "name": "Copa de Estrelônia",
@@ -32,12 +32,12 @@
           "position": 1,
           "club_name": "Vale Dourado FC",
           "played": 14,
-          "wins": 9,
-          "draws": 2,
-          "losses": 3,
-          "goals_for": 20,
+          "wins": 8,
+          "draws": 4,
+          "losses": 2,
+          "goals_for": 21,
           "goals_against": 8,
-          "points": 29
+          "points": 28
         },
         {
           "position": 2,
@@ -57,7 +57,7 @@
           "wins": 7,
           "draws": 3,
           "losses": 4,
-          "goals_for": 16,
+          "goals_for": 17,
           "goals_against": 13,
           "points": 24
         },
@@ -69,7 +69,7 @@
           "draws": 6,
           "losses": 3,
           "goals_for": 21,
-          "goals_against": 18,
+          "goals_against": 17,
           "points": 21
         },
         {
@@ -79,8 +79,8 @@
           "wins": 5,
           "draws": 5,
           "losses": 4,
-          "goals_for": 20,
-          "goals_against": 15,
+          "goals_for": 21,
+          "goals_against": 16,
           "points": 20
         },
         {
@@ -88,14 +88,25 @@
           "club_name": "Campo Real FC",
           "played": 14,
           "wins": 4,
-          "draws": 4,
-          "losses": 6,
-          "goals_for": 16,
-          "goals_against": 18,
-          "points": 16
+          "draws": 3,
+          "losses": 7,
+          "goals_for": 15,
+          "goals_against": 19,
+          "points": 15
         },
         {
           "position": 7,
+          "club_name": "Porto Solar FC",
+          "played": 14,
+          "wins": 2,
+          "draws": 4,
+          "losses": 8,
+          "goals_for": 15,
+          "goals_against": 27,
+          "points": 10
+        },
+        {
+          "position": 8,
           "club_name": "Cruz do Sul FC",
           "played": 14,
           "wins": 2,
@@ -104,17 +115,6 @@
           "goals_for": 12,
           "goals_against": 24,
           "points": 9
-        },
-        {
-          "position": 8,
-          "club_name": "Porto Solar FC",
-          "played": 14,
-          "wins": 1,
-          "draws": 5,
-          "losses": 8,
-          "goals_for": 16,
-          "goals_against": 27,
-          "points": 8
         }
       ],
       "cup_champion": null
@@ -215,5 +215,5 @@
       "cup_champion": null
     }
   ],
-  "state_hash": "a360c93228d2186c"
+  "state_hash": "bc3da77ae8bd3546"
 }

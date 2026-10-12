@@ -3,12 +3,14 @@
 //! de valor de mercado) e RF-TR-05 (IA de transferência: identifica
 //! carência, orça, compra) de `docs/01 §2.4` — ambos marcados M2 lá porque
 //! a versão completa (negociação, disputa entre clubes, desistência,
-//! reputação, contratos com salário) pede muito mais do que existe: sem
-//! contratos (`RF-TR-03`/`04`), sem demanda/reputação, sem janela por país
+//! reputação) pede muito mais do que existe: sem negociação de verdade
+//! (`RF-TR-03`/`04`), sem demanda/reputação, sem janela por país
 //! (`RF-TR-01`). O que há aqui é mecânico e automático, sem nenhum jogador
 //! humano envolvido: cada clube, uma vez por "dia de mercado", tenta trocar
 //! seu titular mais fraco por um reserva melhor de outro clube que caiba no
-//! orçamento.
+//! orçamento. [`market_value`] já considera **contrato** (duração restante
+//! — `world::ContractState`), a primeira das outras variáveis de RF-TR-02
+//! completo (idade, PA, reputação ainda faltam).
 //!
 //! Como [`crate::lineup`], depende só de `domain` — não sabe o que é um
 //! `pack` ou uma `world::PlayerState`; quem chama (`world`) monta
@@ -26,6 +28,10 @@ pub struct MarketPlayer {
     pub club: ClubId,
     pub position: Position,
     pub current_ability: u8,
+    /// Temporadas restantes do contrato atual (`world::ContractState`,
+    /// nunca `0` lá) — entra em [`market_value`] como desconto: pouco
+    /// contrato sobrando vale menos no mercado.
+    pub contract_seasons_remaining: u8,
 }
 
 /// Uma transferência executada — o registro do que aconteceu, pra quem
@@ -38,19 +44,40 @@ pub struct Transfer {
     pub fee: Money,
 }
 
-/// Valor de mercado de um jogador — função **só** de CA, quadrática:
-/// dobrar a habilidade quadruplica o preço, o suficiente para um jogador
-/// de elite custar ordens de magnitude mais que um da base sem precisar de
-/// nenhuma outra variável (idade, contrato, reputação — RF-TR-02 completo).
-/// Constante de escala (`10_000` centavos por CA²) escolhida só pra dar
-/// números de magnitude plausível no pack de exemplo; não é dado calibrado
-/// nem carregável de pack ainda (`docs/03 §5`, mesmo status que as
-/// constantes de `engine::simulate` antes da calibração).
+/// Desconto sobre o valor de base conforme a duração restante do contrato,
+/// em milésimos — fatia de "contrato" de RF-TR-02 (`docs/01 §2.4`): um
+/// jogador com pouco contrato sobrando vale menos (revenda mais arriscada,
+/// clube vendedor com menos poder de negociação), mesmo sem agente livre
+/// implementado (`RF-TR-07`, M3) — a lógica vale independente disso.
+/// Faixas escolhidas só pra dar o efeito na direção certa, não calibradas.
+/// Trata `0` (não deveria acontecer vindo de `world::ContractState`, ver
+/// acima) como o mesmo piso de `1` — nenhum `panic!` com dado externo
+/// (`docs/02 §9.2`).
+fn contract_discount_permille(contract_seasons_remaining: u8) -> u32 {
+    match contract_seasons_remaining {
+        0 | 1 => 600,
+        2 => 800,
+        _ => 1000,
+    }
+}
+
+/// Valor de mercado de um jogador — função de CA (quadrática: dobrar a
+/// habilidade quadruplica o valor de base) e de duração restante de
+/// contrato (desconto de [`contract_discount_permille`]) — o suficiente
+/// para um jogador de elite custar ordens de magnitude mais que um da
+/// base, e para contrato curto baratear qualquer um, sem precisar ainda
+/// de idade/PA/reputação (RF-TR-02 completo). Constante de escala
+/// (`10_000` centavos por CA²) escolhida só pra dar números de magnitude
+/// plausível no pack de exemplo; não é dado calibrado nem carregável de
+/// pack ainda (`docs/03 §5`, mesmo status que as constantes de
+/// `engine::simulate` antes da calibração).
 #[must_use]
-pub fn market_value(current_ability: u8) -> Money {
+pub fn market_value(current_ability: u8, contract_seasons_remaining: u8) -> Money {
     const CENTS_PER_CA_SQUARED: i64 = 10_000;
     let ca = i64::from(current_ability);
-    Money::from_cents(ca * ca * CENTS_PER_CA_SQUARED)
+    let base = ca * ca * CENTS_PER_CA_SQUARED;
+    let discount = i64::from(contract_discount_permille(contract_seasons_remaining));
+    Money::from_cents(base * discount / 1000)
 }
 
 /// O titular de menor habilidade atual do elenco `squad` (que já jogou,
@@ -136,14 +163,20 @@ pub fn run_market_day(players: &mut [MarketPlayer], budgets: &mut [Money]) -> Ve
                 .then(players[a].player.cmp(&players[b].player))
         });
 
-        let Some(&winner_idx) = candidates
-            .iter()
-            .find(|&&idx| budgets[buyer_index] >= market_value(players[idx].current_ability))
-        else {
+        let Some(&winner_idx) = candidates.iter().find(|&&idx| {
+            budgets[buyer_index]
+                >= market_value(
+                    players[idx].current_ability,
+                    players[idx].contract_seasons_remaining,
+                )
+        }) else {
             continue;
         };
 
-        let fee = market_value(players[winner_idx].current_ability);
+        let fee = market_value(
+            players[winner_idx].current_ability,
+            players[winner_idx].contract_seasons_remaining,
+        );
         let seller = players[winner_idx].club;
         let player_id = players[winner_idx].player;
 
@@ -174,21 +207,47 @@ fn to_rating(p: &MarketPlayer) -> PlayerRating {
 mod tests {
     use super::*;
 
+    // Contrato "cheio" por padrão (preço cheio, sem desconto) — testes que
+    // não são sobre desconto de contrato não precisam pensar nisso.
+    const FULL_CONTRACT: u8 = 5;
+
     fn player(id: u32, club: u32, position: Position, ca: u8) -> MarketPlayer {
+        player_with_contract(id, club, position, ca, FULL_CONTRACT)
+    }
+
+    fn player_with_contract(
+        id: u32,
+        club: u32,
+        position: Position,
+        ca: u8,
+        contract_seasons_remaining: u8,
+    ) -> MarketPlayer {
         MarketPlayer {
             player: PlayerId::new(id),
             club: ClubId::new(club),
             position,
             current_ability: ca,
+            contract_seasons_remaining,
         }
     }
 
     #[test]
     fn market_value_cresce_quadraticamente_com_ca() {
-        assert_eq!(market_value(0), Money::ZERO);
-        assert!(market_value(200) > market_value(100));
+        assert_eq!(market_value(0, FULL_CONTRACT), Money::ZERO);
+        assert!(market_value(200, FULL_CONTRACT) > market_value(100, FULL_CONTRACT));
         // Dobrar o CA (10 -> 20) quadruplica o valor.
-        assert_eq!(market_value(20).cents(), market_value(10).cents() * 4);
+        assert_eq!(
+            market_value(20, FULL_CONTRACT).cents(),
+            market_value(10, FULL_CONTRACT).cents() * 4
+        );
+    }
+
+    #[test]
+    fn market_value_cai_com_contrato_mais_curto() {
+        assert!(market_value(100, 5) > market_value(100, 2));
+        assert!(market_value(100, 2) > market_value(100, 1));
+        // `0` (não deveria vir de `world::ContractState`) trata como `1`.
+        assert_eq!(market_value(100, 0), market_value(100, 1));
     }
 
     #[test]
@@ -225,14 +284,47 @@ mod tests {
         assert_eq!(t.player, PlayerId::new(2));
         assert_eq!(t.from, ClubId::new(1));
         assert_eq!(t.to, ClubId::new(0));
-        assert_eq!(t.fee, market_value(70));
+        assert_eq!(t.fee, market_value(70, FULL_CONTRACT));
         assert_eq!(players[2].club, ClubId::new(0));
         // Orçamento debitado do comprador, creditado no vendedor.
         assert_eq!(
             budgets[0],
-            Money::from_cents(1_000_000_000) - market_value(70)
+            Money::from_cents(1_000_000_000) - market_value(70, FULL_CONTRACT)
         );
-        assert_eq!(budgets[1], market_value(70));
+        assert_eq!(budgets[1], market_value(70, FULL_CONTRACT));
+    }
+
+    #[test]
+    fn contrato_curto_barateia_e_pode_viabilizar_a_compra() {
+        // Mesmo cenário de `clube_compra_upgrade_de_verdade_do_banco_de_outro_clube`,
+        // mas com orçamento entre o preço cheio e o preço com desconto de
+        // contrato curto — só vira transferência quando o reserva tem
+        // pouco contrato restante.
+        let budget = Money::from_cents(35_000_000); // entre 29.4M (desconto) e 49M (cheio)
+
+        let mut full_contract = vec![
+            player(0, 0, Position::Goalkeeper, 40),
+            player(1, 1, Position::Goalkeeper, 90),
+            player_with_contract(2, 1, Position::Goalkeeper, 70, FULL_CONTRACT),
+        ];
+        let mut budgets_full = vec![budget, Money::ZERO];
+        assert!(
+            run_market_day(&mut full_contract, &mut budgets_full).is_empty(),
+            "contrato cheio não deveria caber no orçamento"
+        );
+
+        let mut short_contract = vec![
+            player(0, 0, Position::Goalkeeper, 40),
+            player(1, 1, Position::Goalkeeper, 90),
+            player_with_contract(2, 1, Position::Goalkeeper, 70, 1),
+        ];
+        let mut budgets_short = vec![budget, Money::ZERO];
+        let transfers = run_market_day(&mut short_contract, &mut budgets_short);
+        assert_eq!(
+            transfers.len(),
+            1,
+            "contrato de 1 temporada deveria baratear o suficiente pra caber no orçamento"
+        );
     }
 
     #[test]
@@ -292,7 +384,7 @@ mod proptests {
     fn arbitrary_league() -> impl Strategy<Value = (Vec<MarketPlayer>, Vec<Money>)> {
         (2usize..6).prop_flat_map(|n_clubs| {
             let squads = prop::collection::vec(
-                prop::collection::vec((arbitrary_position(), any::<u8>()), 0..10),
+                prop::collection::vec((arbitrary_position(), any::<u8>(), any::<u8>()), 0..10),
                 n_clubs,
             );
             let budgets = prop::collection::vec(0i64..1_000_000_000, n_clubs);
@@ -300,12 +392,13 @@ mod proptests {
                 let mut next_id = 0u32;
                 let mut players = Vec::new();
                 for (club_index, squad) in squads.into_iter().enumerate() {
-                    for (position, ca) in squad {
+                    for (position, ca, contract_seasons_remaining) in squad {
                         players.push(MarketPlayer {
                             player: PlayerId::new(next_id),
                             club: ClubId::new(club_index as u32),
                             position,
                             current_ability: ca,
+                            contract_seasons_remaining,
                         });
                         next_id += 1;
                     }
