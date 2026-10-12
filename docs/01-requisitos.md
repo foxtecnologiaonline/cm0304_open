@@ -117,9 +117,14 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 | RF-JG-11 | Regens: geração procedural de juniores por país/clube, com nacionalidade, nome e potencial plausíveis | M | M3 |
 | RF-JG-12 | Dupla nacionalidade e naturalização | C | M4 |
 
-> **Estado de implementação:** `world::progression` (M1) já cobre uma
-> fatia mínima de RF-JG-05 (idade só, sem jogos/treino/moral/clube — ver
-> `docs/03 §5.1`) e `world::injuries` cobre uma fatia mínima de RF-JG-08:
+> **Estado de implementação:** `world::progression` já cobre uma fatia
+> mínima de RF-JG-05 — **idade** (M1) e **jogos** (M2, `advance_season`):
+> quem titularizou a temporada (mesma escalação que `world::condition`
+> usa pra fadiga, `crate::quality::starters_from_roster_all_clubs`) ganha
+> um pequeno bônus de evolução (+0 a +3) sobre a curva de idade; reserva
+> mantém a curva pura, sem o bônus. Ainda sem treino, moral nem qualidade
+> do clube influenciando nada — ver `docs/03 §5.1`. `world::injuries`
+> cobre uma fatia mínima de RF-JG-08:
 > um sorteio sim/não por jogador por temporada (~6%, não calibrado contra
 > nenhum alvo publicado), sem tipo, gravidade, prazo de recuperação
 > granular nem risco de recaída — jogador machucado só fica fora da

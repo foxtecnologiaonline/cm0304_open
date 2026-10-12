@@ -270,6 +270,15 @@ aqui e volta ao design** — é para isso que o marco existe.
 > automático e mecânico (`ai`), sem nenhum ponto de decisão humana. Elenco
 > jogável, treino e táticas também continuam faltando — nenhum dos três
 > tem estado ainda para o save precisar guardar além do replay.
+>
+> `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
+> além de idade (M1), `advance_season` agora recebe a escalação titular da
+> temporada (o mesmo conjunto que `world::condition` já usa pra fadiga) e
+> dá um pequeno bônus de evolução (+0 a +3, nunca negativo) a quem jogou —
+> reserva mantém a curva de idade pura. É a fatia de "minutos jogados" da
+> fórmula completa (`docs/03 §5.1`); treino, moral e qualidade do clube
+> continuam fora.
+>
 > `world`/`rules`/`engine`/`pack`/`persist` seguem adiantados em relação à
 > UI — o próximo passo de maior risco continua sendo essa ponte, não mais
 > lógica de núcleo.

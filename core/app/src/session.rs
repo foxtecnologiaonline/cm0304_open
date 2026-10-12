@@ -284,7 +284,7 @@ impl GameSession {
                     .filter(|p| p.condition < world::FULL_CONDITION)
                     .count();
 
-                world::advance_season(&mut self.roster, self.world_seed, season_index);
+                world::advance_season(&mut self.roster, &starters, self.world_seed, season_index);
 
                 let receipt = CommandReceipt {
                     season_index,

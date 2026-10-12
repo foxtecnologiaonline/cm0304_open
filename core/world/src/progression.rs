@@ -1,17 +1,22 @@
-//! Progressão de jogador por idade — `docs/03-modelo-de-dados.md §5.1`.
+//! Progressão de jogador por idade e minutos jogados —
+//! `docs/03-modelo-de-dados.md §5.1`.
 //!
 //! Simplificação deliberada da fórmula completa (`docs/03 §5.1`:
 //! `ΔCA_mês = f(idade, PA-CA, treino, minutos_jogados, profissionalismo,
-//! ambição, qualidade_do_clube, moral)`): nenhuma dessas outras variáveis
-//! existe ainda (sem treino, sem escalação, sem contrato — `ai` continua um
+//! ambição, qualidade_do_clube, moral)`): a maioria dessas variáveis ainda
+//! não existe (sem treino, sem contrato, sem moral — `ai` continua um
 //! esqueleto), e não há calendário mensal ligado a `world` (`docs/02 §5`
-//! nota isso em vários lugares). O que existe aqui é a única fatia
-//! calculável hoje: **um ajuste por temporada**, dirigido só pela faixa
-//! etária, com sinal e magnitude puxados da tabela de `docs/03 §5.1`
-//! (ganho alto aos 15-18, platô aos 24-28, declínio acelerado aos 33+).
-//! `Ability::adjust_current` já garante `0 <= current <= potential`
-//! (`docs/03 §5`), então o ajuste nunca precisa se preocupar com estourar
-//! os limites por conta própria.
+//! nota isso em vários lugares). O que existe aqui são as duas fatias
+//! calculáveis hoje: **idade** (ajuste por temporada, sinal e magnitude
+//! puxados da tabela de `docs/03 §5.1` — ganho alto aos 15-18, platô aos
+//! 24-28, declínio acelerado aos 33+) e **minutos jogados**, na única
+//! granularidade que `world` tem pra isso — titular da temporada
+//! (`crate::quality::starters_from_roster_all_clubs`, já calculado todo
+//! `AdvanceSeason` pra condição física, `crate::condition`) ganha um
+//! pequeno bônus de evolução sobre a curva de idade; reserva mantém
+//! exatamente a curva de antes desta fatia. `Ability::adjust_current` já
+//! garante `0 <= current <= potential` (`docs/03 §5`), então o ajuste
+//! nunca precisa se preocupar com estourar os limites por conta própria.
 //!
 //! O estado aqui é **separado** do pack (`pack::ResolvedPlayer` nunca
 //! muda): [`PlayerState`] é o "CA de carreira" de uma sessão específica,
@@ -19,6 +24,8 @@
 //! estado do save — hoje mora só em memória (`app::GameSession`), porque
 //! `persist` ainda reconstrói uma sessão por replay em vez de guardar
 //! estado por entidade (ver `persist::save`).
+
+use std::collections::HashSet;
 
 use domain::{Ability, ClubId, DeterministicRng, PlayerId, Position};
 use pack::LoadedPack;
@@ -93,8 +100,17 @@ pub fn initial_roster(pack: &LoadedPack) -> Vec<PlayerState> {
 /// e por entidade-raiz") semeado por `(world_seed, "world.progression",
 /// player_id, season_index)` — evoluir o jogador A não pode mudar o
 /// resultado do jogador B, e a mesma temporada não pode repetir o ajuste
-/// da anterior.
-pub fn advance_season(roster: &mut [PlayerState], world_seed: u64, season_index: u32) {
+/// da anterior. `starters` é a escalação titular da temporada que acabou
+/// de terminar (`crate::quality::starters_from_roster_all_clubs` — o mesmo
+/// conjunto que `crate::condition::apply_season_fatigue` já usa): quem
+/// titularizou ganha um pequeno bônus de evolução (fatia mínima de
+/// "minutos jogados", RF-JG-05) sobre a curva de idade; reserva não.
+pub fn advance_season(
+    roster: &mut [PlayerState],
+    starters: &HashSet<PlayerId>,
+    world_seed: u64,
+    season_index: u32,
+) {
     for state in roster.iter_mut() {
         state.age_years += 1;
         let mut rng = DeterministicRng::seeded(
@@ -103,7 +119,8 @@ pub fn advance_season(roster: &mut [PlayerState], world_seed: u64, season_index:
             u64::from(state.player.index()),
             u64::from(season_index),
         );
-        let delta = delta_ca_for_age(state.age_years, &mut rng);
+        let is_starter = starters.contains(&state.player);
+        let delta = delta_ca_for_age(state.age_years, is_starter, &mut rng);
         state.ability = state.ability.adjust_current(delta);
     }
 }
@@ -113,8 +130,11 @@ pub fn advance_season(roster: &mut [PlayerState], world_seed: u64, season_index:
 /// (não há granularidade mensal ainda). O piso de cada faixa é sempre menor
 /// que o teto, com sobreposição deliberada entre faixas vizinhas (ex.:
 /// um jogador de 23 e um de 24 têm distribuições parecidas) — é uma curva
-/// suave, não um degrau brusco no aniversário.
-fn delta_ca_for_age(age: i32, rng: &mut DeterministicRng) -> i16 {
+/// suave, não um degrau brusco no aniversário. `is_starter` soma o bônus de
+/// [`starter_bonus`] por cima — nunca negativo, então titularizar nunca
+/// piora a evolução de ninguém, só deixa de dar o extra pra quem fica no
+/// banco.
+fn delta_ca_for_age(age: i32, is_starter: bool, rng: &mut DeterministicRng) -> i16 {
     let (min, max): (i16, i16) = match age {
         i32::MIN..=18 => (0, 12), // 15-18: ganho alto, muito sensível (aqui: generoso)
         19..=23 => (-2, 8),       // 19-23: ganho moderado
@@ -124,7 +144,26 @@ fn delta_ca_for_age(age: i32, rng: &mut DeterministicRng) -> i16 {
     };
     let span = u32::try_from(i32::from(max) - i32::from(min) + 1)
         .expect("max >= min em todas as faixas de delta_ca_for_age");
-    min + i16::try_from(rng.below(span)).expect("span cabe em i16 para todas as faixas definidas")
+    let base = min
+        + i16::try_from(rng.below(span)).expect("span cabe em i16 para todas as faixas definidas");
+    if is_starter {
+        base.saturating_add(starter_bonus(rng))
+    } else {
+        base
+    }
+}
+
+/// Piso e teto do bônus de evolução de quem titularizou a temporada —
+/// pequeno de propósito (no máximo +3 num jogador que já pode variar de
+/// -15 a +12 por idade): é um tempero na curva de idade, não uma segunda
+/// fonte de progressão do mesmo tamanho. Sempre `>= 0`.
+const STARTER_BONUS_MIN: i16 = 0;
+const STARTER_BONUS_MAX: i16 = 3;
+
+fn starter_bonus(rng: &mut DeterministicRng) -> i16 {
+    let span = u32::try_from(STARTER_BONUS_MAX - STARTER_BONUS_MIN + 1)
+        .expect("faixa do bônus de titular é pequena e fixa");
+    STARTER_BONUS_MIN + i16::try_from(rng.below(span)).expect("span cabe em i16")
 }
 
 #[cfg(test)]
@@ -186,7 +225,7 @@ mod tests {
     fn advance_season_incrementa_a_idade_de_todos_em_um_ano() {
         let pack = pack_with_players(&[(100, 2000), (100, 2008)]);
         let mut roster = initial_roster(&pack);
-        advance_season(&mut roster, 42, 0);
+        advance_season(&mut roster, &HashSet::new(), 42, 0);
         assert_eq!(roster[0].age_years, 27);
         assert_eq!(roster[1].age_years, 19);
     }
@@ -196,8 +235,9 @@ mod tests {
         let pack = pack_with_players(&[(100, 2000), (80, 1990), (150, 2008)]);
         let mut a = initial_roster(&pack);
         let mut b = initial_roster(&pack);
-        advance_season(&mut a, 7, 0);
-        advance_season(&mut b, 7, 0);
+        let starters = HashSet::from([PlayerId::new(0)]);
+        advance_season(&mut a, &starters, 7, 0);
+        advance_season(&mut b, &starters, 7, 0);
         assert_eq!(a, b);
     }
 
@@ -210,8 +250,11 @@ mod tests {
         let pack_b = pack_with_players(&[(100, 2000), (50, 1990)]);
         let mut roster_a = initial_roster(&pack_a);
         let mut roster_b = initial_roster(&pack_b);
-        advance_season(&mut roster_a, 42, 0);
-        advance_season(&mut roster_b, 42, 0);
+        // Jogador 0 titular nos dois casos — mantém o mesmo tratamento pra
+        // isolar o que o teste quer provar (independência entre jogadores).
+        let starters = HashSet::from([PlayerId::new(0)]);
+        advance_season(&mut roster_a, &starters, 42, 0);
+        advance_season(&mut roster_b, &starters, 42, 0);
         assert_eq!(roster_a[0].ability, roster_b[0].ability);
     }
 
@@ -222,14 +265,16 @@ mod tests {
         // independentes (seeds diferentes) deveria, em média, ganhar CA; um
         // de 35 deveria, em média, perder. Não testa a curva exata — só que
         // a direção do efeito está certa, o que já pegaria um sinal
-        // trocado por engano em `delta_ca_for_age`.
+        // trocado por engano em `delta_ca_for_age`. Reserva (sem bônus de
+        // titular) pra testar a curva de idade isolada, sem o tempero de
+        // `starter_bonus` por cima.
         let trials = 500u64;
 
         let young_total: i64 = (0..trials)
             .map(|seed| {
                 let pack = pack_with_players(&[(100, 2009)]); // 17 anos
                 let mut roster = initial_roster(&pack);
-                advance_season(&mut roster, seed, 0);
+                advance_season(&mut roster, &HashSet::new(), seed, 0);
                 i64::from(roster[0].ability.current()) - 100
             })
             .sum();
@@ -242,7 +287,7 @@ mod tests {
             .map(|seed| {
                 let pack = pack_with_players(&[(100, 1991)]); // 35 anos
                 let mut roster = initial_roster(&pack);
-                advance_season(&mut roster, seed, 0);
+                advance_season(&mut roster, &HashSet::new(), seed, 0);
                 i64::from(roster[0].ability.current()) - 100
             })
             .sum();
@@ -253,11 +298,44 @@ mod tests {
     }
 
     #[test]
+    fn titular_tende_a_evoluir_mais_que_reserva_em_media() {
+        // Sanidade estatística do bônus de `starter_bonus`: o mesmo
+        // jogador (mesma idade, mesmas seeds), só mudando titular/reserva,
+        // deveria terminar em média com CA mais alto como titular — nunca
+        // mais baixo, já que o bônus nunca é negativo.
+        let trials = 500u64;
+        let starters = HashSet::from([PlayerId::new(0)]);
+
+        let starter_total: i64 = (0..trials)
+            .map(|seed| {
+                let pack = pack_with_players(&[(100, 2000)]); // 26 anos, platô
+                let mut roster = initial_roster(&pack);
+                advance_season(&mut roster, &starters, seed, 0);
+                i64::from(roster[0].ability.current())
+            })
+            .sum();
+        let reserve_total: i64 = (0..trials)
+            .map(|seed| {
+                let pack = pack_with_players(&[(100, 2000)]);
+                let mut roster = initial_roster(&pack);
+                advance_season(&mut roster, &HashSet::new(), seed, 0);
+                i64::from(roster[0].ability.current())
+            })
+            .sum();
+        assert!(
+            starter_total > reserve_total,
+            "titular deveria evoluir melhor em média que reserva (titular: {starter_total}, \
+             reserva: {reserve_total})"
+        );
+    }
+
+    #[test]
     fn ability_nunca_ultrapassa_o_potencial_mesmo_apos_muitas_temporadas() {
         let pack = pack_with_players(&[(100, 2009)]); // jovem, tende a subir
         let mut roster = initial_roster(&pack);
+        let starters = HashSet::from([PlayerId::new(0)]); // titular toda temporada, pior caso pro teto
         for season in 0..20 {
-            advance_season(&mut roster, 1, season);
+            advance_season(&mut roster, &starters, 1, season);
             assert!(roster[0].ability.current() <= roster[0].ability.potential());
         }
     }
@@ -317,13 +395,15 @@ mod proptests {
             ca in 0u8..=200,
             potential_extra in 0u8..=100,
             birth_year in 1970i32..2008,
+            is_starter: bool,
             world_seed: u64,
             season_index: u32,
         ) {
             let potential = ca.saturating_add(potential_extra).min(domain::attributes::ABILITY_MAX);
             let pack = single_player_pack(ca.min(potential), potential, birth_year);
             let mut roster = initial_roster(&pack);
-            advance_season(&mut roster, world_seed, season_index);
+            let starters = if is_starter { HashSet::from([PlayerId::new(0)]) } else { HashSet::new() };
+            advance_season(&mut roster, &starters, world_seed, season_index);
             prop_assert!(roster[0].ability.current() <= roster[0].ability.potential());
         }
 
@@ -333,14 +413,16 @@ mod proptests {
         fn advance_season_e_puro(
             ca in 0u8..=200,
             birth_year in 1970i32..2008,
+            is_starter: bool,
             world_seed: u64,
             season_index: u32,
         ) {
             let pack = single_player_pack(ca, 200, birth_year);
             let mut a = initial_roster(&pack);
             let mut b = initial_roster(&pack);
-            advance_season(&mut a, world_seed, season_index);
-            advance_season(&mut b, world_seed, season_index);
+            let starters = if is_starter { HashSet::from([PlayerId::new(0)]) } else { HashSet::new() };
+            advance_season(&mut a, &starters, world_seed, season_index);
+            advance_season(&mut b, &starters, world_seed, season_index);
             prop_assert_eq!(a, b);
         }
     }
