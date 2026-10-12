@@ -195,8 +195,11 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > ainda, `RF-TR-07`): efeito real, não só decorativo — um jogador que não
 > caberia no orçamento do comprador pelo preço cheio pode passar a caber
 > com o desconto de contrato curto, mudando o resultado real do mercado,
-> não só o número reportado. Idade, PA, reputação e demanda ainda faltam
-> do RF-TR-02 completo.
+> não só o número reportado. Também já considera **idade**
+> (`world::PlayerState::age_years`): jovem (≤23) carrega prêmio de
+> potencial de revenda, veterano (30+) carrega desconto crescente, pico
+> (24-29) é preço cheio — faixas não calibradas, só a direção certa.
+> PA, reputação e demanda ainda faltam do RF-TR-02 completo.
 
 ### 2.5 Táticas e partida (`PA`)
 

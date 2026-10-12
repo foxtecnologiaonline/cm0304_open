@@ -289,8 +289,10 @@ aqui e volta ao design** — é para isso que o marco existe.
 > só cosmético: o desconto pode baixar o preço o suficiente pra caber no
 > orçamento de um comprador que não conseguiria pagar o preço cheio,
 > mudando o resultado real do mercado (`ai::run_market_day`), não só o
-> número reportado. Idade, PA, reputação e demanda ainda faltam do
-> RF-TR-02 completo.
+> número reportado. **Idade** (`world::PlayerState::age_years`) entrou do
+> mesmo jeito: jovem carrega prêmio, veterano carrega desconto, pico é
+> preço cheio — mesma mecânica de desconto de contrato, outra variável.
+> PA, reputação e demanda ainda faltam do RF-TR-02 completo.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da
