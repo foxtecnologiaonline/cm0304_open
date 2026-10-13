@@ -198,8 +198,13 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > não só o número reportado. Também já considera **idade**
 > (`world::PlayerState::age_years`): jovem (≤23) carrega prêmio de
 > potencial de revenda, veterano (30+) carrega desconto crescente, pico
-> (24-29) é preço cheio — faixas não calibradas, só a direção certa.
-> PA, reputação e demanda ainda faltam do RF-TR-02 completo.
+> (24-29) é preço cheio. E **PA** (`domain::Ability::potential()`): a
+> margem ainda não realizada (PA − CA) carrega prêmio especulativo —
+> jogador novo com muito espaço pra crescer vale mais, mesmo com CA baixo
+> hoje. Todas as faixas não calibradas, só a direção certa (confirmado
+> por varredura de seeds: 9 de 10 seeds testadas mudaram de resultado
+> real ao ligar o fator de PA, não é decorativo). Reputação e demanda
+> ainda faltam do RF-TR-02 completo.
 
 ### 2.5 Táticas e partida (`PA`)
 

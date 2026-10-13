@@ -9,8 +9,9 @@
 //! humano envolvido: cada clube, uma vez por "dia de mercado", tenta trocar
 //! seu titular mais fraco por um reserva melhor de outro clube que caiba no
 //! orçamento. [`market_value`] já considera **contrato** (duração restante
-//! — `world::ContractState`) e **idade** — duas das outras variáveis de
-//! RF-TR-02 completo (PA, reputação, demanda ainda faltam).
+//! — `world::ContractState`), **idade** e **PA** (potencial não realizado)
+//! — três das outras variáveis de RF-TR-02 completo (reputação e demanda
+//! ainda faltam).
 //!
 //! Como [`crate::lineup`], depende só de `domain` — não sabe o que é um
 //! `pack` ou uma `world::PlayerState`; quem chama (`world`) monta
@@ -37,6 +38,12 @@ pub struct MarketPlayer {
     /// [`market_value`] como prêmio (jovem, potencial de revenda) ou
     /// desconto (veterano, carreira mais curta pela frente).
     pub age_years: u8,
+    /// PA — teto de evolução de `domain::Ability::potential()` — entra em
+    /// [`market_value`] como prêmio sobre a margem ainda não realizada
+    /// (PA − CA): muito espaço pra crescer vale mais, mesmo com CA baixo
+    /// hoje (especulação sobre o futuro), complementando o prêmio de
+    /// idade (jovem sem margem de crescimento não ganha nada extra aqui).
+    pub potential_ability: u8,
 }
 
 /// Uma transferência executada — o registro do que aconteceu, pra quem
@@ -83,26 +90,52 @@ fn age_value_permille(age_years: u8) -> u32 {
     }
 }
 
+/// Prêmio sobre o valor de base conforme a margem de evolução ainda não
+/// realizada (PA − CA, nunca negativa — `domain::Ability` já garante
+/// `current <= potential`), em milésimos — fatia de "PA" de RF-TR-02
+/// (`docs/01 §2.4`): quanto maior a margem, maior o prêmio especulativo.
+/// Faixas escolhidas só pra dar o efeito na direção certa, não calibradas.
+fn potential_premium_permille(current_ability: u8, potential_ability: u8) -> u32 {
+    let gap = potential_ability.saturating_sub(current_ability);
+    match gap {
+        0..=5 => 1000,
+        6..=20 => 1100,
+        21..=50 => 1300,
+        _ => 1600,
+    }
+}
+
 /// Valor de mercado de um jogador — função de CA (quadrática: dobrar a
 /// habilidade quadruplica o valor de base), de duração restante de
-/// contrato ([`contract_discount_permille`]) e de idade
-/// ([`age_value_permille`]) — o suficiente para um jogador de elite
-/// custar ordens de magnitude mais que um da base, para contrato curto
-/// baratear qualquer um, e para idade inclinar o preço a favor do jovem e
-/// contra o veterano, sem precisar ainda de PA/reputação/demanda
-/// (RF-TR-02 completo). Constante de escala (`10_000` centavos por CA²)
-/// escolhida só pra dar números de magnitude plausível no pack de
-/// exemplo; não é dado calibrado nem carregável de pack ainda (`docs/03
-/// §5`, mesmo status que as constantes de `engine::simulate` antes da
-/// calibração).
+/// contrato ([`contract_discount_permille`]), de idade
+/// ([`age_value_permille`]) e de margem de PA ainda não realizada
+/// ([`potential_premium_permille`]) — o suficiente para um jogador de
+/// elite custar ordens de magnitude mais que um da base, para contrato
+/// curto baratear qualquer um, para idade inclinar o preço a favor do
+/// jovem e contra o veterano, e para potencial não realizado encarecer um
+/// jogador que ainda vai crescer muito — sem precisar ainda de
+/// reputação/demanda (RF-TR-02 completo). Constante de escala (`10_000`
+/// centavos por CA²) escolhida só pra dar números de magnitude plausível
+/// no pack de exemplo; não é dado calibrado nem carregável de pack ainda
+/// (`docs/03 §5`, mesmo status que as constantes de `engine::simulate`
+/// antes da calibração).
 #[must_use]
-pub fn market_value(current_ability: u8, contract_seasons_remaining: u8, age_years: u8) -> Money {
+pub fn market_value(
+    current_ability: u8,
+    contract_seasons_remaining: u8,
+    age_years: u8,
+    potential_ability: u8,
+) -> Money {
     const CENTS_PER_CA_SQUARED: i64 = 10_000;
     let ca = i64::from(current_ability);
     let base = ca * ca * CENTS_PER_CA_SQUARED;
     let contract_discount = i64::from(contract_discount_permille(contract_seasons_remaining));
     let age_factor = i64::from(age_value_permille(age_years));
-    Money::from_cents(base * contract_discount * age_factor / 1_000_000)
+    let potential_premium = i64::from(potential_premium_permille(
+        current_ability,
+        potential_ability,
+    ));
+    Money::from_cents(base * contract_discount * age_factor * potential_premium / 1_000_000_000)
 }
 
 /// O titular de menor habilidade atual do elenco `squad` (que já jogou,
@@ -194,6 +227,7 @@ pub fn run_market_day(players: &mut [MarketPlayer], budgets: &mut [Money]) -> Ve
                     players[idx].current_ability,
                     players[idx].contract_seasons_remaining,
                     players[idx].age_years,
+                    players[idx].potential_ability,
                 )
         }) else {
             continue;
@@ -203,6 +237,7 @@ pub fn run_market_day(players: &mut [MarketPlayer], budgets: &mut [Money]) -> Ve
             players[winner_idx].current_ability,
             players[winner_idx].contract_seasons_remaining,
             players[winner_idx].age_years,
+            players[winner_idx].potential_ability,
         );
         let seller = players[winner_idx].club;
         let player_id = players[winner_idx].player;
@@ -241,7 +276,9 @@ mod tests {
     const PRIME_AGE: u8 = 26;
 
     fn player(id: u32, club: u32, position: Position, ca: u8) -> MarketPlayer {
-        player_with(id, club, position, ca, FULL_CONTRACT, PRIME_AGE)
+        // Potencial igual ao CA (margem zero) — mesmo preço cheio dos
+        // outros padrões, pra testes que não são sobre PA.
+        player_with(id, club, position, ca, FULL_CONTRACT, PRIME_AGE, ca)
     }
 
     fn player_with_contract(
@@ -258,6 +295,7 @@ mod tests {
             ca,
             contract_seasons_remaining,
             PRIME_AGE,
+            ca,
         )
     }
 
@@ -268,6 +306,7 @@ mod tests {
         ca: u8,
         contract_seasons_remaining: u8,
         age_years: u8,
+        potential_ability: u8,
     ) -> MarketPlayer {
         MarketPlayer {
             player: PlayerId::new(id),
@@ -276,43 +315,53 @@ mod tests {
             current_ability: ca,
             contract_seasons_remaining,
             age_years,
+            potential_ability,
         }
     }
 
     #[test]
     fn market_value_cresce_quadraticamente_com_ca() {
-        assert_eq!(market_value(0, FULL_CONTRACT, PRIME_AGE), Money::ZERO);
+        assert_eq!(market_value(0, FULL_CONTRACT, PRIME_AGE, 0), Money::ZERO);
         assert!(
-            market_value(200, FULL_CONTRACT, PRIME_AGE)
-                > market_value(100, FULL_CONTRACT, PRIME_AGE)
+            market_value(200, FULL_CONTRACT, PRIME_AGE, 200)
+                > market_value(100, FULL_CONTRACT, PRIME_AGE, 100)
         );
         // Dobrar o CA (10 -> 20) quadruplica o valor.
         assert_eq!(
-            market_value(20, FULL_CONTRACT, PRIME_AGE).cents(),
-            market_value(10, FULL_CONTRACT, PRIME_AGE).cents() * 4
+            market_value(20, FULL_CONTRACT, PRIME_AGE, 20).cents(),
+            market_value(10, FULL_CONTRACT, PRIME_AGE, 10).cents() * 4
         );
     }
 
     #[test]
     fn market_value_cai_com_contrato_mais_curto() {
-        assert!(market_value(100, 5, PRIME_AGE) > market_value(100, 2, PRIME_AGE));
-        assert!(market_value(100, 2, PRIME_AGE) > market_value(100, 1, PRIME_AGE));
+        assert!(market_value(100, 5, PRIME_AGE, 100) > market_value(100, 2, PRIME_AGE, 100));
+        assert!(market_value(100, 2, PRIME_AGE, 100) > market_value(100, 1, PRIME_AGE, 100));
         // `0` (não deveria vir de `world::ContractState`) trata como `1`.
         assert_eq!(
-            market_value(100, 0, PRIME_AGE),
-            market_value(100, 1, PRIME_AGE)
+            market_value(100, 0, PRIME_AGE, 100),
+            market_value(100, 1, PRIME_AGE, 100)
         );
     }
 
     #[test]
     fn market_value_favorece_jovem_e_penaliza_veterano() {
-        let young = market_value(100, FULL_CONTRACT, 20);
-        let prime = market_value(100, FULL_CONTRACT, PRIME_AGE);
-        let declining = market_value(100, FULL_CONTRACT, 32);
-        let veteran = market_value(100, FULL_CONTRACT, 38);
+        let young = market_value(100, FULL_CONTRACT, 20, 100);
+        let prime = market_value(100, FULL_CONTRACT, PRIME_AGE, 100);
+        let declining = market_value(100, FULL_CONTRACT, 32, 100);
+        let veteran = market_value(100, FULL_CONTRACT, 38, 100);
         assert!(young > prime);
         assert!(prime > declining);
         assert!(declining > veteran);
+    }
+
+    #[test]
+    fn market_value_cresce_com_a_margem_de_potencial_nao_realizado() {
+        let no_gap = market_value(100, FULL_CONTRACT, PRIME_AGE, 100);
+        let small_gap = market_value(100, FULL_CONTRACT, PRIME_AGE, 110);
+        let big_gap = market_value(100, FULL_CONTRACT, PRIME_AGE, 160);
+        assert!(small_gap > no_gap);
+        assert!(big_gap > small_gap);
     }
 
     #[test]
@@ -349,14 +398,14 @@ mod tests {
         assert_eq!(t.player, PlayerId::new(2));
         assert_eq!(t.from, ClubId::new(1));
         assert_eq!(t.to, ClubId::new(0));
-        assert_eq!(t.fee, market_value(70, FULL_CONTRACT, PRIME_AGE));
+        assert_eq!(t.fee, market_value(70, FULL_CONTRACT, PRIME_AGE, 70));
         assert_eq!(players[2].club, ClubId::new(0));
         // Orçamento debitado do comprador, creditado no vendedor.
         assert_eq!(
             budgets[0],
-            Money::from_cents(1_000_000_000) - market_value(70, FULL_CONTRACT, PRIME_AGE)
+            Money::from_cents(1_000_000_000) - market_value(70, FULL_CONTRACT, PRIME_AGE, 70)
         );
-        assert_eq!(budgets[1], market_value(70, FULL_CONTRACT, PRIME_AGE));
+        assert_eq!(budgets[1], market_value(70, FULL_CONTRACT, PRIME_AGE, 70));
     }
 
     #[test]
@@ -450,7 +499,13 @@ mod proptests {
         (2usize..6).prop_flat_map(|n_clubs| {
             let squads = prop::collection::vec(
                 prop::collection::vec(
-                    (arbitrary_position(), any::<u8>(), any::<u8>(), any::<u8>()),
+                    (
+                        arbitrary_position(),
+                        any::<u8>(),
+                        any::<u8>(),
+                        any::<u8>(),
+                        any::<u8>(),
+                    ),
                     0..10,
                 ),
                 n_clubs,
@@ -460,7 +515,9 @@ mod proptests {
                 let mut next_id = 0u32;
                 let mut players = Vec::new();
                 for (club_index, squad) in squads.into_iter().enumerate() {
-                    for (position, ca, contract_seasons_remaining, age_years) in squad {
+                    for (position, ca, contract_seasons_remaining, age_years, potential_ability) in
+                        squad
+                    {
                         players.push(MarketPlayer {
                             player: PlayerId::new(next_id),
                             club: ClubId::new(club_index as u32),
@@ -468,6 +525,7 @@ mod proptests {
                             current_ability: ca,
                             contract_seasons_remaining,
                             age_years,
+                            potential_ability,
                         });
                         next_id += 1;
                     }

@@ -292,7 +292,11 @@ aqui e volta ao design** — é para isso que o marco existe.
 > número reportado. **Idade** (`world::PlayerState::age_years`) entrou do
 > mesmo jeito: jovem carrega prêmio, veterano carrega desconto, pico é
 > preço cheio — mesma mecânica de desconto de contrato, outra variável.
-> PA, reputação e demanda ainda faltam do RF-TR-02 completo.
+> **PA** (`domain::Ability::potential()`) também: margem de evolução
+> ainda não realizada carrega prêmio especulativo. Efeito real confirmado
+> por varredura de seeds (9 de 10 produziram resultado diferente ao
+> ligar o fator de PA sobre o mesmo mundo, não decorativo). Reputação e
+> demanda ainda faltam do RF-TR-02 completo.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da

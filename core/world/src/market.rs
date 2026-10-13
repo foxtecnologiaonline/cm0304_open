@@ -14,7 +14,7 @@ use crate::progression::PlayerState;
 /// comprador e creditado no vendedor (`ai::run_market_day`, economia
 /// fechada). `contracts` tem que estar no mesmo índice denso que `roster`
 /// (`crate::contract`, invariante do módulo): a duração restante de cada
-/// um e a idade de `roster` entram em `ai::market_value` como
+/// um, a idade e o PA de `roster` entram em `ai::market_value` como
 /// desconto/prêmio (RF-TR-02), e todo jogador transferido assina um
 /// contrato novo no clube comprador (duração máxima, salário travado no
 /// CA do momento da venda — `crate::contract::fresh_contract`), mesma
@@ -41,6 +41,7 @@ pub fn run_market_day(
             // do teto de 255, e nenhum `panic!` com dado externo (`docs/02
             // §9.2`) se algum chegasse.
             age_years: u8::try_from(p.age_years).unwrap_or(u8::MAX),
+            potential_ability: p.ability.potential(),
         })
         .collect();
 
