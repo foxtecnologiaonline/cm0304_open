@@ -11,7 +11,9 @@
 //! orçamento. [`market_value`] já considera **contrato** (duração restante
 //! — `world::ContractState`), **idade** e **PA** (potencial não realizado)
 //! — três das outras variáveis de RF-TR-02 completo (reputação e demanda
-//! ainda faltam).
+//! ainda faltam). [`run_market_day`] também já considera **lealdade**
+//! (RF-JG-02, atributo oculto): jogador muito leal nunca é candidato a
+//! saída, mesmo que o preço bata.
 //!
 //! Como [`crate::lineup`], depende só de `domain` — não sabe o que é um
 //! `pack` ou uma `world::PlayerState`; quem chama (`world`) monta
@@ -44,6 +46,11 @@ pub struct MarketPlayer {
     /// hoje (especulação sobre o futuro), complementando o prêmio de
     /// idade (jovem sem margem de crescimento não ganha nada extra aqui).
     pub potential_ability: u8,
+    /// Lealdade ao clube atual, 0-100 — acima de
+    /// [`LOYALTY_REFUSAL_THRESHOLD`], o jogador nunca é candidato a saída
+    /// em [`run_market_day`], mesmo que o preço bata (RF-JG-02, atributo
+    /// oculto, `docs/01 §2.3`).
+    pub loyalty: u8,
 }
 
 /// Uma transferência executada — o registro do que aconteceu, pra quem
@@ -138,6 +145,16 @@ pub fn market_value(
     Money::from_cents(base * contract_discount * age_factor * potential_premium / 1_000_000_000)
 }
 
+/// Lealdade a partir da qual um jogador nunca é candidato a saída em
+/// [`run_market_day`], mesmo que o preço bata e ele esteja no banco —
+/// fatia de "lealdade" de RF-JG-02 (`docs/01 §2.3`, atributo oculto): um
+/// jogador muito leal ao clube recusa qualquer proposta. Sem negociação
+/// de verdade ainda (`RF-TR-03`/`04`, M2/M3): não é "quase aceita por
+/// mais dinheiro", é um limiar fixo — abaixo dele, aceita sempre que o
+/// preço bate, igual a antes desta fatia. Não calibrado, só a direção
+/// certa.
+const LOYALTY_REFUSAL_THRESHOLD: u8 = 80;
+
 /// O titular de menor habilidade atual do elenco `squad` (que já jogou,
 /// via [`select_starting_eleven`]) — o candidato natural a ser substituído.
 /// `None` se `squad` não tem nenhum titular (elenco vazio).
@@ -162,11 +179,14 @@ fn weakest_starter(squad: &[PlayerRating]) -> Option<PlayerRating> {
 /// desempatados por `PlayerId` crescente, sem RNG nenhum envolvido — a
 /// mesma entrada sempre produz a mesma sequência de transferências.
 ///
-/// Só jogadores que **não titularizam pelo próprio clube** são
-/// candidatos a sair — vender o time titular inteiro não faz sentido pra
-/// uma primeira versão da IA (`RF-TR-05` completo disputaria/desistiria de
-/// propostas; aqui não há oferta recusável, o "dono" sempre vende se o
-/// preço bate). Quem sai muda de clube em `players` (mutado in-place);
+/// Só jogadores que **não titularizam pelo próprio clube** e cuja
+/// lealdade está abaixo de [`LOYALTY_REFUSAL_THRESHOLD`] são candidatos a
+/// sair — vender o time titular inteiro não faz sentido pra uma primeira
+/// versão da IA, e um jogador muito leal recusa qualquer proposta
+/// (`RF-TR-05` completo disputaria/desistiria de propostas de verdade;
+/// aqui ainda não há negociação, só esses dois filtros fixos — o "dono"
+/// vende se o preço bate e a lealdade permite). Quem sai muda de clube em
+/// `players` (mutado in-place);
 /// `budgets` é debitado do comprador e creditado no vendedor pelo mesmo
 /// valor — uma economia fechada, sem receita externa (bilheteria, patrocínio
 /// — nenhuma existe ainda).
@@ -211,6 +231,7 @@ pub fn run_market_day(players: &mut [MarketPlayer], budgets: &mut [Money]) -> Ve
                     && p.club != buyer
                     && p.position == weak_link.position
                     && p.current_ability > weak_link.current_ability
+                    && p.loyalty < LOYALTY_REFUSAL_THRESHOLD
             })
             .map(|(idx, _)| idx)
             .collect();
@@ -275,10 +296,24 @@ mod tests {
     const FULL_CONTRACT: u8 = 5;
     const PRIME_AGE: u8 = 26;
 
+    // Lealdade "baixa" por padrão (sempre vendável, abaixo do limiar de
+    // recusa) — testes que não são sobre lealdade não precisam pensar
+    // nisso.
+    const LOW_LOYALTY: u8 = 0;
+
     fn player(id: u32, club: u32, position: Position, ca: u8) -> MarketPlayer {
         // Potencial igual ao CA (margem zero) — mesmo preço cheio dos
         // outros padrões, pra testes que não são sobre PA.
-        player_with(id, club, position, ca, FULL_CONTRACT, PRIME_AGE, ca)
+        player_with(
+            id,
+            club,
+            position,
+            ca,
+            FULL_CONTRACT,
+            PRIME_AGE,
+            ca,
+            LOW_LOYALTY,
+        )
     }
 
     fn player_with_contract(
@@ -296,9 +331,30 @@ mod tests {
             contract_seasons_remaining,
             PRIME_AGE,
             ca,
+            LOW_LOYALTY,
         )
     }
 
+    fn player_with_loyalty(
+        id: u32,
+        club: u32,
+        position: Position,
+        ca: u8,
+        loyalty: u8,
+    ) -> MarketPlayer {
+        player_with(
+            id,
+            club,
+            position,
+            ca,
+            FULL_CONTRACT,
+            PRIME_AGE,
+            ca,
+            loyalty,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn player_with(
         id: u32,
         club: u32,
@@ -307,6 +363,7 @@ mod tests {
         contract_seasons_remaining: u8,
         age_years: u8,
         potential_ability: u8,
+        loyalty: u8,
     ) -> MarketPlayer {
         MarketPlayer {
             player: PlayerId::new(id),
@@ -316,6 +373,7 @@ mod tests {
             contract_seasons_remaining,
             age_years,
             potential_ability,
+            loyalty,
         }
     }
 
@@ -456,6 +514,47 @@ mod tests {
     }
 
     #[test]
+    fn jogador_muito_leal_recusa_a_saida_mesmo_cabendo_no_orcamento() {
+        // Mesmo cenário de `clube_compra_upgrade_de_verdade_do_banco_de_outro_clube`
+        // (reserva do clube B seria vendido pro clube A), mas agora com
+        // lealdade acima do limiar de recusa — a transferência não deveria
+        // acontecer, mesmo com preço e orçamento batendo igual antes.
+        let mut players = vec![
+            player(0, 0, Position::Goalkeeper, 40),
+            player(1, 1, Position::Goalkeeper, 90),
+            player_with_loyalty(2, 1, Position::Goalkeeper, 70, 100),
+        ];
+        let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
+        let transfers = run_market_day(&mut players, &mut budgets);
+        assert!(
+            transfers.is_empty(),
+            "jogador com lealdade máxima não deveria aceitar sair"
+        );
+        assert_eq!(players[2].club, ClubId::new(1));
+    }
+
+    #[test]
+    fn lealdade_abaixo_do_limiar_ainda_aceita_normalmente() {
+        // Mesmo cenário, lealdade só um pouco abaixo do limiar de recusa —
+        // a transferência tem que continuar acontecendo normalmente.
+        let mut players = vec![
+            player(0, 0, Position::Goalkeeper, 40),
+            player(1, 1, Position::Goalkeeper, 90),
+            player_with_loyalty(
+                2,
+                1,
+                Position::Goalkeeper,
+                70,
+                LOYALTY_REFUSAL_THRESHOLD - 1,
+            ),
+        ];
+        let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
+        let transfers = run_market_day(&mut players, &mut budgets);
+        assert_eq!(transfers.len(), 1);
+        assert_eq!(players[2].club, ClubId::new(0));
+    }
+
+    #[test]
     fn e_deterministico_para_a_mesma_entrada() {
         let base = vec![
             player(0, 0, Position::Goalkeeper, 40),
@@ -505,6 +604,7 @@ mod proptests {
                         any::<u8>(),
                         any::<u8>(),
                         any::<u8>(),
+                        any::<u8>(),
                     ),
                     0..10,
                 ),
@@ -515,8 +615,14 @@ mod proptests {
                 let mut next_id = 0u32;
                 let mut players = Vec::new();
                 for (club_index, squad) in squads.into_iter().enumerate() {
-                    for (position, ca, contract_seasons_remaining, age_years, potential_ability) in
-                        squad
+                    for (
+                        position,
+                        ca,
+                        contract_seasons_remaining,
+                        age_years,
+                        potential_ability,
+                        loyalty,
+                    ) in squad
                     {
                         players.push(MarketPlayer {
                             player: PlayerId::new(next_id),
@@ -526,6 +632,7 @@ mod proptests {
                             contract_seasons_remaining,
                             age_years,
                             potential_ability,
+                            loyalty,
                         });
                         next_id += 1;
                     }

@@ -306,7 +306,7 @@ aqui e volta ao design** — é para isso que o marco existe.
 > e "IA" de RF-MU-08, e reputação de país (a outra metade do requisito),
 > ainda faltam.
 >
-> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas duas
+> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas três
 > primeiras fatias reais: `world::generate_injury_proneness` sorteia uma
 > **propensão a lesão** sintética (0-100) por jogador, uma vez por
 > carreira, e `world::roll_injuries` passa a variar a chance de lesão por
@@ -315,9 +315,14 @@ aqui e volta ao design** — é para isso que o marco existe.
 > `world::generate_professionalism` sorteia **profissionalismo** (0-100)
 > do mesmo jeito, e `world::advance_season` passa a somar um bônus de
 > evolução (0 a +2) proporcional a ele sobre a curva de idade/minutos
-> jogados — profissional evolui melhor e declina mais devagar. Os outros
-> seis atributos ocultos do requisito (consistência, jogo importante,
-> sujeira, lealdade, adaptação, ambição) ainda não existem.
+> jogados — profissional evolui melhor e declina mais devagar.
+> `world::generate_loyalty` sorteia **lealdade** (0-100), e
+> `ai::run_market_day` (RF-TR-05) passa a nunca considerar candidato a
+> saída quem tem lealdade acima de um limiar fixo (80), mesmo com o preço
+> batendo — efeito real: `managerfc-cli play` já mostra temporadas com
+> menos transferências (até zero) por causa disso. Os outros cinco
+> atributos ocultos do requisito (consistência, jogo importante, sujeira,
+> adaptação, ambição) ainda não existem.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da

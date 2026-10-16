@@ -163,9 +163,16 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > por carreira), varia a chance de 2% (nunca se machuca) a 10% (muito
 > frágil) — propensão média (50) reproduz os 6% de antes, então a taxa
 > agregada não mudou, só deixou de ser igual pra todo jogador.
-> **Profissionalismo** (acima) foi a segunda. Consistência, jogo
-> importante, sujeira, lealdade, adaptação e ambição (os outros seis
-> atributos ocultos de RF-JG-02) ainda não existem. `world::condition`
+> **Profissionalismo** (acima) foi a segunda. **Lealdade** é a terceira:
+> `world::generate_loyalty` sorteia uma lealdade sintética (0-100) por
+> jogador, uma vez por carreira, e `ai::run_market_day` (`docs/01 §2.4`
+> RF-TR-05) passa a excluir quem tem lealdade acima de um limiar fixo (80)
+> da lista de candidatos a saída — mesmo com o preço batendo, um jogador
+> muito leal não é vendido; abaixo do limiar, aceita normalmente como
+> antes desta fatia. Não é negociação de verdade (`RF-TR-03`/`04`, ainda
+> faltam): é um corte fixo, não "quase aceita por mais dinheiro".
+> Consistência, jogo importante, sujeira, adaptação e ambição (os outros
+> cinco atributos ocultos de RF-JG-02) ainda não existem. `world::condition`
 > cobre uma fatia mínima de RF-JG-07, só a parte de "condição física": a
 > condição de entrada de cada jogador na temporada é recalculada do zero a
 > cada uma (não é cumulativo entre temporadas) a partir de quantas partidas
@@ -211,8 +218,10 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > já cobre uma fatia mecânica de RF-TR-02 (valor de mercado) e RF-TR-05
 > (clube identifica carência e compra se couber no orçamento) — sem janela
 > por país (RF-TR-01), sem negociação/disputa/desistência de verdade (o
-> "dono" sempre vende se o preço bate) e sem nenhum dos RF-TR-03/04/06/07/08/09.
-> É automático e roda toda temporada em `GameSession::dispatch`, não uma
+> "dono" vende se o preço bate e a lealdade do jogador permite — ver
+> RF-JG-02, `docs/01 §2.3` — mas não há proposta recusável/renegociável de
+> verdade) e sem nenhum dos RF-TR-03/04/06/07/08/09. É automático e roda
+> toda temporada em `GameSession::dispatch`, não uma
 > tela jogável ainda. `ai::market_value` cobria só CA (fórmula não
 > calibrada); agora também considera **contrato** — a duração restante
 > (`world::ContractState`, RF-CL-02) entra como desconto (jogador com

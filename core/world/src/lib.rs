@@ -32,7 +32,9 @@
 //! RF-JG-02 (atributos ocultos): chance de lesão varia por jogador, não
 //! mais fixa em 6% pra todo mundo. Profissionalismo
 //! ([`progression::generate_professionalism`]) é a segunda: bônus de
-//! evolução por cima da curva de idade/minutos jogados.
+//! evolução por cima da curva de idade/minutos jogados. Lealdade
+//! ([`market::generate_loyalty`]) é a terceira: jogador muito leal nunca
+//! é candidato a saída em [`run_market_day`], mesmo que o preço bata.
 #![warn(clippy::all)]
 
 mod condition;
@@ -54,7 +56,7 @@ pub use contract::{ContractState, advance_contracts, generate_initial_contracts}
 pub use cup::{CupMatch, CupResult, cup_participants, run_cup};
 pub use finance::{generate_budgets, generate_stadium_capacities, pay_salaries, salary_per_season};
 pub use injuries::{generate_injury_proneness, roll_injuries};
-pub use market::run_market_day;
+pub use market::{generate_loyalty, run_market_day};
 pub use progression::{PlayerState, advance_season, generate_professionalism, initial_roster};
 pub use quality::{
     generate_match_profiles, generate_match_profiles_from_roster, starters_from_roster_all_clubs,

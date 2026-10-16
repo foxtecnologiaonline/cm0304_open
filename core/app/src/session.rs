@@ -131,6 +131,12 @@ pub struct GameSession {
     /// nunca muda depois. Usado por `world::advance_season` como bônus de
     /// evolução por cima da curva de idade/minutos jogados.
     professionalism: Vec<u8>,
+    /// Lealdade de cada jogador ao clube atual, 0-100, no mesmo índice
+    /// denso que `roster` (`world::generate_loyalty`, sintética — mesmo
+    /// status de `professionalism`). Gerada uma vez em [`Self::new`] e
+    /// nunca muda depois. Usada por `world::run_market_day` pra nunca
+    /// vender um jogador muito leal, mesmo que o preço bata.
+    loyalty: Vec<u8>,
     world_seed: u64,
     /// Uma entrada por temporada já simulada — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
@@ -159,6 +165,7 @@ impl GameSession {
         let contracts = world::generate_initial_contracts(&report.pack, world_seed);
         let injury_proneness = world::generate_injury_proneness(&report.pack, world_seed);
         let professionalism = world::generate_professionalism(&report.pack, world_seed);
+        let loyalty = world::generate_loyalty(&report.pack, world_seed);
         let profiles =
             world::generate_match_profiles_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
@@ -177,6 +184,7 @@ impl GameSession {
             contracts,
             injury_proneness,
             professionalism,
+            loyalty,
             world_seed,
             history: Vec::new(),
         })
@@ -253,10 +261,15 @@ impl GameSession {
                 // antes de recalcular a força, pra quem comprou reforço já
                 // jogar mais forte nesta mesma temporada. Todo jogador
                 // transferido assina contrato novo no comprador (duração
-                // máxima, salário no CA do momento da venda — ver
-                // `world::run_market_day`).
-                let transfers =
-                    world::run_market_day(&mut self.roster, &mut self.contracts, &mut self.budgets);
+                // máxima, salário no CA do momento da venda); jogador com
+                // `self.loyalty` acima do limiar nunca é candidato a saída
+                // (RF-JG-02) — ver `world::run_market_day`.
+                let transfers = world::run_market_day(
+                    &mut self.roster,
+                    &mut self.contracts,
+                    &self.loyalty,
+                    &mut self.budgets,
+                );
 
                 // Lesões da temporada: substitui completamente o estado
                 // anterior (`world::roll_injuries`), então um jogador

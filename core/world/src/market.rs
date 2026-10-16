@@ -1,35 +1,66 @@
 //! Ponte entre `crate::progression::PlayerState` e `ai::run_market_day` —
 //! `world` é quem sabe o que é um roster de carreira; `ai` só enxerga o
 //! [`ai::MarketPlayer`] abstrato (`docs/02 §2`: `ai` depende só de
-//! `domain`).
+//! `domain`). [`generate_loyalty`] mora aqui, não em `crate::progression`,
+//! porque é o único consumidor de lealdade — `crate::progression` não
+//! precisa saber que isso existe.
 
-use domain::Money;
+use domain::{DeterministicRng, Money, PlayerId};
+use pack::LoadedPack;
 
 use crate::contract::ContractState;
 use crate::progression::PlayerState;
+
+const MIN_SYNTHETIC_LOYALTY: u8 = 0;
+const MAX_SYNTHETIC_LOYALTY: u8 = 100;
+
+/// Gera a lealdade de cada jogador do pack, na mesma ordem (e portanto no
+/// mesmo índice denso) que `crate::progression::initial_roster` — mesmo
+/// invariante de indexação de `crate::contract::ContractState`. Chamada
+/// uma vez por carreira (`app::GameSession::new`): sem atributos ocultos
+/// de verdade ainda (RF-JG-02 completo, `docs/01 §2.3`), a lealdade de um
+/// jogador nunca muda depois de gerada. `ai::run_market_day` usa isso pra
+/// nunca vender um jogador muito leal, mesmo que o preço bata.
+#[must_use]
+pub fn generate_loyalty(pack: &LoadedPack, world_seed: u64) -> Vec<u8> {
+    pack.players
+        .iter()
+        .map(|p| synthetic_loyalty(p.id, world_seed))
+        .collect()
+}
+
+fn synthetic_loyalty(player: PlayerId, world_seed: u64) -> u8 {
+    let mut rng =
+        DeterministicRng::seeded(world_seed, "world.loyalty", u64::from(player.index()), 0);
+    let span = u32::from(MAX_SYNTHETIC_LOYALTY - MIN_SYNTHETIC_LOYALTY) + 1;
+    MIN_SYNTHETIC_LOYALTY + u8::try_from(rng.below(span)).expect("span cabe em u8 (0..=100)")
+}
 
 /// Roda um dia de mercado sobre `roster`/`budgets` (mesmo índice por
 /// `PlayerId`/`ClubId` do resto do crate), mutando os dois in-place —
 /// transferências reatribuem `PlayerState::club`, `budgets` é debitado do
 /// comprador e creditado no vendedor (`ai::run_market_day`, economia
-/// fechada). `contracts` tem que estar no mesmo índice denso que `roster`
-/// (`crate::contract`, invariante do módulo): a duração restante de cada
-/// um, a idade e o PA de `roster` entram em `ai::market_value` como
-/// desconto/prêmio (RF-TR-02), e todo jogador transferido assina um
-/// contrato novo no clube comprador (duração máxima, salário travado no
-/// CA do momento da venda — `crate::contract::fresh_contract`), mesma
-/// lógica de "clube novo renegocia" de uma renovação automática. Devolve
-/// o log de transferências, para quem chama (`app`) reportar o que
-/// aconteceu.
+/// fechada). `contracts` e `loyalty` têm que estar no mesmo índice denso
+/// que `roster` (`crate::contract`, invariante do módulo): a duração
+/// restante de cada um, a idade e o PA de `roster` entram em
+/// `ai::market_value` como desconto/prêmio (RF-TR-02), a lealdade filtra
+/// quem nunca é candidato a saída (RF-JG-02), e todo jogador transferido
+/// assina um contrato novo no clube comprador (duração máxima, salário
+/// travado no CA do momento da venda — `crate::contract::fresh_contract`),
+/// mesma lógica de "clube novo renegocia" de uma renovação automática.
+/// Devolve o log de transferências, para quem chama (`app`) reportar o
+/// que aconteceu.
 pub fn run_market_day(
     roster: &mut [PlayerState],
     contracts: &mut [ContractState],
+    loyalty: &[u8],
     budgets: &mut [Money],
 ) -> Vec<ai::Transfer> {
     let mut players: Vec<ai::MarketPlayer> = roster
         .iter()
         .zip(contracts.iter())
-        .map(|(p, contract)| ai::MarketPlayer {
+        .zip(loyalty.iter())
+        .map(|((p, contract), &player_loyalty)| ai::MarketPlayer {
             player: p.player,
             club: p.club,
             position: p.position,
@@ -42,6 +73,7 @@ pub fn run_market_day(
             // §9.2`) se algum chegasse.
             age_years: u8::try_from(p.age_years).unwrap_or(u8::MAX),
             potential_ability: p.ability.potential(),
+            loyalty: player_loyalty,
         })
         .collect();
 
@@ -142,9 +174,10 @@ mod tests {
         let pack = two_club_pack();
         let mut roster = initial_roster(&pack);
         let mut contracts = crate::contract::generate_initial_contracts(&pack, 1);
+        let loyalty = vec![0u8; roster.len()];
         let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
 
-        let transfers = run_market_day(&mut roster, &mut contracts, &mut budgets);
+        let transfers = run_market_day(&mut roster, &mut contracts, &loyalty, &mut budgets);
 
         assert_eq!(transfers.len(), 1);
         let t = transfers[0];
@@ -173,12 +206,38 @@ mod tests {
             seasons_remaining: 1,
             signed_ability: 1,
         };
+        let loyalty = vec![0u8; roster.len()];
         let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
 
-        let transfers = run_market_day(&mut roster, &mut contracts, &mut budgets);
+        let transfers = run_market_day(&mut roster, &mut contracts, &loyalty, &mut budgets);
         assert_eq!(transfers.len(), 1);
 
         let renewed = crate::contract::fresh_contract(roster[2].ability.current());
         assert_eq!(contracts[2], renewed);
+    }
+
+    #[test]
+    fn jogador_leal_nunca_e_vendido_pela_ponte() {
+        // Caixa branca: prova que `loyalty` está de fato ligado nesta
+        // ponte, não só em `ai::market` isolado — mesmo cenário dos outros
+        // testes (reserva do clube B seria vendido pro clube A), mas com
+        // lealdade máxima pra esse jogador especificamente.
+        let pack = two_club_pack();
+        let mut roster = initial_roster(&pack);
+        let mut contracts = crate::contract::generate_initial_contracts(&pack, 1);
+        let mut loyalty = vec![0u8; roster.len()];
+        loyalty[2] = 100;
+        let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
+
+        let transfers = run_market_day(&mut roster, &mut contracts, &loyalty, &mut budgets);
+
+        assert!(transfers.is_empty());
+        assert_eq!(roster[2].club, ClubId::new(1));
+    }
+
+    #[test]
+    fn generate_loyalty_e_deterministico_para_a_mesma_seed() {
+        let pack = two_club_pack();
+        assert_eq!(generate_loyalty(&pack, 7), generate_loyalty(&pack, 7));
     }
 }
