@@ -257,10 +257,10 @@ aqui e volta ao design** — é para isso que o marco existe.
 > mercado rodar — a primeira despesa recorrente de verdade da economia do
 > mundo (antes dela, orçamento só mudava por transferência, conservado
 > entre clubes). Bilheteria: cada partida de liga em casa credita um
-> público sintético (30%-95% de uma capacidade de estádio sintética) vezes
-> um preço de ingresso deliberadamente baixo — não realista, um parâmetro
-> de balanceamento escolhido pra manter a bilheteria de uma temporada numa
-> fração (≈35-40% no pack de exemplo) da folha, não maior. Juntas: dinheiro
+> público sintético de uma capacidade de estádio sintética vezes um preço
+> de ingresso deliberadamente baixo — não realista, um parâmetro de
+> balanceamento escolhido pra manter a bilheteria de uma temporada numa
+> fração (≈45-50% no pack de exemplo) da folha, não maior. Juntas: dinheiro
 > sai do sistema a cada temporada por folha, uma fração dele volta por
 > bilheteria, e o total de `budgets` continua caindo ao longo de uma
 > carreira — só mais devagar que só com folha (confirmado por teste).
@@ -297,6 +297,14 @@ aqui e volta ao design** — é para isso que o marco existe.
 > por varredura de seeds (9 de 10 produziram resultado diferente ao
 > ligar o fator de PA sobre o mesmo mundo, não decorativo). Reputação e
 > demanda ainda faltam do RF-TR-02 completo.
+>
+> **Reputação de clube** (RF-MU-08, `docs/01 §2.4`) também entrou — fatia
+> de "receita" do requisito (ele cita "atratividade, receita e IA"; só
+> receita por enquanto): `world::generate_club_reputation` (sintética,
+> 0-100) empurra o piso de público de `match_day_revenue` pra cima quanto
+> maior a reputação do mandante, nunca garantindo casa cheia. "Atratividade"
+> e "IA" de RF-MU-08, e reputação de país (a outra metade do requisito),
+> ainda faltam.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da

@@ -43,6 +43,10 @@ pub struct CareerRound<'a> {
     pub roster: &'a [PlayerState],
     pub budgets: &'a mut [Money],
     pub stadium_capacities: &'a [u32],
+    /// Reputação de cada clube, 0-100 (`crate::reputation::generate_club_reputation`)
+    /// — influencia o piso de público em `crate::finance::match_day_revenue`
+    /// (RF-MU-08, "receita").
+    pub club_reputation: &'a [u8],
 }
 
 /// Resultado de simular uma temporada inteira, competição por competição.
@@ -348,6 +352,7 @@ fn simulate_round_robin_for_career(
             let revenue = crate::finance::match_day_revenue(
                 fixture.home,
                 career.stadium_capacities,
+                career.club_reputation,
                 world_seed,
                 season_index,
                 round,
@@ -457,6 +462,13 @@ mod tests {
         vec![20_000; pack.clubs.len()]
     }
 
+    /// Reputação fixa "de meio de tabela" (não vem de `crate::reputation`
+    /// pra não acoplar estes testes à sua faixa sintética) — pros testes
+    /// que não são sobre o efeito da reputação em si.
+    fn example_reputation(pack: &LoadedPack) -> Vec<u8> {
+        vec![50; pack.clubs.len()]
+    }
+
     #[test]
     fn roda_uma_temporada_no_pack_de_exemplo_sem_travar() {
         let p = example_pack();
@@ -489,10 +501,12 @@ mod tests {
         let membership = initial_membership(&p);
         let mut budgets = vec![Money::ZERO; p.clubs.len()];
         let capacities = example_capacities(&p);
+        let reputation = example_reputation(&p);
         let career = CareerRound {
             roster: &roster,
             budgets: &mut budgets,
             stadium_capacities: &capacities,
+            club_reputation: &reputation,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -514,12 +528,14 @@ mod tests {
         let roster = crate::progression::initial_roster(&p);
         let membership = initial_membership(&p);
         let capacities = example_capacities(&p);
+        let reputation = example_reputation(&p);
 
         let mut budgets_a = vec![Money::ZERO; p.clubs.len()];
         let career_a = CareerRound {
             roster: &roster,
             budgets: &mut budgets_a,
             stadium_capacities: &capacities,
+            club_reputation: &reputation,
         };
         let a = run_season(&p, &membership, &profiles, Some(career_a), 7, 0);
 
@@ -528,6 +544,7 @@ mod tests {
             roster: &roster,
             budgets: &mut budgets_b,
             stadium_capacities: &capacities,
+            club_reputation: &reputation,
         };
         let b = run_season(&p, &membership, &profiles, Some(career_b), 7, 0);
         assert_eq!(a, b);
@@ -547,6 +564,7 @@ mod tests {
         let membership = initial_membership(&p);
         let profiles = crate::quality::generate_match_profiles(&p, 1);
         let capacities = example_capacities(&p);
+        let reputation = example_reputation(&p);
 
         let total_suspensions: usize = (0..10)
             .map(|season_index| {
@@ -555,6 +573,7 @@ mod tests {
                     roster: &roster,
                     budgets: &mut budgets,
                     stadium_capacities: &capacities,
+                    club_reputation: &reputation,
                 };
                 run_season(&p, &membership, &profiles, Some(career), 1, season_index).suspensions
             })
@@ -576,12 +595,14 @@ mod tests {
         let membership = initial_membership(&p);
         let profiles = crate::quality::generate_match_profiles(&p, 42);
         let capacities = example_capacities(&p);
+        let reputation = example_reputation(&p);
         let mut budgets = vec![Money::ZERO; p.clubs.len()];
 
         let career = CareerRound {
             roster: &roster,
             budgets: &mut budgets,
             stadium_capacities: &capacities,
+            club_reputation: &reputation,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -594,6 +615,42 @@ mod tests {
         }
         let total_in_budgets: i64 = budgets.iter().map(|b| b.cents()).sum();
         assert_eq!(total_in_budgets, result.match_day_revenue.cents());
+    }
+
+    #[test]
+    fn reputacao_de_fato_influencia_a_bilheteria_no_loop_por_rodada() {
+        // Caixa branca: prova que `crate::finance::match_day_revenue` está
+        // de fato recebendo a reputação do loop por rodada (não só existe
+        // isolada em `crate::finance`) — mesmo roster/capacidades, só
+        // reputação alta (sempre) vs. baixa (sempre) muda, a bilheteria
+        // total tem que ser maior com reputação alta.
+        let p = example_pack();
+        let roster = crate::progression::initial_roster(&p);
+        let membership = initial_membership(&p);
+        let profiles = crate::quality::generate_match_profiles(&p, 42);
+        let capacities = example_capacities(&p);
+
+        let high_reputation = vec![100; p.clubs.len()];
+        let mut budgets_high = vec![Money::ZERO; p.clubs.len()];
+        let career_high = CareerRound {
+            roster: &roster,
+            budgets: &mut budgets_high,
+            stadium_capacities: &capacities,
+            club_reputation: &high_reputation,
+        };
+        let high = run_season(&p, &membership, &profiles, Some(career_high), 42, 0);
+
+        let low_reputation = vec![0; p.clubs.len()];
+        let mut budgets_low = vec![Money::ZERO; p.clubs.len()];
+        let career_low = CareerRound {
+            roster: &roster,
+            budgets: &mut budgets_low,
+            stadium_capacities: &capacities,
+            club_reputation: &low_reputation,
+        };
+        let low = run_season(&p, &membership, &profiles, Some(career_low), 42, 0);
+
+        assert!(high.match_day_revenue > low.match_day_revenue);
     }
 
     #[test]

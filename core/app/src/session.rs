@@ -105,6 +105,12 @@ pub struct GameSession {
     /// `budgets`). Gerada uma vez em [`Self::new`] e nunca muda depois:
     /// não há obras de estádio ainda (RF-CL-05, M4).
     stadium_capacities: Vec<u32>,
+    /// Reputação de cada clube, 0-100, indexada por id denso
+    /// (`world::generate_club_reputation`, sintética — mesmo status de
+    /// `stadium_capacities`). Gerada uma vez em [`Self::new`] e nunca muda
+    /// depois: sem histórico de títulos ainda (RF-CL-08, M5). Influencia
+    /// a bilheteria (RF-MU-08, `world::finance::match_day_revenue`).
+    club_reputation: Vec<u8>,
     /// Contrato de cada jogador, no mesmo índice denso que `roster`
     /// (`world::ContractState`, invariante do módulo `world::contract`) —
     /// duração restante e CA travado pro salário (`world::pay_salaries`
@@ -136,6 +142,7 @@ impl GameSession {
         let roster = world::initial_roster(&report.pack);
         let budgets = world::generate_budgets(&report.pack, world_seed);
         let stadium_capacities = world::generate_stadium_capacities(&report.pack, world_seed);
+        let club_reputation = world::generate_club_reputation(&report.pack, world_seed);
         let contracts = world::generate_initial_contracts(&report.pack, world_seed);
         let profiles =
             world::generate_match_profiles_from_roster(&report.pack, &roster, world_seed);
@@ -151,6 +158,7 @@ impl GameSession {
             roster,
             budgets,
             stadium_capacities,
+            club_reputation,
             contracts,
             world_seed,
             history: Vec::new(),
@@ -271,6 +279,7 @@ impl GameSession {
                     roster: &self.roster,
                     budgets: &mut self.budgets,
                     stadium_capacities: &self.stadium_capacities,
+                    club_reputation: &self.club_reputation,
                 };
                 let result = world::run_season(
                     &self.pack,

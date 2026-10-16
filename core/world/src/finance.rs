@@ -138,15 +138,41 @@ fn synthetic_capacity(club: ClubId, world_seed: u64) -> u32 {
 /// fatia.
 const CENTS_PER_TICKET: i64 = 30; // 0,30
 
-/// Faixa de público por partida, em milésimos da capacidade do estádio —
-/// nunca casa cheia nem vazia (sem reputação de clube, posição na tabela
-/// ou rivalidade influenciando público ainda — `RF-MU-08`, futuro).
-const MIN_ATTENDANCE_PERMILLE: u32 = 300;
+/// Piso e teto de público por partida, em milésimos da capacidade do
+/// estádio — nunca casa cheia nem vazia. O piso de verdade usado por
+/// [`match_day_revenue`] é mais alto que este pra clube de reputação
+/// maior (ver [`attendance_floor_permille`]) — este é só o piso absoluto,
+/// de um clube sem reputação nenhuma.
+const MIN_ATTENDANCE_PERMILLE: u32 = 200;
 const MAX_ATTENDANCE_PERMILLE: u32 = 950;
+
+/// Quanto a reputação pode empurrar o piso de público pra cima, em
+/// milésimos — fatia de "receita" de RF-MU-08 (`docs/01 §2.4`: "Reputação
+/// de país/clube influenciando atratividade, **receita** e IA"): clube
+/// mais reputado atrai público mais consistente (nunca joga pra
+/// arquibancada vazia), clube sem reputação some entre o piso absoluto e
+/// a casa cheia. Não calibrado, só a direção certa — "atratividade" e
+/// "IA" de RF-MU-08 ainda faltam (afetariam mercado/moral, não só
+/// bilheteria).
+const REPUTATION_ATTENDANCE_BOOST_PERMILLE: u32 = 500;
+
+/// Piso de público efetivo de um clube, em milésimos da capacidade —
+/// `MIN_ATTENDANCE_PERMILLE` mais uma fração de
+/// `REPUTATION_ATTENDANCE_BOOST_PERMILLE` proporcional à reputação
+/// (`crate::reputation::generate_club_reputation`, 0-100). Sempre menor
+/// que `MAX_ATTENDANCE_PERMILLE` (200 + 500 = 700 no teto de reputação),
+/// pra sempre sobrar faixa de sorteio.
+fn attendance_floor_permille(reputation: u8) -> u32 {
+    MIN_ATTENDANCE_PERMILLE + u32::from(reputation) * REPUTATION_ATTENDANCE_BOOST_PERMILLE / 100
+}
 
 /// Receita de bilheteria de uma partida de liga em casa — fatia mínima de
 /// RF-CL-03 (`docs/01 §2.2`): só o clube mandante recebe (sem "cota de
-/// visitante"), só bilheteria (sem TV, prêmio ou patrocínio). Determinístico
+/// visitante"), só bilheteria (sem TV, prêmio ou patrocínio). O público
+/// sorteado é influenciado pela reputação do mandante
+/// (`reputation`, 0-100 — `crate::reputation::generate_club_reputation`,
+/// RF-MU-08): quanto maior, mais alto o piso de público (nunca mais alto
+/// que `MAX_ATTENDANCE_PERMILLE`, nunca garante casa cheia). Determinístico
 /// por `(world_seed, clube mandante, temporada, rodada)` —
 /// `crate::discipline::season_round_tick` reaproveitado em vez de duplicado
 /// (ver o doc de lá); `"world.attendance"` é um domínio de RNG próprio, então
@@ -156,19 +182,22 @@ const MAX_ATTENDANCE_PERMILLE: u32 = 950;
 pub fn match_day_revenue(
     home_club: ClubId,
     stadium_capacities: &[u32],
+    club_reputation: &[u8],
     world_seed: u64,
     season_index: u32,
     round: u32,
 ) -> Money {
     let capacity = stadium_capacities[home_club.as_usize()];
+    let reputation = club_reputation[home_club.as_usize()];
     let mut rng = DeterministicRng::seeded(
         world_seed,
         "world.attendance",
         u64::from(home_club.index()),
         crate::discipline::season_round_tick(season_index, round),
     );
-    let span = MAX_ATTENDANCE_PERMILLE - MIN_ATTENDANCE_PERMILLE;
-    let attendance_permille = MIN_ATTENDANCE_PERMILLE + rng.below(span);
+    let floor = attendance_floor_permille(reputation);
+    let span = MAX_ATTENDANCE_PERMILLE - floor;
+    let attendance_permille = floor + rng.below(span);
     let attendance = capacity * attendance_permille / 1000;
     Money::from_cents(i64::from(attendance) * CENTS_PER_TICKET)
 }
@@ -341,11 +370,16 @@ mod tests {
         );
     }
 
+    // Reputação "de meio de tabela" — testes que não são sobre o efeito
+    // da reputação em si usam este valor pra não precisar pensar nisso.
+    const MID_REPUTATION: u8 = 50;
+
     #[test]
     fn match_day_revenue_e_sempre_positiva_e_dentro_do_teto_da_capacidade() {
         let capacities = vec![MAX_SYNTHETIC_CAPACITY];
+        let reputation = vec![MID_REPUTATION];
         for round in 0..50u32 {
-            let revenue = match_day_revenue(ClubId::new(0), &capacities, 1, 0, round);
+            let revenue = match_day_revenue(ClubId::new(0), &capacities, &reputation, 1, 0, round);
             assert!(revenue.cents() > 0);
             // Nunca mais do que casa cheia pagando o preço do ingresso.
             assert!(revenue.cents() <= i64::from(MAX_SYNTHETIC_CAPACITY) * CENTS_PER_TICKET);
@@ -355,17 +389,19 @@ mod tests {
     #[test]
     fn match_day_revenue_e_deterministica_para_a_mesma_entrada() {
         let capacities = vec![20_000];
+        let reputation = vec![MID_REPUTATION];
         assert_eq!(
-            match_day_revenue(ClubId::new(0), &capacities, 42, 3, 5),
-            match_day_revenue(ClubId::new(0), &capacities, 42, 3, 5)
+            match_day_revenue(ClubId::new(0), &capacities, &reputation, 42, 3, 5),
+            match_day_revenue(ClubId::new(0), &capacities, &reputation, 42, 3, 5)
         );
     }
 
     #[test]
     fn match_day_revenue_varia_com_a_rodada() {
         let capacities = vec![20_000];
+        let reputation = vec![MID_REPUTATION];
         let revenues: Vec<Money> = (0..50)
-            .map(|round| match_day_revenue(ClubId::new(0), &capacities, 99, 0, round))
+            .map(|round| match_day_revenue(ClubId::new(0), &capacities, &reputation, 99, 0, round))
             .collect();
         assert!(
             revenues.windows(2).any(|w| w[0] != w[1]),
@@ -381,13 +417,39 @@ mod tests {
         // só a direção do efeito.
         let small = vec![MIN_SYNTHETIC_CAPACITY];
         let big = vec![MAX_SYNTHETIC_CAPACITY];
+        let reputation = vec![MID_REPUTATION];
         let trials = 200u32;
         let small_total: i64 = (0..trials)
-            .map(|round| match_day_revenue(ClubId::new(0), &small, 1, 0, round).cents())
+            .map(|round| {
+                match_day_revenue(ClubId::new(0), &small, &reputation, 1, 0, round).cents()
+            })
             .sum();
         let big_total: i64 = (0..trials)
-            .map(|round| match_day_revenue(ClubId::new(0), &big, 1, 0, round).cents())
+            .map(|round| match_day_revenue(ClubId::new(0), &big, &reputation, 1, 0, round).cents())
             .sum();
         assert!(big_total > small_total);
+    }
+
+    #[test]
+    fn match_day_revenue_cresce_com_a_reputacao_em_media() {
+        // Mesma sanidade grosseira de `..._cresce_com_a_capacidade_em_media`,
+        // agora pra reputação: clube mais reputado deveria, em média, gerar
+        // mais bilheteria (piso de público mais alto), nunca menos.
+        let capacities = vec![MAX_SYNTHETIC_CAPACITY];
+        let low_reputation = vec![0u8];
+        let high_reputation = vec![100u8];
+        let trials = 200u32;
+        let low_total: i64 = (0..trials)
+            .map(|round| {
+                match_day_revenue(ClubId::new(0), &capacities, &low_reputation, 1, 0, round).cents()
+            })
+            .sum();
+        let high_total: i64 = (0..trials)
+            .map(|round| {
+                match_day_revenue(ClubId::new(0), &capacities, &high_reputation, 1, 0, round)
+                    .cents()
+            })
+            .sum();
+        assert!(high_total > low_total);
     }
 }

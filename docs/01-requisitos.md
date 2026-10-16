@@ -101,15 +101,27 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > tem uma capacidade de estádio sintética (`world::generate_stadium_capacities`,
 > mesma filosofia de orçamento sintético, pack não declara capacidade de
 > verdade — isso é RF-CL-05, M4); toda partida de **liga** em casa (copa não)
-> credita no orçamento do mandante um público sorteado (30%-95% da capacidade)
-> vezes um preço de ingresso — não um preço realista, um parâmetro de
-> balanceamento escolhido pra manter a bilheteria total de uma temporada numa
-> fração da folha salarial (RF-CL-02, acima), não maior que ela: no pack de
-> exemplo, bilheteria fica em torno de 35-40% da folha, então a economia do
-> mundo ainda drena dinheiro a cada temporada, só mais devagar que antes desta
+> credita no orçamento do mandante um público sorteado vezes um preço de
+> ingresso — não um preço realista, um parâmetro de balanceamento escolhido
+> pra manter a bilheteria total de uma temporada numa fração da folha
+> salarial (RF-CL-02, acima), não maior que ela: no pack de exemplo,
+> bilheteria fica em torno de 45-50% da folha, então a economia do mundo
+> ainda drena dinheiro a cada temporada, só mais devagar que antes desta
 > fatia. Sem TV, prêmio, patrocínio, dívida ou saldo negativo — o resto de
 > RF-CL-03 fica para quando essas fontes existirem. `CommandReceipt::match_day_revenue`
 > e `managerfc-cli play` já reportam o total recebido por temporada.
+>
+> O público sorteado por partida, antes decorativo (piso/teto fixos,
+> `docs/01 §2.4` RF-MU-08 citado como "futuro"), agora é influenciado pela
+> **reputação do clube mandante** — `world::generate_club_reputation`
+> (sintética, 0-100, mesma filosofia de orçamento/capacidade: sem
+> histórico de títulos ainda pra calcular de verdade, RF-CL-08, M5) empurra
+> o piso de público pra cima quanto maior a reputação (de 20% a 70% da
+> capacidade, nunca garante casa cheia). É a fatia de "receita" de
+> RF-MU-08 (`docs/01 §2.4`: "Reputação de país/clube influenciando
+> atratividade, receita e IA") — "atratividade" (preferência de jogador) e
+> "IA" (clubes reputados competindo por reforços) ainda faltam, e
+> reputação de **país** (a outra metade de RF-MU-08) também não existe.
 
 ### 2.3 Jogador e progressão (`JG`)
 

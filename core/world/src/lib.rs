@@ -24,7 +24,10 @@
 //! ([`contract`]) complementa a folha salarial: salário travado no CA do
 //! momento da assinatura, não no CA corrente, só reajustando quando o
 //! contrato de fato renova (automático, sem negociação) ou o jogador é
-//! transferido — sem agente livre ainda (`RF-TR-07`, M3).
+//! transferido — sem agente livre ainda (`RF-TR-07`, M3). Reputação de
+//! clube ([`reputation`]) é a fatia mínima de RF-MU-08: só influencia
+//! bilheteria hoje (público mais consistente pra clube mais reputado),
+//! "atratividade" e "IA" de RF-MU-08 ainda faltam.
 #![warn(clippy::all)]
 
 mod condition;
@@ -37,6 +40,7 @@ mod injuries;
 mod market;
 mod progression;
 mod quality;
+mod reputation;
 mod season;
 mod strength;
 
@@ -50,5 +54,6 @@ pub use progression::{PlayerState, advance_season, initial_roster};
 pub use quality::{
     generate_match_profiles, generate_match_profiles_from_roster, starters_from_roster_all_clubs,
 };
+pub use reputation::generate_club_reputation;
 pub use season::{CareerRound, SeasonResult, run_season, run_seasons};
 pub use strength::{generate_strengths, generate_strengths_from_roster, strength_of};
