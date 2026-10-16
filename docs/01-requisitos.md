@@ -148,11 +148,19 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > mantém a curva pura, sem o bônus. Ainda sem treino, moral nem qualidade
 > do clube influenciando nada — ver `docs/03 §5.1`. `world::injuries`
 > cobre uma fatia mínima de RF-JG-08:
-> um sorteio sim/não por jogador por temporada (~6%, não calibrado contra
-> nenhum alvo publicado), sem tipo, gravidade, prazo de recuperação
-> granular nem risco de recaída — jogador machucado só fica fora da
-> escalação a temporada inteira (`ai::select_starting_eleven` nunca o vê)
-> e recupera automaticamente se não for sorteado de novo. `world::condition`
+> um sorteio sim/não por jogador por temporada, sem tipo, gravidade, prazo
+> de recuperação granular nem risco de recaída — jogador machucado só
+> fica fora da escalação a temporada inteira (`ai::select_starting_eleven`
+> nunca o vê) e recupera automaticamente se não for sorteado de novo. A
+> chance em si (antes fixa em 6% pra todo mundo) agora é a primeira fatia
+> real de RF-JG-02 (atributos ocultos, `docs/01 §2.3`): **propensão a
+> lesão**, sintética (0-100, `world::generate_injury_proneness`, sorteada
+> uma vez por carreira), varia a chance de 2% (nunca se machuca) a 10%
+> (muito frágil) — propensão média (50) reproduz os 6% de antes, então a
+> taxa agregada não mudou, só deixou de ser igual pra todo jogador.
+> Consistência, jogo importante, sujeira, lealdade, adaptação, ambição e
+> profissionalismo (os outros sete atributos ocultos de RF-JG-02) ainda
+> não existem. `world::condition`
 > cobre uma fatia mínima de RF-JG-07, só a parte de "condição física": a
 > condição de entrada de cada jogador na temporada é recalculada do zero a
 > cada uma (não é cumulativo entre temporadas) a partir de quantas partidas

@@ -6,11 +6,11 @@
   "seasons": 3,
   "total_matches_played": 336,
   "total_movements": 12,
-  "total_transfers": 19,
-  "total_injuries": 42,
+  "total_transfers": 18,
+  "total_injuries": 37,
   "total_tired_players": 523,
   "total_suspensions": 26,
-  "total_payroll_paid_cents": 432010000,
+  "total_payroll_paid_cents": 432005000,
   "total_match_day_revenue_cents": 203402940,
   "total_contracts_renewed": 182,
   "competitions": [
@@ -32,12 +32,12 @@
           "position": 1,
           "club_name": "Rio Claro FC",
           "played": 14,
-          "wins": 10,
+          "wins": 9,
           "draws": 1,
-          "losses": 3,
-          "goals_for": 28,
-          "goals_against": 15,
-          "points": 31
+          "losses": 4,
+          "goals_for": 25,
+          "goals_against": 18,
+          "points": 28
         },
         {
           "position": 2,
@@ -52,25 +52,25 @@
         },
         {
           "position": 3,
-          "club_name": "Costa Azul FC",
+          "club_name": "Monte Cristal FC",
           "played": 14,
-          "wins": 8,
-          "draws": 1,
-          "losses": 5,
-          "goals_for": 23,
-          "goals_against": 18,
-          "points": 25
+          "wins": 7,
+          "draws": 3,
+          "losses": 4,
+          "goals_for": 22,
+          "goals_against": 16,
+          "points": 24
         },
         {
           "position": 4,
-          "club_name": "Monte Cristal FC",
+          "club_name": "Costa Azul FC",
           "played": 14,
-          "wins": 6,
-          "draws": 3,
-          "losses": 5,
-          "goals_for": 21,
-          "goals_against": 17,
-          "points": 21
+          "wins": 7,
+          "draws": 1,
+          "losses": 6,
+          "goals_for": 22,
+          "goals_against": 19,
+          "points": 22
         },
         {
           "position": 5,
@@ -98,12 +98,12 @@
           "position": 7,
           "club_name": "Cruz do Sul FC",
           "played": 14,
-          "wins": 2,
+          "wins": 3,
           "draws": 3,
-          "losses": 9,
-          "goals_for": 12,
-          "goals_against": 27,
-          "points": 9
+          "losses": 8,
+          "goals_for": 15,
+          "goals_against": 24,
+          "points": 12
         },
         {
           "position": 8,
@@ -136,17 +136,6 @@
         },
         {
           "position": 2,
-          "club_name": "Vale Dourado FC",
-          "played": 14,
-          "wins": 7,
-          "draws": 3,
-          "losses": 4,
-          "goals_for": 19,
-          "goals_against": 16,
-          "points": 24
-        },
-        {
-          "position": 3,
           "club_name": "Ponte Alta FC",
           "played": 14,
           "wins": 6,
@@ -157,26 +146,37 @@
           "points": 22
         },
         {
+          "position": 3,
+          "club_name": "Serra Alta FC",
+          "played": 14,
+          "wins": 6,
+          "draws": 3,
+          "losses": 5,
+          "goals_for": 21,
+          "goals_against": 19,
+          "points": 21
+        },
+        {
           "position": 4,
+          "club_name": "Vale Dourado FC",
+          "played": 14,
+          "wins": 6,
+          "draws": 3,
+          "losses": 5,
+          "goals_for": 18,
+          "goals_against": 17,
+          "points": 21
+        },
+        {
+          "position": 5,
           "club_name": "Alto Verde FC",
           "played": 14,
           "wins": 5,
           "draws": 5,
           "losses": 4,
-          "goals_for": 17,
+          "goals_for": 16,
           "goals_against": 16,
           "points": 20
-        },
-        {
-          "position": 5,
-          "club_name": "Serra Alta FC",
-          "played": 14,
-          "wins": 5,
-          "draws": 3,
-          "losses": 6,
-          "goals_for": 19,
-          "goals_against": 19,
-          "points": 18
         },
         {
           "position": 6,
@@ -185,7 +185,7 @@
           "wins": 5,
           "draws": 1,
           "losses": 8,
-          "goals_for": 16,
+          "goals_for": 18,
           "goals_against": 30,
           "points": 16
         },
@@ -208,12 +208,12 @@
           "draws": 5,
           "losses": 7,
           "goals_for": 13,
-          "goals_against": 23,
+          "goals_against": 24,
           "points": 11
         }
       ],
       "cup_champion": null
     }
   ],
-  "state_hash": "79b62d822baba8c0"
+  "state_hash": "1e373ed412a6136e"
 }

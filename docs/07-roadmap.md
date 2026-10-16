@@ -306,6 +306,15 @@ aqui e volta ao design** — é para isso que o marco existe.
 > e "IA" de RF-MU-08, e reputação de país (a outra metade do requisito),
 > ainda faltam.
 >
+> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou sua primeira
+> fatia real: `world::generate_injury_proneness` sorteia uma **propensão
+> a lesão** sintética (0-100) por jogador, uma vez por carreira, e
+> `world::roll_injuries` passa a variar a chance de lesão por ela (2% a
+> 10%, antes fixa em 6% pra todo mundo — propensão média reproduz
+> exatamente os 6% de antes, a taxa agregada não mudou). Os outros sete
+> atributos ocultos do requisito (consistência, jogo importante, sujeira,
+> lealdade, adaptação, ambição, profissionalismo) ainda não existem.
+>
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da
 > temporada (o mesmo conjunto que `world::condition` já usa pra fadiga) e

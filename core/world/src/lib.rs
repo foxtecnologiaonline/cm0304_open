@@ -27,7 +27,10 @@
 //! transferido — sem agente livre ainda (`RF-TR-07`, M3). Reputação de
 //! clube ([`reputation`]) é a fatia mínima de RF-MU-08: só influencia
 //! bilheteria hoje (público mais consistente pra clube mais reputado),
-//! "atratividade" e "IA" de RF-MU-08 ainda faltam.
+//! "atratividade" e "IA" de RF-MU-08 ainda faltam. Propensão a lesão
+//! ([`injuries::generate_injury_proneness`]) é a primeira fatia real de
+//! RF-JG-02 (atributos ocultos): chance de lesão varia por jogador, não
+//! mais fixa em 6% pra todo mundo.
 #![warn(clippy::all)]
 
 mod condition;
@@ -48,7 +51,7 @@ pub use condition::{FULL_CONDITION, apply_season_fatigue};
 pub use contract::{ContractState, advance_contracts, generate_initial_contracts};
 pub use cup::{CupMatch, CupResult, cup_participants, run_cup};
 pub use finance::{generate_budgets, generate_stadium_capacities, pay_salaries, salary_per_season};
-pub use injuries::roll_injuries;
+pub use injuries::{generate_injury_proneness, roll_injuries};
 pub use market::run_market_day;
 pub use progression::{PlayerState, advance_season, initial_roster};
 pub use quality::{

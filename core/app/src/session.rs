@@ -118,6 +118,13 @@ pub struct GameSession {
     /// (`world::advance_contracts`, renovação automática) e a cada
     /// transferência (`world::run_market_day`, contrato novo no comprador).
     contracts: Vec<world::ContractState>,
+    /// Propensão a lesão de cada jogador, 0-100, no mesmo índice denso que
+    /// `roster` (`world::generate_injury_proneness`, sintética — mesmo
+    /// status de `club_reputation`). Gerada uma vez em [`Self::new`] e
+    /// nunca muda depois: sem atributos ocultos de verdade ainda (RF-JG-02
+    /// completo). Usada por `world::roll_injuries` pra variar a chance de
+    /// lesão por jogador.
+    injury_proneness: Vec<u8>,
     world_seed: u64,
     /// Uma entrada por temporada já simulada — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
@@ -144,6 +151,7 @@ impl GameSession {
         let stadium_capacities = world::generate_stadium_capacities(&report.pack, world_seed);
         let club_reputation = world::generate_club_reputation(&report.pack, world_seed);
         let contracts = world::generate_initial_contracts(&report.pack, world_seed);
+        let injury_proneness = world::generate_injury_proneness(&report.pack, world_seed);
         let profiles =
             world::generate_match_profiles_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
@@ -160,6 +168,7 @@ impl GameSession {
             stadium_capacities,
             club_reputation,
             contracts,
+            injury_proneness,
             world_seed,
             history: Vec::new(),
         })
@@ -244,8 +253,14 @@ impl GameSession {
                 // Lesões da temporada: substitui completamente o estado
                 // anterior (`world::roll_injuries`), então um jogador
                 // recuperado não some do roster — só volta a ser elegível
-                // pra escalação.
-                world::roll_injuries(&mut self.roster, self.world_seed, season_index);
+                // pra escalação. Chance varia por jogador conforme
+                // `self.injury_proneness` (RF-JG-02, `world::injuries`).
+                world::roll_injuries(
+                    &mut self.roster,
+                    &self.injury_proneness,
+                    self.world_seed,
+                    season_index,
+                );
                 let injuries = self.roster.iter().filter(|p| p.injured).count();
 
                 // Recalcula o perfil a partir do roster atual — reflete
