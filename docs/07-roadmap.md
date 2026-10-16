@@ -306,14 +306,18 @@ aqui e volta ao design** — é para isso que o marco existe.
 > e "IA" de RF-MU-08, e reputação de país (a outra metade do requisito),
 > ainda faltam.
 >
-> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou sua primeira
-> fatia real: `world::generate_injury_proneness` sorteia uma **propensão
-> a lesão** sintética (0-100) por jogador, uma vez por carreira, e
-> `world::roll_injuries` passa a variar a chance de lesão por ela (2% a
-> 10%, antes fixa em 6% pra todo mundo — propensão média reproduz
-> exatamente os 6% de antes, a taxa agregada não mudou). Os outros sete
-> atributos ocultos do requisito (consistência, jogo importante, sujeira,
-> lealdade, adaptação, ambição, profissionalismo) ainda não existem.
+> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas duas
+> primeiras fatias reais: `world::generate_injury_proneness` sorteia uma
+> **propensão a lesão** sintética (0-100) por jogador, uma vez por
+> carreira, e `world::roll_injuries` passa a variar a chance de lesão por
+> ela (2% a 10%, antes fixa em 6% pra todo mundo — propensão média
+> reproduz exatamente os 6% de antes, a taxa agregada não mudou).
+> `world::generate_professionalism` sorteia **profissionalismo** (0-100)
+> do mesmo jeito, e `world::advance_season` passa a somar um bônus de
+> evolução (0 a +2) proporcional a ele sobre a curva de idade/minutos
+> jogados — profissional evolui melhor e declina mais devagar. Os outros
+> seis atributos ocultos do requisito (consistência, jogo importante,
+> sujeira, lealdade, adaptação, ambição) ainda não existem.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da
@@ -321,7 +325,7 @@ aqui e volta ao design** — é para isso que o marco existe.
 > dá um pequeno bônus de evolução (+0 a +3, nunca negativo) a quem jogou —
 > reserva mantém a curva de idade pura. É a fatia de "minutos jogados" da
 > fórmula completa (`docs/03 §5.1`); treino, moral e qualidade do clube
-> continuam fora.
+> continuam fora (profissionalismo, acima, já não).
 >
 > `world`/`rules`/`engine`/`pack`/`persist` seguem adiantados em relação à
 > UI — o próximo passo de maior risco continua sendo essa ponte, não mais

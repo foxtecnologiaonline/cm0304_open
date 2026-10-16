@@ -30,7 +30,9 @@
 //! "atratividade" e "IA" de RF-MU-08 ainda faltam. Propensão a lesão
 //! ([`injuries::generate_injury_proneness`]) é a primeira fatia real de
 //! RF-JG-02 (atributos ocultos): chance de lesão varia por jogador, não
-//! mais fixa em 6% pra todo mundo.
+//! mais fixa em 6% pra todo mundo. Profissionalismo
+//! ([`progression::generate_professionalism`]) é a segunda: bônus de
+//! evolução por cima da curva de idade/minutos jogados.
 #![warn(clippy::all)]
 
 mod condition;
@@ -53,7 +55,7 @@ pub use cup::{CupMatch, CupResult, cup_participants, run_cup};
 pub use finance::{generate_budgets, generate_stadium_capacities, pay_salaries, salary_per_season};
 pub use injuries::{generate_injury_proneness, roll_injuries};
 pub use market::run_market_day;
-pub use progression::{PlayerState, advance_season, initial_roster};
+pub use progression::{PlayerState, advance_season, generate_professionalism, initial_roster};
 pub use quality::{
     generate_match_profiles, generate_match_profiles_from_roster, starters_from_roster_all_clubs,
 };

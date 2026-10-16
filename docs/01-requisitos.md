@@ -141,26 +141,31 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 | RF-JG-12 | Dupla nacionalidade e naturalização | C | M4 |
 
 > **Estado de implementação:** `world::progression` já cobre uma fatia
-> mínima de RF-JG-05 — **idade** (M1) e **jogos** (M2, `advance_season`):
-> quem titularizou a temporada (mesma escalação que `world::condition`
-> usa pra fadiga, `crate::quality::starters_from_roster_all_clubs`) ganha
-> um pequeno bônus de evolução (+0 a +3) sobre a curva de idade; reserva
-> mantém a curva pura, sem o bônus. Ainda sem treino, moral nem qualidade
+> mínima de RF-JG-05 — **idade** (M1), **jogos** (M2, `advance_season`) e
+> **profissionalismo** (M2): quem titularizou a temporada (mesma
+> escalação que `world::condition` usa pra fadiga,
+> `crate::quality::starters_from_roster_all_clubs`) ganha um pequeno
+> bônus de evolução (+0 a +3) sobre a curva de idade; reserva mantém a
+> curva pura. Por cima disso, todo jogador soma um bônus determinístico
+> (0 a +2) proporcional ao seu profissionalismo sintético
+> (`world::generate_professionalism`, 0-100, sorteado uma vez por
+> carreira — RF-JG-02, abaixo) — profissional evolui melhor e declina
+> mais devagar, titular ou reserva. Ainda sem treino, moral nem qualidade
 > do clube influenciando nada — ver `docs/03 §5.1`. `world::injuries`
 > cobre uma fatia mínima de RF-JG-08:
 > um sorteio sim/não por jogador por temporada, sem tipo, gravidade, prazo
 > de recuperação granular nem risco de recaída — jogador machucado só
 > fica fora da escalação a temporada inteira (`ai::select_starting_eleven`
 > nunca o vê) e recupera automaticamente se não for sorteado de novo. A
-> chance em si (antes fixa em 6% pra todo mundo) agora é a primeira fatia
-> real de RF-JG-02 (atributos ocultos, `docs/01 §2.3`): **propensão a
-> lesão**, sintética (0-100, `world::generate_injury_proneness`, sorteada
-> uma vez por carreira), varia a chance de 2% (nunca se machuca) a 10%
-> (muito frágil) — propensão média (50) reproduz os 6% de antes, então a
-> taxa agregada não mudou, só deixou de ser igual pra todo jogador.
-> Consistência, jogo importante, sujeira, lealdade, adaptação, ambição e
-> profissionalismo (os outros sete atributos ocultos de RF-JG-02) ainda
-> não existem. `world::condition`
+> chance em si (antes fixa em 6% pra todo mundo) foi a primeira fatia real
+> de RF-JG-02 (atributos ocultos, `docs/01 §2.3`): **propensão a lesão**,
+> sintética (0-100, `world::generate_injury_proneness`, sorteada uma vez
+> por carreira), varia a chance de 2% (nunca se machuca) a 10% (muito
+> frágil) — propensão média (50) reproduz os 6% de antes, então a taxa
+> agregada não mudou, só deixou de ser igual pra todo jogador.
+> **Profissionalismo** (acima) foi a segunda. Consistência, jogo
+> importante, sujeira, lealdade, adaptação e ambição (os outros seis
+> atributos ocultos de RF-JG-02) ainda não existem. `world::condition`
 > cobre uma fatia mínima de RF-JG-07, só a parte de "condição física": a
 > condição de entrada de cada jogador na temporada é recalculada do zero a
 > cada uma (não é cumulativo entre temporadas) a partir de quantas partidas

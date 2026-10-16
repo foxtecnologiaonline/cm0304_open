@@ -125,6 +125,12 @@ pub struct GameSession {
     /// completo). Usada por `world::roll_injuries` pra variar a chance de
     /// lesão por jogador.
     injury_proneness: Vec<u8>,
+    /// Profissionalismo de cada jogador, 0-100, no mesmo índice denso que
+    /// `roster` (`world::generate_professionalism`, sintético — mesmo
+    /// status de `injury_proneness`). Gerado uma vez em [`Self::new`] e
+    /// nunca muda depois. Usado por `world::advance_season` como bônus de
+    /// evolução por cima da curva de idade/minutos jogados.
+    professionalism: Vec<u8>,
     world_seed: u64,
     /// Uma entrada por temporada já simulada — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
@@ -152,6 +158,7 @@ impl GameSession {
         let club_reputation = world::generate_club_reputation(&report.pack, world_seed);
         let contracts = world::generate_initial_contracts(&report.pack, world_seed);
         let injury_proneness = world::generate_injury_proneness(&report.pack, world_seed);
+        let professionalism = world::generate_professionalism(&report.pack, world_seed);
         let profiles =
             world::generate_match_profiles_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
@@ -169,6 +176,7 @@ impl GameSession {
             club_reputation,
             contracts,
             injury_proneness,
+            professionalism,
             world_seed,
             history: Vec::new(),
         })
@@ -327,7 +335,13 @@ impl GameSession {
                     .filter(|p| p.condition < world::FULL_CONDITION)
                     .count();
 
-                world::advance_season(&mut self.roster, &starters, self.world_seed, season_index);
+                world::advance_season(
+                    &mut self.roster,
+                    &starters,
+                    &self.professionalism,
+                    self.world_seed,
+                    season_index,
+                );
 
                 // Duração de contrato (`world::advance_contracts`, `docs/01
                 // §2.2` RF-CL-02): decrementa a duração restante de todo

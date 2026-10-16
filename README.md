@@ -65,7 +65,8 @@ cm0304_open/
 │  │                       #    desempate (docs/03 §7)
 │  ├─ world/               # ✅ loop de temporada: calendário → partidas → tabela → acesso/queda
 │  │                       #    (força de clube a partir do elenco de verdade, com fallback sintético)
-│  │                       #    + progressão por idade e jogos (docs/03 §5.1, docs/01 RF-JG-05) +
+│  │                       #    + progressão por idade, jogos e profissionalismo (docs/03 §5.1,
+│  │                       #    docs/01 RF-JG-05/RF-JG-02) +
 │  │                       #    lesões por propensão sintética (docs/01 RF-JG-02) + mercado
 │  │                       #    automático + copa (mata-mata de fase única, docs/01 RF-MU-03) +
 │  │                       #    condição física por temporada (docs/01 RF-JG-07) + suspensões
@@ -92,7 +93,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 318 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 319 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
