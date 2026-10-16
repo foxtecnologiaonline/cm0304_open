@@ -171,8 +171,15 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > muito leal não é vendido; abaixo do limiar, aceita normalmente como
 > antes desta fatia. Não é negociação de verdade (`RF-TR-03`/`04`, ainda
 > faltam): é um corte fixo, não "quase aceita por mais dinheiro".
-> Consistência, jogo importante, sujeira, adaptação e ambição (os outros
-> cinco atributos ocultos de RF-JG-02) ainda não existem. `world::condition`
+> **Sujeira** é a quarta: `world::generate_dirtiness` sorteia uma sujeira
+> sintética (0-100) por jogador, uma vez por carreira, e
+> `world::roll_suspensions` (`RF-JG-09`, abaixo) passa a pesar o sorteio
+> de quem é expulso dentro dos titulares a favor de quem é mais sujo (peso
+> `1 + sujeira/10`: de 1x a 11x mais chance que o jogador mais limpo
+> possível) em vez de uniforme — a chance do **time** ser expulso em cada
+> partida continua fixa em ~4%, só "quem, dentro do time" muda.
+> Consistência, jogo importante, adaptação e ambição (os outros quatro
+> atributos ocultos de RF-JG-02) ainda não existem. `world::condition`
 > cobre uma fatia mínima de RF-JG-07, só a parte de "condição física": a
 > condição de entrada de cada jogador na temporada é recalculada do zero a
 > cada uma (não é cumulativo entre temporadas) a partir de quantas partidas
@@ -186,8 +193,10 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > cobre uma fatia mínima de RF-JG-09: depois de cada rodada de liga, cada
 > time que jogou sofre um sorteio de expulsão (~4% por time por partida,
 > ordem de grandeza real de cartão vermelho); se acontece, um titular
-> daquele time (sorteado entre os 11, sem favorecer posição) fica fora da
-> rodada seguinte da mesma competição. Isso só tem efeito porque, no
+> daquele time fica fora da rodada seguinte da mesma competição — quem,
+> dentro dos 11, é pesado pela sujeira sintética de cada um
+> (`world::generate_dirtiness`, RF-JG-02 acima), não mais sorteado
+> uniforme. Isso só tem efeito porque, no
 > caminho de carreira (`app::GameSession`), toda liga agora é simulada
 > **rodada a rodada** (`world::season::run_season`), recalculando o
 > perfil de cada clube a cada rodada — antes desta fatia, a temporada

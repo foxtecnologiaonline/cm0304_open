@@ -35,6 +35,11 @@
 //! evolução por cima da curva de idade/minutos jogados. Lealdade
 //! ([`market::generate_loyalty`]) é a terceira: jogador muito leal nunca
 //! é candidato a saída em [`run_market_day`], mesmo que o preço bata.
+//! Sujeira ([`discipline::generate_dirtiness`]) é a quarta: jogador mais
+//! "sujo" tem mais chance de ser o escolhido quando o time sofre uma
+//! expulsão em [`discipline::roll_suspensions`], em vez de sorteio
+//! uniforme entre os titulares — a chance do time ser expulso continua a
+//! mesma.
 #![warn(clippy::all)]
 
 mod condition;
@@ -54,6 +59,7 @@ mod strength;
 pub use condition::{FULL_CONDITION, apply_season_fatigue};
 pub use contract::{ContractState, advance_contracts, generate_initial_contracts};
 pub use cup::{CupMatch, CupResult, cup_participants, run_cup};
+pub use discipline::generate_dirtiness;
 pub use finance::{generate_budgets, generate_stadium_capacities, pay_salaries, salary_per_season};
 pub use injuries::{generate_injury_proneness, roll_injuries};
 pub use market::{generate_loyalty, run_market_day};

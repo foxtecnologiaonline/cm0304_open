@@ -47,6 +47,11 @@ pub struct CareerRound<'a> {
     /// — influencia o piso de público em `crate::finance::match_day_revenue`
     /// (RF-MU-08, "receita").
     pub club_reputation: &'a [u8],
+    /// Sujeira de cada jogador, 0-100 (`crate::discipline::generate_dirtiness`)
+    /// — pesa quem é escolhido quando o time sofre uma expulsão
+    /// (`crate::discipline::roll_suspensions`), mesmo índice denso do
+    /// roster inteiro (não só os titulares da rodada).
+    pub dirtiness: &'a [u8],
 }
 
 /// Resultado de simular uma temporada inteira, competição por competição.
@@ -364,8 +369,13 @@ fn simulate_round_robin_for_career(
             outcome.record_match(fixture, score, shots);
         }
 
-        suspended =
-            crate::discipline::roll_suspensions(world_seed, season_index, round, &starters_by_club);
+        suspended = crate::discipline::roll_suspensions(
+            world_seed,
+            season_index,
+            round,
+            &starters_by_club,
+            career.dirtiness,
+        );
         outcome.suspensions += suspended.len();
     }
     outcome
@@ -469,6 +479,13 @@ mod tests {
         vec![50; pack.clubs.len()]
     }
 
+    /// Sujeira fixa "neutra" (não vem de `crate::discipline` pra não
+    /// acoplar estes testes à sua faixa sintética) — pros testes que não
+    /// são sobre o efeito da sujeira em si.
+    fn example_dirtiness(pack: &LoadedPack) -> Vec<u8> {
+        vec![50; pack.players.len()]
+    }
+
     #[test]
     fn roda_uma_temporada_no_pack_de_exemplo_sem_travar() {
         let p = example_pack();
@@ -502,11 +519,13 @@ mod tests {
         let mut budgets = vec![Money::ZERO; p.clubs.len()];
         let capacities = example_capacities(&p);
         let reputation = example_reputation(&p);
+        let dirtiness = example_dirtiness(&p);
         let career = CareerRound {
             roster: &roster,
             budgets: &mut budgets,
             stadium_capacities: &capacities,
             club_reputation: &reputation,
+            dirtiness: &dirtiness,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -529,6 +548,7 @@ mod tests {
         let membership = initial_membership(&p);
         let capacities = example_capacities(&p);
         let reputation = example_reputation(&p);
+        let dirtiness = example_dirtiness(&p);
 
         let mut budgets_a = vec![Money::ZERO; p.clubs.len()];
         let career_a = CareerRound {
@@ -536,6 +556,7 @@ mod tests {
             budgets: &mut budgets_a,
             stadium_capacities: &capacities,
             club_reputation: &reputation,
+            dirtiness: &dirtiness,
         };
         let a = run_season(&p, &membership, &profiles, Some(career_a), 7, 0);
 
@@ -545,6 +566,7 @@ mod tests {
             budgets: &mut budgets_b,
             stadium_capacities: &capacities,
             club_reputation: &reputation,
+            dirtiness: &dirtiness,
         };
         let b = run_season(&p, &membership, &profiles, Some(career_b), 7, 0);
         assert_eq!(a, b);
@@ -565,6 +587,7 @@ mod tests {
         let profiles = crate::quality::generate_match_profiles(&p, 1);
         let capacities = example_capacities(&p);
         let reputation = example_reputation(&p);
+        let dirtiness = example_dirtiness(&p);
 
         let total_suspensions: usize = (0..10)
             .map(|season_index| {
@@ -574,6 +597,7 @@ mod tests {
                     budgets: &mut budgets,
                     stadium_capacities: &capacities,
                     club_reputation: &reputation,
+                    dirtiness: &dirtiness,
                 };
                 run_season(&p, &membership, &profiles, Some(career), 1, season_index).suspensions
             })
@@ -596,6 +620,7 @@ mod tests {
         let profiles = crate::quality::generate_match_profiles(&p, 42);
         let capacities = example_capacities(&p);
         let reputation = example_reputation(&p);
+        let dirtiness = example_dirtiness(&p);
         let mut budgets = vec![Money::ZERO; p.clubs.len()];
 
         let career = CareerRound {
@@ -603,6 +628,7 @@ mod tests {
             budgets: &mut budgets,
             stadium_capacities: &capacities,
             club_reputation: &reputation,
+            dirtiness: &dirtiness,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -629,6 +655,7 @@ mod tests {
         let membership = initial_membership(&p);
         let profiles = crate::quality::generate_match_profiles(&p, 42);
         let capacities = example_capacities(&p);
+        let dirtiness = example_dirtiness(&p);
 
         let high_reputation = vec![100; p.clubs.len()];
         let mut budgets_high = vec![Money::ZERO; p.clubs.len()];
@@ -637,6 +664,7 @@ mod tests {
             budgets: &mut budgets_high,
             stadium_capacities: &capacities,
             club_reputation: &high_reputation,
+            dirtiness: &dirtiness,
         };
         let high = run_season(&p, &membership, &profiles, Some(career_high), 42, 0);
 
@@ -647,6 +675,7 @@ mod tests {
             budgets: &mut budgets_low,
             stadium_capacities: &capacities,
             club_reputation: &low_reputation,
+            dirtiness: &dirtiness,
         };
         let low = run_season(&p, &membership, &profiles, Some(career_low), 42, 0);
 
