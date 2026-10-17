@@ -137,6 +137,13 @@ pub struct GameSession {
     /// nunca muda depois. Usada por `world::run_market_day` pra nunca
     /// vender um jogador muito leal, mesmo que o preço bata.
     loyalty: Vec<u8>,
+    /// Ambição de cada jogador, 0-100, no mesmo índice denso que `roster`
+    /// (`world::generate_ambition`, sintética — mesmo status de
+    /// `loyalty`). Gerada uma vez em [`Self::new`] e nunca muda depois.
+    /// Usada por `world::run_market_day`, junto de `club_reputation`, pra
+    /// recusar transferência que seria um passo atrás de reputação pra um
+    /// jogador muito ambicioso.
+    ambition: Vec<u8>,
     /// Sujeira de cada jogador, 0-100, no mesmo índice denso que `roster`
     /// (`world::generate_dirtiness`, sintética — mesmo status de
     /// `loyalty`). Gerada uma vez em [`Self::new`] e nunca muda depois.
@@ -185,6 +192,7 @@ impl GameSession {
         let injury_proneness = world::generate_injury_proneness(&report.pack, world_seed);
         let professionalism = world::generate_professionalism(&report.pack, world_seed);
         let loyalty = world::generate_loyalty(&report.pack, world_seed);
+        let ambition = world::generate_ambition(&report.pack, world_seed);
         let dirtiness = world::generate_dirtiness(&report.pack, world_seed);
         let big_game_mentality = world::generate_big_game_mentality(&report.pack, world_seed);
         let consistency = world::generate_consistency(&report.pack, world_seed);
@@ -207,6 +215,7 @@ impl GameSession {
             injury_proneness,
             professionalism,
             loyalty,
+            ambition,
             dirtiness,
             big_game_mentality,
             consistency,
@@ -287,12 +296,16 @@ impl GameSession {
                 // jogar mais forte nesta mesma temporada. Todo jogador
                 // transferido assina contrato novo no comprador (duração
                 // máxima, salário no CA do momento da venda); jogador com
-                // `self.loyalty` acima do limiar nunca é candidato a saída
-                // (RF-JG-02) — ver `world::run_market_day`.
+                // `self.loyalty` acima do limiar nunca é candidato a saída,
+                // e `self.ambition` recusa um passo atrás de
+                // `self.club_reputation` (RF-JG-02) — ver
+                // `world::run_market_day`.
                 let transfers = world::run_market_day(
                     &mut self.roster,
                     &mut self.contracts,
                     &self.loyalty,
+                    &self.ambition,
+                    &self.club_reputation,
                     &mut self.budgets,
                 );
 

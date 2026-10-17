@@ -82,7 +82,8 @@ cm0304_open/
 │  ├─ persist/             # ✅ save binário versionado — checksum, escrita atômica, sem blocos ainda
 │  ├─ ai/                  # ✅ escalação automática (11 titulares por posição/CA) +
 │  │                       #    primeira IA de mercado, valor já considera contrato, idade e PA
-│  │                       #    (docs/01 §2.4, RF-TR-02), jogador leal nunca é vendido (RF-JG-02) —
+│  │                       #    (docs/01 §2.4, RF-TR-02), jogador leal nunca é vendido e jogador
+│  │                       #    ambicioso recusa clube menos reputado (RF-JG-02) —
 │  │                       #    negociação de verdade ainda falta
 │  └─ cli/                 # ✅ managerfc-cli — version, pack validate, bench, calibrate, play, save,
 │                          #    load, golden record/verify
@@ -97,7 +98,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 334 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 339 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier

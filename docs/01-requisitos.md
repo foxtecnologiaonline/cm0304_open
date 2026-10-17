@@ -195,8 +195,16 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > é ruído: ao longo de muitas rodadas a força esperada não muda, só a
 > variância observada aumenta pra time inconsistente. Mesmo caminho de
 > carreira apenas, e sem efeito em copa (ela não tem granularidade de
-> rodada, ver acima). Adaptação e ambição (os outros dois atributos
-> ocultos de RF-JG-02) ainda não existem.
+> rodada, ver acima). **Ambição** é a sétima:
+> `world::generate_ambition` sorteia uma ambição sintética (0-100) por
+> jogador, uma vez por carreira, e `ai::run_market_day` (RF-TR-05) passa a
+> recusar uma transferência, mesmo com preço e lealdade batendo, se o
+> jogador é muito ambicioso **e** o clube comprador tem reputação
+> (`world::generate_club_reputation`, RF-MU-08) menor que a do clube
+> vendedor atual — um passo atrás de carreira. Destino de reputação
+> igual ou maior nunca é recusado por ambição, e pouco ambicioso aceita
+> qualquer destino, igual a antes desta fatia. Adaptação (o último
+> atributo oculto de RF-JG-02) ainda não existe.
 > `world::condition`
 > cobre uma fatia mínima de RF-JG-07, só a parte de "condição física": a
 > condição de entrada de cada jogador na temporada é recalculada do zero a
@@ -245,9 +253,9 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > já cobre uma fatia mecânica de RF-TR-02 (valor de mercado) e RF-TR-05
 > (clube identifica carência e compra se couber no orçamento) — sem janela
 > por país (RF-TR-01), sem negociação/disputa/desistência de verdade (o
-> "dono" vende se o preço bate e a lealdade do jogador permite — ver
-> RF-JG-02, `docs/01 §2.3` — mas não há proposta recusável/renegociável de
-> verdade) e sem nenhum dos RF-TR-03/04/06/07/08/09. É automático e roda
+> "dono" vende se o preço bate e a lealdade/ambição do jogador permitem —
+> ver RF-JG-02, `docs/01 §2.3` — mas não há proposta recusável/renegociável
+> de verdade) e sem nenhum dos RF-TR-03/04/06/07/08/09. É automático e roda
 > toda temporada em `GameSession::dispatch`, não uma
 > tela jogável ainda. `ai::market_value` cobria só CA (fórmula não
 > calibrada); agora também considera **contrato** — a duração restante
@@ -264,8 +272,12 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > jogador novo com muito espaço pra crescer vale mais, mesmo com CA baixo
 > hoje. Todas as faixas não calibradas, só a direção certa (confirmado
 > por varredura de seeds: 9 de 10 seeds testadas mudaram de resultado
-> real ao ligar o fator de PA, não é decorativo). Reputação e demanda
-> ainda faltam do RF-TR-02 completo.
+> real ao ligar o fator de PA, não é decorativo). **Reputação** entra
+> parcialmente, mas não em `market_value` em si: `ai::run_market_day`
+> passa a recusar uma venda pra um clube de reputação menor que a do
+> vendedor quando o jogador é muito ambicioso (RF-JG-02, "ambição",
+> `docs/01 §2.3`) — reputação como filtro de candidatura, não ainda como
+> fator de preço. Demanda ainda falta do RF-TR-02 completo.
 
 ### 2.5 Táticas e partida (`PA`)
 

@@ -306,7 +306,7 @@ aqui e volta ao design** — é para isso que o marco existe.
 > e "IA" de RF-MU-08, e reputação de país (a outra metade do requisito),
 > ainda faltam.
 >
-> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas seis
+> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas sete
 > primeiras fatias reais: `world::generate_injury_proneness` sorteia uma
 > **propensão a lesão** sintética (0-100) por jogador, uma vez por
 > carreira, e `world::roll_injuries` passa a variar a chance de lesão por
@@ -337,8 +337,14 @@ aqui e volta ao design** — é para isso que o marco existe.
 > ±20% com consistência 0) — ao contrário de sujeira/jogo importante,
 > não direciona nada, só aumenta a variância de time inconsistente; sem
 > efeito em copa (sem granularidade de rodada lá) nem no caminho
-> estático. Os outros dois atributos ocultos do requisito (adaptação,
-> ambição) ainda não existem.
+> estático. `world::generate_ambition` sorteia **ambição** (0-100) do
+> mesmo jeito, e `ai::run_market_day` (RF-TR-05) passa a recusar uma
+> transferência pra um clube de reputação menor que a do vendedor quando
+> o jogador é muito ambicioso, mesmo com preço e lealdade batendo —
+> reputação de clube entra no mercado pela primeira vez, só como filtro
+> de candidatura (RF-TR-02 completo ainda não usa reputação no preço em
+> si). O último atributo oculto do requisito (adaptação) ainda não
+> existe.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da

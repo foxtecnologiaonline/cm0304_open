@@ -10,10 +10,16 @@
 //! seu titular mais fraco por um reserva melhor de outro clube que caiba no
 //! orçamento. [`market_value`] já considera **contrato** (duração restante
 //! — `world::ContractState`), **idade** e **PA** (potencial não realizado)
-//! — três das outras variáveis de RF-TR-02 completo (reputação e demanda
-//! ainda faltam). [`run_market_day`] também já considera **lealdade**
-//! (RF-JG-02, atributo oculto): jogador muito leal nunca é candidato a
-//! saída, mesmo que o preço bata.
+//! — três das outras variáveis de RF-TR-02 completo (demanda ainda falta;
+//! reputação entra parcialmente via [`MarketPlayer::ambition`], abaixo).
+//! [`run_market_day`] também já considera **lealdade** (RF-JG-02, atributo
+//! oculto): jogador muito leal nunca é candidato a saída, mesmo que o
+//! preço bata. E **ambição** (RF-JG-02, atributo oculto): jogador muito
+//! ambicioso recusa ir para um clube de reputação menor que a do seu
+//! clube atual, mesmo que o preço e a lealdade permitam — o inverso não
+//! tem restrição (ambicioso aceita ir pra um clube igual ou mais
+//! reputado, e pouco ambicioso aceita qualquer destino, igual a antes
+//! desta fatia).
 //!
 //! Como [`crate::lineup`], depende só de `domain` — não sabe o que é um
 //! `pack` ou uma `world::PlayerState`; quem chama (`world`) monta
@@ -51,6 +57,12 @@ pub struct MarketPlayer {
     /// em [`run_market_day`], mesmo que o preço bata (RF-JG-02, atributo
     /// oculto, `docs/01 §2.3`).
     pub loyalty: u8,
+    /// Ambição, 0-100 — acima de [`AMBITION_REFUSAL_THRESHOLD`], o
+    /// jogador recusa ir pra um clube de reputação menor que a do seu
+    /// clube atual em [`run_market_day`] (RF-JG-02, atributo oculto,
+    /// `docs/01 §2.3`); abaixo do limiar, aceita qualquer destino que já
+    /// batesse preço e lealdade.
+    pub ambition: u8,
 }
 
 /// Uma transferência executada — o registro do que aconteceu, pra quem
@@ -155,6 +167,23 @@ pub fn market_value(
 /// certa.
 const LOYALTY_REFUSAL_THRESHOLD: u8 = 80;
 
+/// Ambição a partir da qual um jogador recusa ir pra um clube de
+/// reputação menor que a do seu clube atual em [`run_market_day`] — fatia
+/// de "ambição" de RF-JG-02 (`docs/01 §2.3`, atributo oculto): um jogador
+/// muito ambicioso não aceita um passo atrás de carreira, mesmo com preço
+/// e lealdade batendo. Abaixo do limiar, aceita qualquer destino, igual a
+/// antes desta fatia. Não calibrado, só a direção certa.
+const AMBITION_REFUSAL_THRESHOLD: u8 = 70;
+
+/// `true` se um jogador com `ambition` aceita se mudar de um clube de
+/// reputação `seller_reputation` para um de reputação `buyer_reputation`
+/// — só recusa quando é muito ambicioso **e** o destino é de reputação
+/// estritamente menor; em qualquer outro caso (pouco ambicioso, ou
+/// destino igual/melhor), aceita.
+fn accepts_destination(ambition: u8, seller_reputation: u8, buyer_reputation: u8) -> bool {
+    ambition < AMBITION_REFUSAL_THRESHOLD || buyer_reputation >= seller_reputation
+}
+
 /// O titular de menor habilidade atual do elenco `squad` (que já jogou,
 /// via [`select_starting_eleven`]) — o candidato natural a ser substituído.
 /// `None` se `squad` não tem nenhum titular (elenco vazio).
@@ -179,19 +208,27 @@ fn weakest_starter(squad: &[PlayerRating]) -> Option<PlayerRating> {
 /// desempatados por `PlayerId` crescente, sem RNG nenhum envolvido — a
 /// mesma entrada sempre produz a mesma sequência de transferências.
 ///
-/// Só jogadores que **não titularizam pelo próprio clube** e cuja
-/// lealdade está abaixo de [`LOYALTY_REFUSAL_THRESHOLD`] são candidatos a
+/// Só jogadores que **não titularizam pelo próprio clube**, cuja
+/// lealdade está abaixo de [`LOYALTY_REFUSAL_THRESHOLD`] e que (via
+/// [`accepts_destination`]) aceitam o clube comprador são candidatos a
 /// sair — vender o time titular inteiro não faz sentido pra uma primeira
-/// versão da IA, e um jogador muito leal recusa qualquer proposta
+/// versão da IA, um jogador muito leal recusa qualquer proposta, e um
+/// jogador muito ambicioso recusa um passo atrás de reputação
 /// (`RF-TR-05` completo disputaria/desistiria de propostas de verdade;
-/// aqui ainda não há negociação, só esses dois filtros fixos — o "dono"
-/// vende se o preço bate e a lealdade permite). Quem sai muda de clube em
-/// `players` (mutado in-place);
-/// `budgets` é debitado do comprador e creditado no vendedor pelo mesmo
-/// valor — uma economia fechada, sem receita externa (bilheteria, patrocínio
-/// — nenhuma existe ainda).
+/// aqui ainda não há negociação, só esses filtros fixos — o "dono" vende
+/// se o preço bate e lealdade/ambição permitem). Quem sai muda de clube
+/// em `players` (mutado in-place); `budgets` é debitado do comprador e
+/// creditado no vendedor pelo mesmo valor — uma economia fechada, sem
+/// receita externa (bilheteria, patrocínio — nenhuma existe ainda).
+/// `club_reputation[club.as_usize()]` dá a reputação de cada clube
+/// (`world::generate_club_reputation`, mesmo índice denso de `budgets`) —
+/// só usada pela recusa de ambição, em nada mais.
 #[must_use]
-pub fn run_market_day(players: &mut [MarketPlayer], budgets: &mut [Money]) -> Vec<Transfer> {
+pub fn run_market_day(
+    players: &mut [MarketPlayer],
+    budgets: &mut [Money],
+    club_reputation: &[u8],
+) -> Vec<Transfer> {
     // Quem titulariza pelo próprio clube, calculado uma vez antes de
     // qualquer transferência: só se vende gente do banco, e vender um
     // jogador do banco nunca muda quem são os titulares de quem vendeu —
@@ -232,6 +269,11 @@ pub fn run_market_day(players: &mut [MarketPlayer], budgets: &mut [Money]) -> Ve
                     && p.position == weak_link.position
                     && p.current_ability > weak_link.current_ability
                     && p.loyalty < LOYALTY_REFUSAL_THRESHOLD
+                    && accepts_destination(
+                        p.ambition,
+                        club_reputation[p.club.as_usize()],
+                        club_reputation[buyer_index],
+                    )
             })
             .map(|(idx, _)| idx)
             .collect();
@@ -301,6 +343,18 @@ mod tests {
     // nisso.
     const LOW_LOYALTY: u8 = 0;
 
+    // Ambição "baixa" por padrão (aceita qualquer destino, abaixo do
+    // limiar de recusa) — testes que não são sobre ambição não precisam
+    // pensar nisso.
+    const LOW_AMBITION: u8 = 0;
+
+    /// Reputação uniforme pra todo clube — zera o efeito de
+    /// `accepts_destination` (nenhum destino é "pior" que outro), pros
+    /// testes que não são sobre ambição em si.
+    fn uniform_reputation(n_clubs: usize) -> Vec<u8> {
+        vec![50; n_clubs]
+    }
+
     fn player(id: u32, club: u32, position: Position, ca: u8) -> MarketPlayer {
         // Potencial igual ao CA (margem zero) — mesmo preço cheio dos
         // outros padrões, pra testes que não são sobre PA.
@@ -313,6 +367,7 @@ mod tests {
             PRIME_AGE,
             ca,
             LOW_LOYALTY,
+            LOW_AMBITION,
         )
     }
 
@@ -332,6 +387,7 @@ mod tests {
             PRIME_AGE,
             ca,
             LOW_LOYALTY,
+            LOW_AMBITION,
         )
     }
 
@@ -351,6 +407,27 @@ mod tests {
             PRIME_AGE,
             ca,
             loyalty,
+            LOW_AMBITION,
+        )
+    }
+
+    fn player_with_ambition(
+        id: u32,
+        club: u32,
+        position: Position,
+        ca: u8,
+        ambition: u8,
+    ) -> MarketPlayer {
+        player_with(
+            id,
+            club,
+            position,
+            ca,
+            FULL_CONTRACT,
+            PRIME_AGE,
+            ca,
+            LOW_LOYALTY,
+            ambition,
         )
     }
 
@@ -364,6 +441,7 @@ mod tests {
         age_years: u8,
         potential_ability: u8,
         loyalty: u8,
+        ambition: u8,
     ) -> MarketPlayer {
         MarketPlayer {
             player: PlayerId::new(id),
@@ -374,6 +452,7 @@ mod tests {
             age_years,
             potential_ability,
             loyalty,
+            ambition,
         }
     }
 
@@ -430,7 +509,7 @@ mod tests {
             player(2, 1, Position::Goalkeeper, 70), // reserva do clube 1 — candidato válido, se houvesse dinheiro
         ];
         let mut budgets = vec![Money::ZERO, Money::ZERO];
-        let transfers = run_market_day(&mut players, &mut budgets);
+        let transfers = run_market_day(&mut players, &mut budgets, &uniform_reputation(2));
         assert!(transfers.is_empty());
         assert_eq!(players[2].club, ClubId::new(1)); // ninguém mudou de clube
     }
@@ -449,7 +528,7 @@ mod tests {
         ];
         let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
 
-        let transfers = run_market_day(&mut players, &mut budgets);
+        let transfers = run_market_day(&mut players, &mut budgets, &uniform_reputation(2));
 
         assert_eq!(transfers.len(), 1);
         let t = transfers[0];
@@ -481,7 +560,12 @@ mod tests {
         ];
         let mut budgets_full = vec![budget, Money::ZERO];
         assert!(
-            run_market_day(&mut full_contract, &mut budgets_full).is_empty(),
+            run_market_day(
+                &mut full_contract,
+                &mut budgets_full,
+                &uniform_reputation(2)
+            )
+            .is_empty(),
             "contrato cheio não deveria caber no orçamento"
         );
 
@@ -491,7 +575,11 @@ mod tests {
             player_with_contract(2, 1, Position::Goalkeeper, 70, 1),
         ];
         let mut budgets_short = vec![budget, Money::ZERO];
-        let transfers = run_market_day(&mut short_contract, &mut budgets_short);
+        let transfers = run_market_day(
+            &mut short_contract,
+            &mut budgets_short,
+            &uniform_reputation(2),
+        );
         assert_eq!(
             transfers.len(),
             1,
@@ -509,7 +597,7 @@ mod tests {
             player(1, 1, Position::Goalkeeper, 30),
         ];
         let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
-        let transfers = run_market_day(&mut players, &mut budgets);
+        let transfers = run_market_day(&mut players, &mut budgets, &uniform_reputation(2));
         assert!(transfers.is_empty());
     }
 
@@ -525,7 +613,7 @@ mod tests {
             player_with_loyalty(2, 1, Position::Goalkeeper, 70, 100),
         ];
         let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
-        let transfers = run_market_day(&mut players, &mut budgets);
+        let transfers = run_market_day(&mut players, &mut budgets, &uniform_reputation(2));
         assert!(
             transfers.is_empty(),
             "jogador com lealdade máxima não deveria aceitar sair"
@@ -549,7 +637,69 @@ mod tests {
             ),
         ];
         let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
-        let transfers = run_market_day(&mut players, &mut budgets);
+        let transfers = run_market_day(&mut players, &mut budgets, &uniform_reputation(2));
+        assert_eq!(transfers.len(), 1);
+        assert_eq!(players[2].club, ClubId::new(0));
+    }
+
+    #[test]
+    fn jogador_muito_ambicioso_recusa_ir_pra_clube_de_reputacao_menor() {
+        // Mesmo cenário de `clube_compra_upgrade_de_verdade_do_banco_de_outro_clube`
+        // (reserva do clube 1 seria vendido pro clube 0), mas agora com
+        // ambição acima do limiar de recusa e reputação do clube 0 (o
+        // comprador) menor que a do clube 1 (o vendedor atual) — a
+        // transferência não deveria acontecer.
+        let mut players = vec![
+            player(0, 0, Position::Goalkeeper, 40),
+            player(1, 1, Position::Goalkeeper, 90),
+            player_with_ambition(2, 1, Position::Goalkeeper, 70, 100),
+        ];
+        let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
+        let club_reputation = vec![20u8, 80u8]; // clube 0 (comprador) bem menos reputado
+        let transfers = run_market_day(&mut players, &mut budgets, &club_reputation);
+        assert!(
+            transfers.is_empty(),
+            "jogador muito ambicioso não deveria aceitar um passo atrás de reputação"
+        );
+        assert_eq!(players[2].club, ClubId::new(1));
+    }
+
+    #[test]
+    fn jogador_muito_ambicioso_aceita_clube_de_reputacao_igual_ou_maior() {
+        // Mesmo cenário, mas o comprador (clube 0) tem reputação igual ou
+        // maior que o vendedor (clube 1) — ambição não deveria impedir
+        // nada aqui, mesmo acima do limiar de recusa.
+        let mut players = vec![
+            player(0, 0, Position::Goalkeeper, 40),
+            player(1, 1, Position::Goalkeeper, 90),
+            player_with_ambition(2, 1, Position::Goalkeeper, 70, 100),
+        ];
+        let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
+        let club_reputation = vec![80u8, 80u8]; // mesma reputação
+        let transfers = run_market_day(&mut players, &mut budgets, &club_reputation);
+        assert_eq!(transfers.len(), 1);
+        assert_eq!(players[2].club, ClubId::new(0));
+    }
+
+    #[test]
+    fn ambicao_abaixo_do_limiar_aceita_qualquer_destino() {
+        // Mesmo cenário de recusa (comprador bem menos reputado), mas com
+        // ambição só um pouco abaixo do limiar de recusa — a
+        // transferência tem que continuar acontecendo normalmente.
+        let mut players = vec![
+            player(0, 0, Position::Goalkeeper, 40),
+            player(1, 1, Position::Goalkeeper, 90),
+            player_with_ambition(
+                2,
+                1,
+                Position::Goalkeeper,
+                70,
+                AMBITION_REFUSAL_THRESHOLD - 1,
+            ),
+        ];
+        let mut budgets = vec![Money::from_cents(1_000_000_000), Money::ZERO];
+        let club_reputation = vec![20u8, 80u8];
+        let transfers = run_market_day(&mut players, &mut budgets, &club_reputation);
         assert_eq!(transfers.len(), 1);
         assert_eq!(players[2].club, ClubId::new(0));
     }
@@ -563,11 +713,11 @@ mod tests {
         ];
         let mut a = base.clone();
         let mut budgets_a = vec![Money::from_cents(1_000_000_000), Money::ZERO];
-        let ta = run_market_day(&mut a, &mut budgets_a);
+        let ta = run_market_day(&mut a, &mut budgets_a, &uniform_reputation(2));
 
         let mut b = base;
         let mut budgets_b = vec![Money::from_cents(1_000_000_000), Money::ZERO];
-        let tb = run_market_day(&mut b, &mut budgets_b);
+        let tb = run_market_day(&mut b, &mut budgets_b, &uniform_reputation(2));
 
         assert_eq!(ta, tb);
         assert_eq!(a, b);
@@ -593,13 +743,15 @@ mod proptests {
     /// `n_clubs` clubes, cada um com um elenco de tamanho e composição
     /// arbitrários (ids de jogador únicos globalmente, garantidos pela
     /// numeração sequencial abaixo — não por sorteio, então não precisa de
-    /// um `hash_set` como em `lineup::proptests`).
-    fn arbitrary_league() -> impl Strategy<Value = (Vec<MarketPlayer>, Vec<Money>)> {
+    /// um `hash_set` como em `lineup::proptests`), mais uma reputação
+    /// arbitrária por clube.
+    fn arbitrary_league() -> impl Strategy<Value = (Vec<MarketPlayer>, Vec<Money>, Vec<u8>)> {
         (2usize..6).prop_flat_map(|n_clubs| {
             let squads = prop::collection::vec(
                 prop::collection::vec(
                     (
                         arbitrary_position(),
+                        any::<u8>(),
                         any::<u8>(),
                         any::<u8>(),
                         any::<u8>(),
@@ -611,35 +763,40 @@ mod proptests {
                 n_clubs,
             );
             let budgets = prop::collection::vec(0i64..1_000_000_000, n_clubs);
-            (squads, budgets).prop_map(|(squads, budget_cents)| {
-                let mut next_id = 0u32;
-                let mut players = Vec::new();
-                for (club_index, squad) in squads.into_iter().enumerate() {
-                    for (
-                        position,
-                        ca,
-                        contract_seasons_remaining,
-                        age_years,
-                        potential_ability,
-                        loyalty,
-                    ) in squad
-                    {
-                        players.push(MarketPlayer {
-                            player: PlayerId::new(next_id),
-                            club: ClubId::new(club_index as u32),
+            let club_reputation = prop::collection::vec(any::<u8>(), n_clubs);
+            (squads, budgets, club_reputation).prop_map(
+                |(squads, budget_cents, club_reputation)| {
+                    let mut next_id = 0u32;
+                    let mut players = Vec::new();
+                    for (club_index, squad) in squads.into_iter().enumerate() {
+                        for (
                             position,
-                            current_ability: ca,
+                            ca,
                             contract_seasons_remaining,
                             age_years,
                             potential_ability,
                             loyalty,
-                        });
-                        next_id += 1;
+                            ambition,
+                        ) in squad
+                        {
+                            players.push(MarketPlayer {
+                                player: PlayerId::new(next_id),
+                                club: ClubId::new(club_index as u32),
+                                position,
+                                current_ability: ca,
+                                contract_seasons_remaining,
+                                age_years,
+                                potential_ability,
+                                loyalty,
+                                ambition,
+                            });
+                            next_id += 1;
+                        }
                     }
-                }
-                let budgets = budget_cents.into_iter().map(Money::from_cents).collect();
-                (players, budgets)
-            })
+                    let budgets = budget_cents.into_iter().map(Money::from_cents).collect();
+                    (players, budgets, club_reputation)
+                },
+            )
         })
     }
 
@@ -650,9 +807,9 @@ mod proptests {
         /// vendedor, nunca menos nem mais (economia fechada, ver o doc do
         /// módulo).
         #[test]
-        fn dinheiro_total_e_conservado((mut players, mut budgets) in arbitrary_league()) {
+        fn dinheiro_total_e_conservado((mut players, mut budgets, club_reputation) in arbitrary_league()) {
             let total_before: i64 = budgets.iter().map(|b| b.cents()).sum();
-            let _ = run_market_day(&mut players, &mut budgets);
+            let _ = run_market_day(&mut players, &mut budgets, &club_reputation);
             let total_after: i64 = budgets.iter().map(|b| b.cents()).sum();
             prop_assert_eq!(total_before, total_after);
         }
@@ -660,14 +817,14 @@ mod proptests {
         /// Puro e determinístico: a mesma liga sempre produz a mesma
         /// sequência de transferências e o mesmo estado final.
         #[test]
-        fn e_deterministico_para_qualquer_liga((players, budgets) in arbitrary_league()) {
+        fn e_deterministico_para_qualquer_liga((players, budgets, club_reputation) in arbitrary_league()) {
             let mut a = players.clone();
             let mut budgets_a = budgets.clone();
-            let ta = run_market_day(&mut a, &mut budgets_a);
+            let ta = run_market_day(&mut a, &mut budgets_a, &club_reputation);
 
             let mut b = players;
             let mut budgets_b = budgets;
-            let tb = run_market_day(&mut b, &mut budgets_b);
+            let tb = run_market_day(&mut b, &mut budgets_b, &club_reputation);
 
             prop_assert_eq!(ta, tb);
             prop_assert_eq!(a, b);

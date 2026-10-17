@@ -48,6 +48,10 @@
 //! ([`consistency::apply_consistency_swing`], ruído zero-médio, não
 //! direcionado); consistência máxima nunca balança. Sem efeito em copa
 //! (sem granularidade de rodada lá, ver [`cup`]) nem no caminho estático.
+//! Ambição ([`market::generate_ambition`]) é a sétima: jogador muito
+//! ambicioso recusa ir pra um clube de reputação menor que a do seu
+//! clube atual em [`run_market_day`], mesmo com preço e lealdade batendo;
+//! pouco ambicioso aceita qualquer destino, igual a antes desta fatia.
 #![warn(clippy::all)]
 
 mod condition;
@@ -72,7 +76,7 @@ pub use cup::{CupMatch, CupResult, cup_participants, generate_big_game_mentality
 pub use discipline::generate_dirtiness;
 pub use finance::{generate_budgets, generate_stadium_capacities, pay_salaries, salary_per_season};
 pub use injuries::{generate_injury_proneness, roll_injuries};
-pub use market::{generate_loyalty, run_market_day};
+pub use market::{generate_ambition, generate_loyalty, run_market_day};
 pub use progression::{PlayerState, advance_season, generate_professionalism, initial_roster};
 pub use quality::{
     generate_match_profiles, generate_match_profiles_from_roster, starters_from_roster_all_clubs,
