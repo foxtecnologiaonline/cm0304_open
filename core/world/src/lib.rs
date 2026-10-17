@@ -42,10 +42,16 @@
 //! mesma. Jogo importante ([`cup::generate_big_game_mentality`]) é a
 //! quinta: time com titulares de mentalidade mais alta rende um pouco
 //! mais na copa ([`cup::apply_big_game_bonus`], 0,9x a 1,1x de força),
-//! sem nenhum efeito na liga.
+//! sem nenhum efeito na liga. Consistência
+//! ([`consistency::generate_consistency`]) é a sexta: time com titulares
+//! inconsistentes balança até ±20% de força a cada rodada de liga
+//! ([`consistency::apply_consistency_swing`], ruído zero-médio, não
+//! direcionado); consistência máxima nunca balança. Sem efeito em copa
+//! (sem granularidade de rodada lá, ver [`cup`]) nem no caminho estático.
 #![warn(clippy::all)]
 
 mod condition;
+mod consistency;
 mod contract;
 mod cup;
 mod discipline;
@@ -60,6 +66,7 @@ mod season;
 mod strength;
 
 pub use condition::{FULL_CONDITION, apply_season_fatigue};
+pub use consistency::generate_consistency;
 pub use contract::{ContractState, advance_contracts, generate_initial_contracts};
 pub use cup::{CupMatch, CupResult, cup_participants, generate_big_game_mentality, run_cup};
 pub use discipline::generate_dirtiness;

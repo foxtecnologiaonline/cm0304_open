@@ -72,7 +72,8 @@ cm0304_open/
 │  │                       #    condição física por temporada (docs/01 RF-JG-07) + suspensões
 │  │                       #    por expulsão (liga simulada rodada a rodada, docs/01 RF-JG-09,
 │  │                       #    pesada por sujeira sintética) + copa com bônus de "jogo
-│  │                       #    importante" sintético (docs/01 RF-JG-02) +
+│  │                       #    importante" sintético (docs/01 RF-JG-02) + força de liga
+│  │                       #    balançada por rodada conforme consistência sintética +
 │  │                       #    folha salarial + duração de contrato (M2, docs/01 RF-CL-02) +
 │  │                       #    bilheteria influenciada por reputação de clube (M2, docs/01
 │  │                       #    RF-CL-03/RF-MU-08)
@@ -96,7 +97,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 328 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 334 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier

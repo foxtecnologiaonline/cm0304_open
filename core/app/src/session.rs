@@ -150,6 +150,12 @@ pub struct GameSession {
     /// `world::CareerRound::big_game_mentality` pra escalar a força de
     /// cada clube só na copa.
     big_game_mentality: Vec<u8>,
+    /// Consistência de cada jogador, 0-100, no mesmo índice denso que
+    /// `roster` (`world::generate_consistency`, sintética — mesmo status
+    /// de `big_game_mentality`). Gerada uma vez em [`Self::new`] e nunca
+    /// muda depois. Usada por `world::CareerRound::consistency` pra
+    /// balançar a força de cada clube a cada rodada de liga.
+    consistency: Vec<u8>,
     world_seed: u64,
     /// Uma entrada por temporada já simulada — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
@@ -181,6 +187,7 @@ impl GameSession {
         let loyalty = world::generate_loyalty(&report.pack, world_seed);
         let dirtiness = world::generate_dirtiness(&report.pack, world_seed);
         let big_game_mentality = world::generate_big_game_mentality(&report.pack, world_seed);
+        let consistency = world::generate_consistency(&report.pack, world_seed);
         let profiles =
             world::generate_match_profiles_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
@@ -202,6 +209,7 @@ impl GameSession {
             loyalty,
             dirtiness,
             big_game_mentality,
+            consistency,
             world_seed,
             history: Vec::new(),
         })
@@ -335,6 +343,7 @@ impl GameSession {
                     club_reputation: &self.club_reputation,
                     dirtiness: &self.dirtiness,
                     big_game_mentality: &self.big_game_mentality,
+                    consistency: &self.consistency,
                 };
                 let result = world::run_season(
                     &self.pack,

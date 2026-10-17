@@ -306,7 +306,7 @@ aqui e volta ao design** — é para isso que o marco existe.
 > e "IA" de RF-MU-08, e reputação de país (a outra metade do requisito),
 > ainda faltam.
 >
-> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas cinco
+> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas seis
 > primeiras fatias reais: `world::generate_injury_proneness` sorteia uma
 > **propensão a lesão** sintética (0-100) por jogador, uma vez por
 > carreira, e `world::roll_injuries` passa a variar a chance de lesão por
@@ -330,9 +330,15 @@ aqui e volta ao design** — é para isso que o marco existe.
 > do mesmo jeito, e `world::apply_big_game_bonus` escala a força de cada
 > clube só na copa (0,9x a 1,1x conforme a média dos titulares) antes de
 > cada confronto de mata-mata — a liga nunca é afetada, e o caminho
-> estático de `calibrate`/`bench` continua usando a força bruta. Os outros
-> três atributos ocultos do requisito (consistência, adaptação, ambição)
-> ainda não existem.
+> estático de `calibrate`/`bench` continua usando a força bruta.
+> `world::generate_consistency` sorteia **consistência** (0-100) do mesmo
+> jeito, e `world::apply_consistency_swing` balança a força de cada clube
+> a cada rodada de liga (ruído zero-médio: ±0% com consistência 100 a
+> ±20% com consistência 0) — ao contrário de sujeira/jogo importante,
+> não direciona nada, só aumenta a variância de time inconsistente; sem
+> efeito em copa (sem granularidade de rodada lá) nem no caminho
+> estático. Os outros dois atributos ocultos do requisito (adaptação,
+> ambição) ainda não existem.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da

@@ -186,8 +186,17 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > mata-mata; a força usada pela liga nunca muda. Só existe no caminho de
 > carreira (mesma disciplina de sujeira/lealdade/profissionalismo/
 > propensão a lesão); o caminho estático (`calibrate`/`bench`) continua
-> usando a força bruta, sem bônus algum. Consistência, adaptação e ambição
-> (os outros três atributos ocultos de RF-JG-02) ainda não existem.
+> usando a força bruta, sem bônus algum. **Consistência** é a sexta:
+> `world::generate_consistency` sorteia uma consistência sintética (0-100)
+> por jogador, uma vez por carreira, e `world::apply_consistency_swing`
+> balança a força de cada clube a cada rodada **de liga** — sorteio
+> zero-médio, de ±0% com consistência 100 a ±20% com consistência 0 — ao
+> contrário de sujeira/jogo importante (que direcionam um resultado), isto
+> é ruído: ao longo de muitas rodadas a força esperada não muda, só a
+> variância observada aumenta pra time inconsistente. Mesmo caminho de
+> carreira apenas, e sem efeito em copa (ela não tem granularidade de
+> rodada, ver acima). Adaptação e ambição (os outros dois atributos
+> ocultos de RF-JG-02) ainda não existem.
 > `world::condition`
 > cobre uma fatia mínima de RF-JG-07, só a parte de "condição física": a
 > condição de entrada de cada jogador na temporada é recalculada do zero a

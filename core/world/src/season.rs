@@ -18,10 +18,13 @@
 //! até essa fatia toda liga era simulada de uma vez, sem nenhum ponto no
 //! meio da temporada onde "o jogador X está fora desta rodada" pudesse ter
 //! efeito; bilheteria por rodada aproveitou o mesmo ponto de simulação, por
-//! já existir. Cup (`crate::cup`) não ganha essa granularidade — continua
-//! usando o perfil estático do início da temporada em qualquer um dos dois
-//! casos, e não gera bilheteria nem é afetada por suspensão (mesma exclusão
-//! de `crate::condition`).
+//! já existir. Consistência (`crate::consistency`) também aproveita esse
+//! mesmo ponto: cada perfil de rodada recebe um balanço de força zero-médio
+//! conforme a consistência dos titulares daquela rodada, antes de simular
+//! qualquer partida dela. Cup (`crate::cup`) não ganha essa granularidade —
+//! continua usando o perfil estático do início da temporada em qualquer um
+//! dos dois casos, e não gera bilheteria nem é afetada por suspensão ou
+//! consistência (mesma exclusão de `crate::condition`).
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -57,6 +60,12 @@ pub struct CareerRound<'a> {
     /// clube só na copa (`crate::cup::apply_big_game_bonus`), mesmo índice
     /// denso do roster inteiro.
     pub big_game_mentality: &'a [u8],
+    /// Consistência de cada jogador, 0-100
+    /// (`crate::consistency::generate_consistency`) — balança a força de
+    /// cada clube a cada rodada de liga
+    /// (`crate::consistency::apply_consistency_swing`), mesmo índice denso
+    /// do roster inteiro.
+    pub consistency: &'a [u8],
 }
 
 /// Resultado de simular uma temporada inteira, competição por competição.
@@ -357,9 +366,20 @@ fn simulate_round_robin_for_career(
                 &suspended,
                 world_seed,
             );
-            round_profiles.insert(club, profile);
             let starters =
                 crate::quality::starters_from_roster_excluding(career.roster, club, &suspended);
+            // Balanço de consistência (RF-JG-02, `crate::consistency`):
+            // ruído zero-médio por rodada, não um direcionamento como
+            // sujeira/jogo importante — ver o doc do módulo.
+            let profile = crate::consistency::apply_consistency_swing(
+                profile,
+                &starters,
+                career.consistency,
+                world_seed,
+                club,
+                crate::discipline::season_round_tick(season_index, round),
+            );
+            round_profiles.insert(club, profile);
             starters_by_club.push((club, starters));
         }
 
@@ -506,6 +526,13 @@ mod tests {
         vec![50; pack.players.len()]
     }
 
+    /// Consistência máxima pra todo mundo — zera o balanço de
+    /// `crate::consistency::apply_consistency_swing` (ver o doc do módulo),
+    /// pros testes que não são sobre o efeito da consistência em si.
+    fn example_consistency(pack: &LoadedPack) -> Vec<u8> {
+        vec![100; pack.players.len()]
+    }
+
     #[test]
     fn roda_uma_temporada_no_pack_de_exemplo_sem_travar() {
         let p = example_pack();
@@ -541,6 +568,7 @@ mod tests {
         let reputation = example_reputation(&p);
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
+        let consistency = example_consistency(&p);
         let career = CareerRound {
             roster: &roster,
             budgets: &mut budgets,
@@ -548,6 +576,7 @@ mod tests {
             club_reputation: &reputation,
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
+            consistency: &consistency,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -572,6 +601,7 @@ mod tests {
         let reputation = example_reputation(&p);
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
+        let consistency = example_consistency(&p);
 
         let mut budgets_a = vec![Money::ZERO; p.clubs.len()];
         let career_a = CareerRound {
@@ -581,6 +611,7 @@ mod tests {
             club_reputation: &reputation,
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
+            consistency: &consistency,
         };
         let a = run_season(&p, &membership, &profiles, Some(career_a), 7, 0);
 
@@ -592,6 +623,7 @@ mod tests {
             club_reputation: &reputation,
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
+            consistency: &consistency,
         };
         let b = run_season(&p, &membership, &profiles, Some(career_b), 7, 0);
         assert_eq!(a, b);
@@ -614,6 +646,7 @@ mod tests {
         let reputation = example_reputation(&p);
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
+        let consistency = example_consistency(&p);
 
         let total_suspensions: usize = (0..10)
             .map(|season_index| {
@@ -625,6 +658,7 @@ mod tests {
                     club_reputation: &reputation,
                     dirtiness: &dirtiness,
                     big_game_mentality: &big_game_mentality,
+                    consistency: &consistency,
                 };
                 run_season(&p, &membership, &profiles, Some(career), 1, season_index).suspensions
             })
@@ -649,6 +683,7 @@ mod tests {
         let reputation = example_reputation(&p);
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
+        let consistency = example_consistency(&p);
         let mut budgets = vec![Money::ZERO; p.clubs.len()];
 
         let career = CareerRound {
@@ -658,6 +693,7 @@ mod tests {
             club_reputation: &reputation,
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
+            consistency: &consistency,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -686,6 +722,7 @@ mod tests {
         let capacities = example_capacities(&p);
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
+        let consistency = example_consistency(&p);
 
         let high_reputation = vec![100; p.clubs.len()];
         let mut budgets_high = vec![Money::ZERO; p.clubs.len()];
@@ -696,6 +733,7 @@ mod tests {
             club_reputation: &high_reputation,
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
+            consistency: &consistency,
         };
         let high = run_season(&p, &membership, &profiles, Some(career_high), 42, 0);
 
@@ -708,6 +746,7 @@ mod tests {
             club_reputation: &low_reputation,
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
+            consistency: &consistency,
         };
         let low = run_season(&p, &membership, &profiles, Some(career_low), 42, 0);
 
