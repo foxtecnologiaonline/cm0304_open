@@ -39,7 +39,10 @@
 //! "sujo" tem mais chance de ser o escolhido quando o time sofre uma
 //! expulsão em [`discipline::roll_suspensions`], em vez de sorteio
 //! uniforme entre os titulares — a chance do time ser expulso continua a
-//! mesma.
+//! mesma. Jogo importante ([`cup::generate_big_game_mentality`]) é a
+//! quinta: time com titulares de mentalidade mais alta rende um pouco
+//! mais na copa ([`cup::apply_big_game_bonus`], 0,9x a 1,1x de força),
+//! sem nenhum efeito na liga.
 #![warn(clippy::all)]
 
 mod condition;
@@ -58,7 +61,7 @@ mod strength;
 
 pub use condition::{FULL_CONDITION, apply_season_fatigue};
 pub use contract::{ContractState, advance_contracts, generate_initial_contracts};
-pub use cup::{CupMatch, CupResult, cup_participants, run_cup};
+pub use cup::{CupMatch, CupResult, cup_participants, generate_big_game_mentality, run_cup};
 pub use discipline::generate_dirtiness;
 pub use finance::{generate_budgets, generate_stadium_capacities, pay_salaries, salary_per_season};
 pub use injuries::{generate_injury_proneness, roll_injuries};

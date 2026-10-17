@@ -178,8 +178,17 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > `1 + sujeira/10`: de 1x a 11x mais chance que o jogador mais limpo
 > possível) em vez de uniforme — a chance do **time** ser expulso em cada
 > partida continua fixa em ~4%, só "quem, dentro do time" muda.
-> Consistência, jogo importante, adaptação e ambição (os outros quatro
-> atributos ocultos de RF-JG-02) ainda não existem. `world::condition`
+> **Jogo importante** é a quinta: `world::generate_big_game_mentality`
+> sorteia uma mentalidade sintética (0-100) por jogador, uma vez por
+> carreira, e `world::apply_big_game_bonus` escala a força de cada clube
+> **só na copa** (`RF-MU-03`) conforme a média dos titulares — 0,9x com
+> média 0 a 1,1x com média 100 — antes de simular cada confronto de
+> mata-mata; a força usada pela liga nunca muda. Só existe no caminho de
+> carreira (mesma disciplina de sujeira/lealdade/profissionalismo/
+> propensão a lesão); o caminho estático (`calibrate`/`bench`) continua
+> usando a força bruta, sem bônus algum. Consistência, adaptação e ambição
+> (os outros três atributos ocultos de RF-JG-02) ainda não existem.
+> `world::condition`
 > cobre uma fatia mínima de RF-JG-07, só a parte de "condição física": a
 > condição de entrada de cada jogador na temporada é recalculada do zero a
 > cada uma (não é cumulativo entre temporadas) a partir de quantas partidas

@@ -306,7 +306,7 @@ aqui e volta ao design** — é para isso que o marco existe.
 > e "IA" de RF-MU-08, e reputação de país (a outra metade do requisito),
 > ainda faltam.
 >
-> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas quatro
+> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas cinco
 > primeiras fatias reais: `world::generate_injury_proneness` sorteia uma
 > **propensão a lesão** sintética (0-100) por jogador, uma vez por
 > carreira, e `world::roll_injuries` passa a variar a chance de lesão por
@@ -325,8 +325,13 @@ aqui e volta ao design** — é para isso que o marco existe.
 > e `world::roll_suspensions` (RF-JG-09) passa a pesar o sorteio de quem é
 > expulso dentro dos titulares a favor de quem é mais sujo (1x a 11x mais
 > chance que o mais limpo), em vez de uniforme — a chance do time ser
-> expulso continua fixa em ~4%, só "quem" muda. Os outros quatro atributos
-> ocultos do requisito (consistência, jogo importante, adaptação, ambição)
+> expulso continua fixa em ~4%, só "quem" muda.
+> `world::generate_big_game_mentality` sorteia **jogo importante** (0-100)
+> do mesmo jeito, e `world::apply_big_game_bonus` escala a força de cada
+> clube só na copa (0,9x a 1,1x conforme a média dos titulares) antes de
+> cada confronto de mata-mata — a liga nunca é afetada, e o caminho
+> estático de `calibrate`/`bench` continua usando a força bruta. Os outros
+> três atributos ocultos do requisito (consistência, adaptação, ambição)
 > ainda não existem.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):

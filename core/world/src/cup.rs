@@ -24,10 +24,27 @@
 //! calibração sem ninguém perceber (foi exatamente esse tipo de
 //! contaminação silenciosa que `managerfc-cli calibrate --check` existe
 //! para detectar, `docs/04 §4.2`).
+//!
+//! **"Jogo importante"** — quinta fatia real de RF-JG-02 (atributos
+//! ocultos, `docs/01 §2.3`) — mora aqui porque a copa é a única "partida
+//! importante" que existe hoje (um mata-mata de eliminação direta, ao
+//! contrário de qualquer rodada de liga): [`generate_big_game_mentality`]
+//! sorteia uma mentalidade sintética (0-100) por jogador, uma vez por
+//! carreira, e [`apply_big_game_bonus`] escala a força de cada clube **só
+//! para a copa** conforme a média dos titulares (0,9x com média 0 a 1,1x
+//! com média 100) antes de chamar [`run_cup`] — a força usada pela liga no
+//! mesmo `profiles` não muda. Só existe no caminho de carreira
+//! (`roster: Some`); no caminho estático (`managerfc-cli
+//! calibrate`/`bench`), `apply_big_game_bonus` devolve `profiles` sem
+//! tocar em nada, mesma disciplina de todo outro atributo oculto de
+//! RF-JG-02 (`world::injuries`/`world::progression`/`world::market`/
+//! `world::discipline`).
 
-use domain::{ClubId, CompetitionId, DeterministicRng};
+use domain::{ClubId, CompetitionId, DeterministicRng, PlayerId};
 use engine::{MatchContext, TeamMatchProfile};
 use pack::{LoadedPack, ResolvedCompetition};
+
+use crate::progression::PlayerState;
 
 /// Uma partida de mata-mata já disputada — sempre com um vencedor (nunca
 /// fica empatada, ver doc do módulo).
@@ -65,6 +82,88 @@ pub fn cup_participants(pack: &LoadedPack, competition: &ResolvedCompetition) ->
         .filter(|c| c.nation == competition.nation)
         .map(|c| c.id)
         .collect()
+}
+
+/// Piso e teto da mentalidade sintética de "jogo importante", em escala
+/// 0-100 — mesmo layout de `crate::discipline`/`crate::reputation`.
+const MIN_SYNTHETIC_BIG_GAME_MENTALITY: u8 = 0;
+const MAX_SYNTHETIC_BIG_GAME_MENTALITY: u8 = 100;
+
+/// Gera a mentalidade de "jogo importante" de cada jogador do pack, na mesma
+/// ordem (e portanto no mesmo índice denso) que
+/// `crate::progression::initial_roster`. Chamada uma vez por carreira
+/// (`app::GameSession::new`): sem atributos ocultos de verdade ainda
+/// (RF-JG-02 completo), a mentalidade de um jogador nunca muda depois de
+/// gerada.
+#[must_use]
+pub fn generate_big_game_mentality(pack: &LoadedPack, world_seed: u64) -> Vec<u8> {
+    pack.players
+        .iter()
+        .map(|p| synthetic_big_game_mentality(p.id, world_seed))
+        .collect()
+}
+
+fn synthetic_big_game_mentality(player: PlayerId, world_seed: u64) -> u8 {
+    let mut rng = DeterministicRng::seeded(
+        world_seed,
+        "world.big_game_mentality",
+        u64::from(player.index()),
+        0,
+    );
+    let span = u32::from(MAX_SYNTHETIC_BIG_GAME_MENTALITY - MIN_SYNTHETIC_BIG_GAME_MENTALITY) + 1;
+    MIN_SYNTHETIC_BIG_GAME_MENTALITY
+        + u8::try_from(rng.below(span)).expect("span cabe em u8 (0..=100)")
+}
+
+/// Multiplicador de força de um clube na copa, em milésimos (`Fixed`),
+/// conforme a mentalidade média dos titulares: `900` (média 0, 0,9x) a
+/// `1100` (média 100, 1,1x) — não calibrado, só a direção certa.
+const BIG_GAME_BONUS_BASE_PERMILLE: i64 = 900;
+const BIG_GAME_BONUS_SLOPE_PERMILLE: i64 = 2;
+
+/// Aplica o bônus de "jogo importante" ao perfil de cada clube antes de
+/// simular a copa — ver o doc do módulo. `career`, quando `Some((roster,
+/// mentality))`, escala a força de cada clube pela média de
+/// [`synthetic_big_game_mentality`] dos seus titulares atuais
+/// (`crate::quality::starters_from_roster`); `mentality` tem que estar no
+/// mesmo índice denso que `roster` inteiro (`generate_big_game_mentality`).
+/// `None` devolve `profiles` sem nenhuma mudança — caminho estático, ver o
+/// doc do módulo.
+#[must_use]
+pub fn apply_big_game_bonus(
+    pack: &LoadedPack,
+    career: Option<(&[PlayerState], &[u8])>,
+    profiles: &[TeamMatchProfile],
+) -> Vec<TeamMatchProfile> {
+    let Some((roster, mentality)) = career else {
+        return profiles.to_vec();
+    };
+    pack.clubs
+        .iter()
+        .map(|club| {
+            let idx = club.id.as_usize();
+            let starters = crate::quality::starters_from_roster(roster, club.id);
+            if starters.is_empty() {
+                return profiles[idx];
+            }
+            let total: u32 = starters
+                .iter()
+                .map(|&p| u32::from(mentality[p.as_usize()]))
+                .sum();
+            let average = total / starters.len() as u32;
+            scale_strength_for_cup(profiles[idx], average)
+        })
+        .collect()
+}
+
+fn scale_strength_for_cup(profile: TeamMatchProfile, average_mentality: u32) -> TeamMatchProfile {
+    let multiplier_permille =
+        BIG_GAME_BONUS_BASE_PERMILLE + i64::from(average_mentality) * BIG_GAME_BONUS_SLOPE_PERMILLE;
+    let multiplier = domain::Fixed::from_ratio(multiplier_permille, 1000);
+    TeamMatchProfile {
+        strength: engine::TeamStrength::new(profile.strength.value() * multiplier),
+        ..profile
+    }
 }
 
 /// Simula uma copa inteira (todas as rodadas até sobrar um campeão) para
@@ -161,7 +260,103 @@ fn cup_fixture_key(season_index: u32, home: ClubId, away: ClubId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::{Ability, GameDate, NationId, PlayerAttributes, Position};
     use engine::{FinishingQuality, GoalkeepingQuality, TeamStrength};
+    use pack::{ResolvedClub, ResolvedNation, ResolvedPlayer};
+
+    /// Dois clubes, um jogador titular cada — o mínimo pra
+    /// `crate::quality::starters_from_roster` devolver um titular por
+    /// clube sem precisar de um elenco completo.
+    fn two_club_pack() -> LoadedPack {
+        let nation = ResolvedNation {
+            id: NationId::new(0),
+            external_id: "ex".to_string(),
+            name: "Ex".to_string(),
+        };
+        let club_a = ResolvedClub {
+            id: ClubId::new(0),
+            external_id: "ex.a".to_string(),
+            name: "A".to_string(),
+            nation: nation.id,
+            competition: CompetitionId::new(0),
+            founded: None,
+            stadium: None,
+        };
+        let club_b = ResolvedClub {
+            id: ClubId::new(1),
+            external_id: "ex.b".to_string(),
+            name: "B".to_string(),
+            nation: nation.id,
+            competition: CompetitionId::new(0),
+            founded: None,
+            stadium: None,
+        };
+        let players = vec![
+            ResolvedPlayer {
+                id: PlayerId::new(0),
+                external_id: "ex.a.p00".to_string(),
+                first_name: "N".to_string(),
+                last_name: "S".to_string(),
+                birth: GameDate::from_ymd(2000, 1, 1),
+                nation: nation.id,
+                club: club_a.id,
+                position: Position::Midfielder,
+                attributes: PlayerAttributes::default(),
+                ability: Ability::new(100, 150),
+            },
+            ResolvedPlayer {
+                id: PlayerId::new(1),
+                external_id: "ex.b.p00".to_string(),
+                first_name: "N".to_string(),
+                last_name: "S".to_string(),
+                birth: GameDate::from_ymd(2000, 1, 1),
+                nation: nation.id,
+                club: club_b.id,
+                position: Position::Midfielder,
+                attributes: PlayerAttributes::default(),
+                ability: Ability::new(100, 150),
+            },
+        ];
+        LoadedPack {
+            reference_year: 2026,
+            nations: vec![nation],
+            competitions: vec![],
+            clubs: vec![club_a, club_b],
+            players,
+        }
+    }
+
+    #[test]
+    fn generate_big_game_mentality_e_deterministica_para_a_mesma_seed() {
+        let p = two_club_pack();
+        assert_eq!(
+            generate_big_game_mentality(&p, 7),
+            generate_big_game_mentality(&p, 7)
+        );
+    }
+
+    #[test]
+    fn apply_big_game_bonus_sem_career_devolve_profiles_inalterados() {
+        let p = two_club_pack();
+        let profiles = vec![profile(300), profile(300)];
+        assert_eq!(apply_big_game_bonus(&p, None, &profiles), profiles);
+    }
+
+    #[test]
+    fn apply_big_game_bonus_favorece_time_com_mentalidade_mais_alta() {
+        let p = two_club_pack();
+        let roster = crate::progression::initial_roster(&p);
+        // Jogador 0 (clube A): mentalidade máxima; jogador 1 (clube B): mínima.
+        let mentality = vec![100u8, 0u8];
+        let profiles = vec![profile(300), profile(300)];
+
+        let boosted = apply_big_game_bonus(&p, Some((&roster, &mentality)), &profiles);
+
+        assert!(boosted[0].strength.value() > boosted[1].strength.value());
+        // 300 × 1,1 (mentalidade 100) = 330; 300 × 0,9 (mentalidade 0) = 270.
+        assert_eq!(boosted[0].strength.value(), domain::Fixed::from_int(330));
+        assert_eq!(boosted[1].strength.value(), domain::Fixed::from_int(270));
+    }
 
     fn profile(strength: i32) -> TeamMatchProfile {
         TeamMatchProfile {

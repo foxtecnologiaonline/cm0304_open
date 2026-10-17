@@ -52,6 +52,11 @@ pub struct CareerRound<'a> {
     /// (`crate::discipline::roll_suspensions`), mesmo índice denso do
     /// roster inteiro (não só os titulares da rodada).
     pub dirtiness: &'a [u8],
+    /// Mentalidade de "jogo importante" de cada jogador, 0-100
+    /// (`crate::cup::generate_big_game_mentality`) — escala a força de cada
+    /// clube só na copa (`crate::cup::apply_big_game_bonus`), mesmo índice
+    /// denso do roster inteiro.
+    pub big_game_mentality: &'a [u8],
 }
 
 /// Resultado de simular uma temporada inteira, competição por competição.
@@ -219,12 +224,21 @@ pub fn run_season(
                 // `matches_played`/`total_goals`/etc — ver doc de
                 // `SeasonResult::cups`. Sempre usa o perfil estático do
                 // início da temporada, mesmo no caminho de carreira —
-                // suspensão não afeta copa (doc do módulo).
+                // suspensão não afeta copa (doc do módulo). "Jogo
+                // importante" (`crate::cup::apply_big_game_bonus`) escala
+                // essa força só para a copa, e só no caminho de carreira
+                // (`None` no caminho estático devolve `profiles` sem
+                // mudar nada, ver o doc de `crate::cup`).
                 let participants = crate::cup::cup_participants(pack, competition);
+                let cup_profiles = crate::cup::apply_big_game_bonus(
+                    pack,
+                    career.as_ref().map(|c| (c.roster, c.big_game_mentality)),
+                    profiles,
+                );
                 if let Some(result) = crate::cup::run_cup(
                     competition.id,
                     &participants,
-                    profiles,
+                    &cup_profiles,
                     world_seed,
                     season_index,
                 ) {
@@ -486,6 +500,12 @@ mod tests {
         vec![50; pack.players.len()]
     }
 
+    /// Mentalidade de "jogo importante" fixa "neutra" — mesmo motivo de
+    /// `example_dirtiness`.
+    fn example_big_game_mentality(pack: &LoadedPack) -> Vec<u8> {
+        vec![50; pack.players.len()]
+    }
+
     #[test]
     fn roda_uma_temporada_no_pack_de_exemplo_sem_travar() {
         let p = example_pack();
@@ -520,12 +540,14 @@ mod tests {
         let capacities = example_capacities(&p);
         let reputation = example_reputation(&p);
         let dirtiness = example_dirtiness(&p);
+        let big_game_mentality = example_big_game_mentality(&p);
         let career = CareerRound {
             roster: &roster,
             budgets: &mut budgets,
             stadium_capacities: &capacities,
             club_reputation: &reputation,
             dirtiness: &dirtiness,
+            big_game_mentality: &big_game_mentality,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -549,6 +571,7 @@ mod tests {
         let capacities = example_capacities(&p);
         let reputation = example_reputation(&p);
         let dirtiness = example_dirtiness(&p);
+        let big_game_mentality = example_big_game_mentality(&p);
 
         let mut budgets_a = vec![Money::ZERO; p.clubs.len()];
         let career_a = CareerRound {
@@ -557,6 +580,7 @@ mod tests {
             stadium_capacities: &capacities,
             club_reputation: &reputation,
             dirtiness: &dirtiness,
+            big_game_mentality: &big_game_mentality,
         };
         let a = run_season(&p, &membership, &profiles, Some(career_a), 7, 0);
 
@@ -567,6 +591,7 @@ mod tests {
             stadium_capacities: &capacities,
             club_reputation: &reputation,
             dirtiness: &dirtiness,
+            big_game_mentality: &big_game_mentality,
         };
         let b = run_season(&p, &membership, &profiles, Some(career_b), 7, 0);
         assert_eq!(a, b);
@@ -588,6 +613,7 @@ mod tests {
         let capacities = example_capacities(&p);
         let reputation = example_reputation(&p);
         let dirtiness = example_dirtiness(&p);
+        let big_game_mentality = example_big_game_mentality(&p);
 
         let total_suspensions: usize = (0..10)
             .map(|season_index| {
@@ -598,6 +624,7 @@ mod tests {
                     stadium_capacities: &capacities,
                     club_reputation: &reputation,
                     dirtiness: &dirtiness,
+                    big_game_mentality: &big_game_mentality,
                 };
                 run_season(&p, &membership, &profiles, Some(career), 1, season_index).suspensions
             })
@@ -621,6 +648,7 @@ mod tests {
         let capacities = example_capacities(&p);
         let reputation = example_reputation(&p);
         let dirtiness = example_dirtiness(&p);
+        let big_game_mentality = example_big_game_mentality(&p);
         let mut budgets = vec![Money::ZERO; p.clubs.len()];
 
         let career = CareerRound {
@@ -629,6 +657,7 @@ mod tests {
             stadium_capacities: &capacities,
             club_reputation: &reputation,
             dirtiness: &dirtiness,
+            big_game_mentality: &big_game_mentality,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -656,6 +685,7 @@ mod tests {
         let profiles = crate::quality::generate_match_profiles(&p, 42);
         let capacities = example_capacities(&p);
         let dirtiness = example_dirtiness(&p);
+        let big_game_mentality = example_big_game_mentality(&p);
 
         let high_reputation = vec![100; p.clubs.len()];
         let mut budgets_high = vec![Money::ZERO; p.clubs.len()];
@@ -665,6 +695,7 @@ mod tests {
             stadium_capacities: &capacities,
             club_reputation: &high_reputation,
             dirtiness: &dirtiness,
+            big_game_mentality: &big_game_mentality,
         };
         let high = run_season(&p, &membership, &profiles, Some(career_high), 42, 0);
 
@@ -676,6 +707,7 @@ mod tests {
             stadium_capacities: &capacities,
             club_reputation: &low_reputation,
             dirtiness: &dirtiness,
+            big_game_mentality: &big_game_mentality,
         };
         let low = run_season(&p, &membership, &profiles, Some(career_low), 42, 0);
 
