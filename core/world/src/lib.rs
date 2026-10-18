@@ -4,7 +4,7 @@
 //! a `ai` de clube; é o portão do M1
 //! (`docs/07-roadmap.md#m1--kick-off-headless-10-semanas`).
 //!
-//! Ainda não implementado: regens, aposentadoria, moral, calendário mensal
+//! Ainda não implementado: regens, aposentadoria, calendário mensal
 //! (`docs/07-roadmap.md`). Clubes sem elenco no pack usam força e
 //! orçamento sintéticos ([`strength`], [`finance`]), substitutos
 //! documentados, não uma simulação de elenco. Copa ([`cup`]) é fase única,
@@ -12,10 +12,16 @@
 //! estreito que uma copa de verdade, documentado em [`cup`]. Condição
 //! ([`condition`]) é por temporada, não cumulativa e não cobre fadiga
 //! acumulada de carreira nem frescor dia a dia — documentado em
-//! [`condition`]. Suspensão ([`discipline`]) é a única coisa aqui com
-//! granularidade de rodada (liga simulada rodada a rodada no caminho de
-//! carreira, `season::run_season`) — sem cartão amarelo acumulado, sem
-//! reincidência, documentado em [`discipline`]. Folha salarial
+//! [`condition`]. Moral ([`morale::apply_morale`], RF-JG-07 ao lado de
+//! condição) é por clube, não por jogador: saldo de vitórias/derrotas nas
+//! últimas 3 partidas de liga já disputadas na temporada escala a força um
+//! pouco pra cima ou pra baixo — sem reação individual a minutos jogados
+//! ou decisão do técnico (RF-JG-10, personalidade, M4). Suspensão
+//! ([`discipline`]) foi a primeira coisa aqui com granularidade de rodada
+//! (liga simulada rodada a rodada no caminho de carreira,
+//! `season::run_season`) — sem cartão amarelo acumulado, sem reincidência,
+//! documentado em [`discipline`]; jogo importante, consistência, adaptação
+//! e moral reaproveitam o mesmo ponto de simulação depois. Folha salarial
 //! ([`finance::pay_salaries`]) é a primeira despesa recorrente de verdade
 //! — fatia mínima de RF-CL-02, sem contrato, duração, luvas ou cláusula.
 //! Bilheteria ([`finance::match_day_revenue`]) é a primeira receita
@@ -70,6 +76,7 @@ mod finance;
 mod fixture_key;
 mod injuries;
 mod market;
+mod morale;
 mod progression;
 mod quality;
 mod reputation;

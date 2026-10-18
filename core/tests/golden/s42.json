@@ -11,7 +11,7 @@
   "total_tired_players": 523,
   "total_suspensions": 26,
   "total_payroll_paid_cents": 432395000,
-  "total_match_day_revenue_cents": 202906500,
+  "total_match_day_revenue_cents": 202434030,
   "total_contracts_renewed": 186,
   "competitions": [
     {
@@ -30,91 +30,91 @@
       "table": [
         {
           "position": 1,
-          "club_name": "Rio Claro FC",
+          "club_name": "Pedra Branca FC",
           "played": 14,
-          "wins": 9,
-          "draws": 1,
+          "wins": 8,
+          "draws": 2,
           "losses": 4,
-          "goals_for": 30,
-          "goals_against": 23,
-          "points": 28
+          "goals_for": 25,
+          "goals_against": 10,
+          "points": 26
         },
         {
           "position": 2,
-          "club_name": "Pedra Branca FC",
+          "club_name": "Serra Alta FC",
           "played": 14,
-          "wins": 7,
-          "draws": 5,
-          "losses": 2,
-          "goals_for": 26,
-          "goals_against": 11,
+          "wins": 8,
+          "draws": 2,
+          "losses": 4,
+          "goals_for": 21,
+          "goals_against": 21,
           "points": 26
         },
         {
           "position": 3,
-          "club_name": "Campo Real FC",
+          "club_name": "Rio Claro FC",
           "played": 14,
-          "wins": 5,
-          "draws": 3,
+          "wins": 7,
+          "draws": 1,
           "losses": 6,
-          "goals_for": 18,
-          "goals_against": 19,
-          "points": 18
+          "goals_for": 24,
+          "goals_against": 23,
+          "points": 22
         },
         {
           "position": 4,
-          "club_name": "Serra Alta FC",
+          "club_name": "Ponte Alta FC",
           "played": 14,
-          "wins": 5,
-          "draws": 3,
+          "wins": 7,
+          "draws": 1,
           "losses": 6,
-          "goals_for": 18,
-          "goals_against": 23,
-          "points": 18
+          "goals_for": 21,
+          "goals_against": 22,
+          "points": 22
         },
         {
           "position": 5,
-          "club_name": "Cruz do Sul FC",
+          "club_name": "Baía Nova FC",
           "played": 14,
-          "wins": 4,
-          "draws": 6,
+          "wins": 6,
+          "draws": 4,
           "losses": 4,
-          "goals_for": 20,
-          "goals_against": 17,
-          "points": 18
+          "goals_for": 13,
+          "goals_against": 10,
+          "points": 22
         },
         {
           "position": 6,
           "club_name": "Lagoa Funda FC",
           "played": 14,
-          "wins": 4,
-          "draws": 4,
+          "wins": 3,
+          "draws": 5,
           "losses": 6,
-          "goals_for": 15,
-          "goals_against": 20,
-          "points": 16
+          "goals_for": 12,
+          "goals_against": 18,
+          "points": 14
         },
         {
           "position": 7,
-          "club_name": "Costa Azul FC",
+          "club_name": "Porto Solar FC",
           "played": 14,
-          "wins": 4,
-          "draws": 3,
+          "wins": 3,
+          "draws": 4,
           "losses": 7,
-          "goals_for": 16,
-          "goals_against": 22,
-          "points": 15
+          "goals_for": 19,
+          "goals_against": 25,
+          "points": 13
         },
         {
           "position": 8,
-          "club_name": "Porto Solar FC",
+          "club_name": "Campo Real FC",
           "played": 14,
-          "wins": 4,
+          "wins": 3,
           "draws": 3,
-          "losses": 7,
-          "goals_for": 19,
-          "goals_against": 27,
-          "points": 15
+          "losses": 8,
+          "goals_for": 18,
+          "goals_against": 24,
+          "points": 12
         }
       ],
       "cup_champion": null
@@ -128,92 +128,92 @@
           "club_name": "Vale Dourado FC",
           "played": 14,
           "wins": 7,
-          "draws": 4,
-          "losses": 3,
-          "goals_for": 20,
-          "goals_against": 13,
-          "points": 25
+          "draws": 3,
+          "losses": 4,
+          "goals_for": 19,
+          "goals_against": 11,
+          "points": 24
         },
         {
           "position": 2,
-          "club_name": "Ponte Alta FC",
+          "club_name": "Terra Firme FC",
           "played": 14,
-          "wins": 6,
-          "draws": 6,
-          "losses": 2,
-          "goals_for": 18,
-          "goals_against": 10,
+          "wins": 7,
+          "draws": 3,
+          "losses": 4,
+          "goals_for": 20,
+          "goals_against": 15,
           "points": 24
         },
         {
           "position": 3,
-          "club_name": "Baía Nova FC",
+          "club_name": "Boa Vista EC FC",
           "played": 14,
-          "wins": 5,
-          "draws": 5,
-          "losses": 4,
-          "goals_for": 13,
-          "goals_against": 13,
-          "points": 20
+          "wins": 7,
+          "draws": 1,
+          "losses": 6,
+          "goals_for": 21,
+          "goals_against": 21,
+          "points": 22
         },
         {
           "position": 4,
           "club_name": "Alto Verde FC",
           "played": 14,
-          "wins": 5,
+          "wins": 6,
           "draws": 4,
-          "losses": 5,
-          "goals_for": 18,
-          "goals_against": 17,
-          "points": 19
+          "losses": 4,
+          "goals_for": 19,
+          "goals_against": 16,
+          "points": 22
         },
         {
           "position": 5,
-          "club_name": "Terra Firme FC",
+          "club_name": "Fonte Nova FC",
           "played": 14,
-          "wins": 4,
-          "draws": 7,
-          "losses": 3,
-          "goals_for": 15,
-          "goals_against": 12,
-          "points": 19
+          "wins": 6,
+          "draws": 4,
+          "losses": 4,
+          "goals_for": 19,
+          "goals_against": 17,
+          "points": 22
         },
         {
           "position": 6,
           "club_name": "Monte Cristal FC",
           "played": 14,
-          "wins": 5,
-          "draws": 3,
-          "losses": 6,
-          "goals_for": 18,
+          "wins": 6,
+          "draws": 1,
+          "losses": 7,
+          "goals_for": 19,
           "goals_against": 20,
-          "points": 18
+          "points": 19
         },
         {
           "position": 7,
-          "club_name": "Fonte Nova FC",
+          "club_name": "Costa Azul FC",
           "played": 14,
-          "wins": 3,
-          "draws": 5,
-          "losses": 6,
-          "goals_for": 16,
-          "goals_against": 22,
-          "points": 14
+          "wins": 4,
+          "draws": 1,
+          "losses": 9,
+          "goals_for": 13,
+          "goals_against": 20,
+          "points": 13
         },
         {
           "position": 8,
-          "club_name": "Boa Vista EC FC",
+          "club_name": "Cruz do Sul FC",
           "played": 14,
           "wins": 3,
-          "draws": 2,
-          "losses": 9,
-          "goals_for": 13,
-          "goals_against": 24,
-          "points": 11
+          "draws": 3,
+          "losses": 8,
+          "goals_for": 12,
+          "goals_against": 22,
+          "points": 12
         }
       ],
       "cup_champion": null
     }
   ],
-  "state_hash": "bf12a5dc9a36e532"
+  "state_hash": "e1d3772d57fa396c"
 }

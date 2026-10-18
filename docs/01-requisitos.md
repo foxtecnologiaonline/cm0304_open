@@ -224,8 +224,18 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > efetiva reduzida (piso de 70%, nunca menos), um reserva entra pleno. Sem
 > calendário diário (`docs/02 §5`) não dá pra calcular frescor real entre
 > partidas, então não é dia a dia, só por temporada — mesma disciplina de
-> `world::injuries`. Moral e fadiga acumulada de carreira (ao contrário de
-> condição por temporada) continuam não existindo. `world::discipline`
+> `world::injuries`. `world::morale` cobre uma fatia mínima de "moral" do
+> mesmo requisito — por **clube**, não por jogador (simplificação
+> deliberada: reação individual a minutos jogados ou decisão do técnico
+> pediria o sistema de personalidade de RF-JG-10, M4): o saldo de
+> vitórias/derrotas nas últimas 3 partidas de liga já disputadas na
+> temporada (empate não conta) escala a força do time um pouco pra cima
+> (sequência de vitórias) ou pra baixo (sequência de derrotas) — função
+> pura, sem sorteio nenhum, e nunca atravessa temporada (reinicia vazia a
+> cada uma). Só existe no caminho de carreira e não afeta copa, mesma
+> exclusão de todo atributo com granularidade de rodada (`world::season`).
+> Fadiga acumulada de carreira (ao contrário de condição por temporada)
+> continua não existindo. `world::discipline`
 > cobre uma fatia mínima de RF-JG-09: depois de cada rodada de liga, cada
 > time que jogou sofre um sorteio de expulsão (~4% por time por partida,
 > ordem de grandeza real de cartão vermelho); se acontece, um titular

@@ -355,6 +355,19 @@ aqui e volta ao design** — é para isso que o marco existe.
 > transferência" muda durante o jogo, ao contrário de todo sorteio
 > fixo-por-carreira anterior.
 >
+> `world::morale` cobre uma fatia mínima de "moral" de RF-JG-07
+> (`docs/01 §2.1`, ao lado da condição física que já existia) — por
+> **clube**, não por jogador: `apply_morale` escala a força de cada
+> clube conforme o saldo de vitórias/derrotas nas últimas 3 partidas de
+> liga já disputadas na temporada (empate neutro), antes de simular
+> qualquer partida da rodada atual — sequência de vitórias anima,
+> sequência de derrotas abate. Função pura (sem RNG, só lê
+> `RoundRobinOutcome::results` acumulado), e por isso o único atributo de
+> `world::season` que não precisou de nenhum wiring em
+> `app::GameSession` (nem geração, nem estado de carreira). Mesma
+> exclusão de granularidade de rodada que sujeira/jogo importante/
+> consistência/adaptação: só liga, só caminho de carreira.
+>
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da
 > temporada (o mesmo conjunto que `world::condition` já usa pra fadiga) e

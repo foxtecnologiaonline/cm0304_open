@@ -18,13 +18,17 @@
 //! até essa fatia toda liga era simulada de uma vez, sem nenhum ponto no
 //! meio da temporada onde "o jogador X está fora desta rodada" pudesse ter
 //! efeito; bilheteria por rodada aproveitou o mesmo ponto de simulação, por
-//! já existir. Consistência (`crate::consistency`) também aproveita esse
-//! mesmo ponto: cada perfil de rodada recebe um balanço de força zero-médio
-//! conforme a consistência dos titulares daquela rodada, antes de simular
-//! qualquer partida dela. Cup (`crate::cup`) não ganha essa granularidade —
+//! já existir. Consistência (`crate::consistency`) e adaptação
+//! (`crate::adaptation`) também aproveitam esse mesmo ponto: cada perfil de
+//! rodada recebe um balanço/malus de força conforme os titulares daquela
+//! rodada, antes de simular qualquer partida dela. Moral (`crate::morale`)
+//! também — mas é a única fatia por rodada que não olha pra um atributo
+//! de jogador, e sim pro saldo de resultados do próprio clube já simulados
+//! nesta temporada (sem RNG nenhum: função pura de `RoundRobinOutcome::results`
+//! acumulado até aqui). Cup (`crate::cup`) não ganha essa granularidade —
 //! continua usando o perfil estático do início da temporada em qualquer um
-//! dos dois casos, e não gera bilheteria nem é afetada por suspensão ou
-//! consistência (mesma exclusão de `crate::condition`).
+//! dos dois casos, e não gera bilheteria nem é afetada por suspensão,
+//! consistência, adaptação ou moral (mesma exclusão de `crate::condition`).
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -381,6 +385,12 @@ fn simulate_round_robin_for_career(
             );
             let starters =
                 crate::quality::starters_from_roster_excluding(career.roster, club, &suspended);
+            // Moral (RF-JG-07, `crate::morale`): saldo de vitórias/derrotas
+            // nas últimas partidas de liga já disputadas nesta temporada
+            // (`outcome.results`, só o que já foi simulado até aqui — a
+            // rodada atual ainda não entrou). Primeiro, antes dos malus/
+            // balanços por jogador abaixo.
+            let profile = crate::morale::apply_morale(profile, club, &outcome.results);
             // Malus de adaptação (RF-JG-02, `crate::adaptation`): recém-
             // chegado de adaptação baixa rende um pouco menos por até duas
             // temporadas — antes do balanço de consistência, abaixo, pra

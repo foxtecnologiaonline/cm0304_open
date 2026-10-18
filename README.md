@@ -76,8 +76,9 @@ cm0304_open/
 │  │                       #    balançada por rodada conforme consistência sintética + malus de
 │  │                       #    adaptação por até duas temporadas após transferência (docs/01
 │  │                       #    RF-JG-02 — os 8 atributos ocultos do requisito têm todos uma fatia
-│  │                       #    real agora) + folha salarial + duração de contrato (M2, docs/01
-│  │                       #    RF-CL-02) +
+│  │                       #    real agora) + moral por clube (saldo de resultados recentes,
+│  │                       #    docs/01 RF-JG-07) + folha salarial + duração de contrato (M2,
+│  │                       #    docs/01 RF-CL-02) +
 │  │                       #    bilheteria influenciada por reputação de clube (M2, docs/01
 │  │                       #    RF-CL-03/RF-MU-08)
 │  ├─ app/                 # ✅ dispatch/query (GameSession) — a fronteira que a ponte vai expor
@@ -101,7 +102,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 348 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 356 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
