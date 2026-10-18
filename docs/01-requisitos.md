@@ -91,10 +91,10 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > real da economia do mundo: antes da fatia de folha, orçamento só mudava por
 > transferência (conservado entre clubes); agora dinheiro de fato **sai** do
 > sistema a cada temporada (jogadores não têm orçamento próprio pra receber).
-> Clube sem caixa suficiente só zera (nunca fica endividado — dívida de verdade
-> é parte de RF-CL-03, não implementada; ver abaixo o que de RF-CL-03 já
-> existe). `CommandReceipt::payroll_paid`/`contracts_renewed` e `managerfc-cli
-> play` já reportam os totais por temporada.
+> Clube sem caixa suficiente só zera o caixa (nunca fica negativo), mas a
+> diferença não evapora: vira dívida (`world::repay_debt`, ver abaixo o
+> que de RF-CL-03 já existe). `CommandReceipt::payroll_paid`/`contracts_renewed`
+> e `managerfc-cli play` já reportam os totais por temporada.
 >
 > `world::finance::match_day_revenue` cobre uma fatia mínima de RF-CL-03 — só
 > **bilheteria**, nenhuma outra fonte (TV, prêmio, patrocínio) ainda. Cada clube
@@ -116,10 +116,19 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > da mesma competição no pack de exemplo), dividido entre os clubes
 > conforme a posição final na tabela (peso linear: campeão pesa tantas
 > vezes mais que o lanterna quantos clubes tem a competição). Só liga —
-> copa não tem tabela, não entra aqui. Sem TV, patrocínio, dívida ou
+> copa não tem tabela, não entra aqui. `CommandReceipt::prize_money_paid`
+> e `managerfc-cli play` já reportam o total recebido por temporada.
+>
+> `world::finance::repay_debt` é a fatia mínima do lado de "despesa/saldo"
+> de RF-CL-03 — **dívida**: o que `world::pay_salaries` não consegue
+> debitar do caixa (acima) vira passivo por clube em vez de evaporar,
+> pago automaticamente na temporada seguinte, antes de qualquer outro
+> gasto (dívida vem primeiro, igual contabilidade de verdade). Sem
+> juros, sem prazo, sem renegociação — só um desconto até o limite do
+> que o clube tem agora. `CommandReceipt::debt_repaid` e `managerfc-cli
+> play` já reportam o total pago por temporada. Sem TV, patrocínio ou
 > saldo negativo ainda — o resto de RF-CL-03 fica para quando essas
-> fontes existirem. `CommandReceipt::prize_money_paid` e `managerfc-cli
-> play` já reportam o total recebido por temporada.
+> fontes existirem.
 >
 > O público sorteado por partida, antes decorativo (piso/teto fixos,
 > `docs/01 §2.4` RF-MU-08 citado como "futuro"), agora é influenciado pela

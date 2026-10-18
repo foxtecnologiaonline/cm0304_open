@@ -55,7 +55,9 @@ pub struct CommandReceipt {
     /// Quanto os clubes pagaram de folha salarial nesta temporada, no
     /// total (`world::pay_salaries`, `docs/01 §2.2`, RF-CL-02, fatia
     /// mínima) — pode ser menor que a soma nominal dos salários se algum
-    /// clube não tinha caixa suficiente (nunca fica negativo).
+    /// clube não tinha caixa suficiente (nunca fica negativo); a
+    /// diferença vira dívida (`self.debt`), ver `prize_money_paid`/
+    /// `debt_repaid` abaixo.
     pub payroll_paid: domain::Money,
     /// Quanto os clubes receberam de bilheteria nesta temporada, no total
     /// (`world::SeasonResult::match_day_revenue`, `docs/01 §2.2`, RF-CL-03,
@@ -72,6 +74,11 @@ pub struct CommandReceipt {
     /// segunda fatia) — um pool fixo por competição de liga, dividido por
     /// posição final na tabela.
     pub prize_money_paid: domain::Money,
+    /// Quanto os clubes pagaram de dívida acumulada nesta temporada, no
+    /// total (`world::repay_debt`, `docs/01 §2.2`, RF-CL-03, terceira
+    /// fatia) — descontado do caixa antes da folha salarial desta mesma
+    /// temporada (ver `payroll_paid`, acima).
+    pub debt_repaid: domain::Money,
 }
 
 /// Uma carreira carregada em memória.
@@ -105,6 +112,13 @@ pub struct GameSession {
     /// bilheteria (`world::run_season` com `CareerRound`, só credita) — uma
     /// economia aberta desde que a folha existe (`docs/07-roadmap.md` M2).
     budgets: Vec<domain::Money>,
+    /// Dívida de cada clube, indexada por id denso — o que
+    /// `world::pay_salaries` não conseguiu debitar do caixa numa
+    /// temporada, paga de volta por `world::repay_debt` na seguinte,
+    /// antes de qualquer outro gasto (fatia mínima de RF-CL-03). Começa
+    /// em zero em [`Self::new`]: só a economia simulada cria dívida, não
+    /// há dívida herdada do pack.
+    debt: Vec<domain::Money>,
     /// Capacidade de estádio de cada clube, indexada por id denso
     /// (`world::generate_stadium_capacities`, sintética — mesmo status de
     /// `budgets`). Gerada uma vez em [`Self::new`] e nunca muda depois:
@@ -207,6 +221,7 @@ impl GameSession {
 
         let roster = world::initial_roster(&report.pack);
         let budgets = world::generate_budgets(&report.pack, world_seed);
+        let debt = vec![domain::Money::ZERO; report.pack.clubs.len()];
         let stadium_capacities = world::generate_stadium_capacities(&report.pack, world_seed);
         let club_reputation = world::generate_club_reputation(&report.pack, world_seed);
         let contracts = world::generate_initial_contracts(&report.pack, world_seed);
@@ -232,6 +247,7 @@ impl GameSession {
             profiles,
             roster,
             budgets,
+            debt,
             stadium_capacities,
             club_reputation,
             contracts,
@@ -305,13 +321,25 @@ impl GameSession {
         match command {
             Command::AdvanceSeason => {
                 let season_index = self.history.len() as u32;
-                // Folha salarial antes de qualquer coisa: cada clube paga
-                // o elenco inteiro pelo CA travado no contrato de cada um
-                // (`world::pay_salaries`, `docs/01 §2.2` RF-CL-02) — só
-                // então o que sobrar no orçamento entra no mercado. Nunca
-                // deixa um orçamento negativo (zera, não endivida).
-                let payroll_paid =
-                    world::pay_salaries(&self.roster, &self.contracts, &mut self.budgets);
+                // Dívida acumulada antes de qualquer outro gasto
+                // (`world::repay_debt`, `docs/01 §2.2` RF-CL-03) — o que
+                // sobrou de temporadas anteriores sem caixa pra pagar a
+                // folha (`self.debt`) é pago primeiro, igual contabilidade
+                // de verdade.
+                let debt_repaid = world::repay_debt(&mut self.budgets, &mut self.debt);
+
+                // Folha salarial: cada clube paga o elenco inteiro pelo CA
+                // travado no contrato de cada um (`world::pay_salaries`,
+                // `docs/01 §2.2` RF-CL-02) — só então o que sobrar no
+                // orçamento entra no mercado. Nunca deixa um orçamento
+                // negativo (zera); o que não coube vira dívida em
+                // `self.debt`, paga na temporada seguinte (acima).
+                let payroll_paid = world::pay_salaries(
+                    &self.roster,
+                    &self.contracts,
+                    &mut self.budgets,
+                    &mut self.debt,
+                );
 
                 // Mercado antes da temporada: clubes tentam substituir seu
                 // titular mais fraco por um reserva melhor de outro clube
@@ -473,6 +501,7 @@ impl GameSession {
                     match_day_revenue: result.match_day_revenue,
                     contracts_renewed,
                     prize_money_paid,
+                    debt_repaid,
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -916,6 +945,41 @@ mod tests {
                 - receipt.prize_money_paid.cents(),
             "a queda do orçamento total deveria ser exatamente folha paga menos bilheteria e \
              premiação recebidas, já que transferências conservam dinheiro entre clubes"
+        );
+    }
+
+    #[test]
+    fn divida_de_fato_se_acumula_e_e_paga_na_temporada_seguinte_ligada_ao_dispatch() {
+        // Caixa branca: prova que `world::pay_salaries`/`world::repay_debt`
+        // estão de fato ligados ao dispatch, não só isolados em
+        // `world::finance` — zera o caixa do clube 0 antes da 1ª
+        // temporada, força a folha a faltar caixa, e confirma que vira
+        // dívida reportada (não evapora); na 2ª temporada, a dívida é
+        // debitada do caixa antes da folha, e `debt_repaid` reporta isso.
+        let mut session = GameSession::new(&example_pack_path(), 11).unwrap();
+        session.budgets[0] = domain::Money::ZERO;
+
+        let receipt1 = session.dispatch(Command::AdvanceSeason).unwrap();
+        assert_eq!(
+            receipt1.debt_repaid,
+            domain::Money::ZERO,
+            "não deveria haver dívida nenhuma pra pagar antes da 1ª folha"
+        );
+        assert!(
+            session.debt[0].cents() > 0,
+            "clube sem caixa deveria ter acumulado dívida ao pagar a folha"
+        );
+
+        let debt_before_season2 = session.debt[0];
+        let receipt2 = session.dispatch(Command::AdvanceSeason).unwrap();
+        assert!(
+            receipt2.debt_repaid.cents() > 0,
+            "receita de bilheteria/premiação da 1ª temporada deveria ter sobrado caixa pra \
+             pagar ao menos parte da dívida na 2ª"
+        );
+        assert!(
+            session.debt[0] < debt_before_season2,
+            "dívida deveria ter diminuído depois de ser paga"
         );
     }
 

@@ -11,12 +11,16 @@
 //! ver `crate::contract` para luvas/cláusula ainda não existirem.
 //! Bilheteria ([`match_day_revenue`]) é a primeira fatia real de receita —
 //! fatia mínima de RF-CL-03 (`docs/01 §2.2`): só o ingresso de partida em
-//! casa, nada de TV, prêmio ou patrocínio ainda. Premiação
+//! casa, nada de TV ou patrocínio ainda. Premiação
 //! ([`distribute_prize_money`]) é a segunda: um valor fixo por competição
 //! por temporada, dividido entre os clubes conforme a posição final na
-//! tabela (1º lugar ganha mais, último ganha menos) — ainda sem TV nem
-//! patrocínio (o resto de RF-CL-03 fica para quando essas fontes
-//! existirem).
+//! tabela (1º lugar ganha mais, último ganha menos). Dívida
+//! ([`repay_debt`]) é a fatia mínima do lado de "despesa/saldo" de
+//! RF-CL-03: o que [`pay_salaries`] não consegue debitar do caixa vira
+//! passivo em vez de evaporar, pago automaticamente na temporada
+//! seguinte antes de qualquer outro gasto — sem juros, sem prazo, sem
+//! renegociação (o resto de RF-CL-03 — TV, patrocínio — fica para quando
+//! essas fontes existirem).
 
 use domain::{ClubId, DeterministicRng, Money};
 use pack::LoadedPack;
@@ -73,31 +77,56 @@ pub fn salary_per_season(ability: u8) -> Money {
 /// titular ou reserva, saudável, lesionado ou suspenso, o clube paga o
 /// elenco inteiro — desconta `salary_per_season(CA travado no contrato)`
 /// do orçamento do seu clube. `contracts` tem que estar no mesmo índice
-/// denso que `roster` (`crate::contract`, invariante do módulo). Devolve
-/// o total de fato pago (pode ser menor que a soma nominal dos salários:
-/// um orçamento sem caixa suficiente só zera, nunca fica negativo —
-/// `Money::saturating_sub`, dívida de verdade é RF-CL-03, não
-/// implementada).
+/// denso que `roster` (`crate::contract`, invariante do módulo); `debt`
+/// no índice denso de `budgets`/`ClubId`. Devolve o total de fato pago do
+/// caixa (pode ser menor que a soma nominal dos salários — um orçamento
+/// sem caixa suficiente nunca fica negativo, `Money::saturating_sub`): a
+/// diferença não evapora, vira dívida (`debt[club]`, fatia mínima de
+/// RF-CL-03) — ver [`repay_debt`] pra como ela é paga de volta.
 ///
 /// Diferente de uma transferência (`crate::market`), isto **não conserva
 /// dinheiro** entre clubes: a folha é um gasto real que sai da economia
 /// modelada (jogadores não têm orçamento próprio aqui), não uma troca
 /// entre duas partes — o total de `budgets` só pode diminuir ou ficar
-/// igual a cada chamada, nunca aumentar.
+/// igual a cada chamada, nunca aumentar (a dívida criada é passivo, não
+/// dinheiro que ainda existe em algum lugar).
 pub fn pay_salaries(
     roster: &[PlayerState],
     contracts: &[ContractState],
     budgets: &mut [Money],
+    debt: &mut [Money],
 ) -> Money {
     let mut total_paid = Money::ZERO;
     for (player, contract) in roster.iter().zip(contracts) {
         let salary = salary_per_season(contract.signed_ability);
         let idx = player.club.as_usize();
         let paid = budgets[idx].min(salary);
+        let shortfall = salary - paid; // `Money::sub` já satura em zero
         budgets[idx] = budgets[idx] - salary;
+        debt[idx] = debt[idx] + shortfall;
         total_paid = total_paid + paid;
     }
     total_paid
+}
+
+/// Paga a dívida acumulada de cada clube ([`pay_salaries`]) com o caixa
+/// disponível — chamada antes de qualquer outro gasto da temporada
+/// (`app::GameSession::dispatch`, antes de `pay_salaries` desta mesma
+/// temporada): dívida vem primeiro, igual contabilidade de verdade.
+/// Fatia mínima de "dívida" de RF-CL-03 (`docs/01 §2.2`): sem juros, sem
+/// prazo, sem renegociação — só um desconto automático até o limite do
+/// que o clube tem no caixa agora (nunca deixa o caixa negativo, mesma
+/// disciplina de [`pay_salaries`]). `budgets` e `debt` têm que estar no
+/// mesmo índice denso (`ClubId`). Devolve o total de fato pago.
+pub fn repay_debt(budgets: &mut [Money], debt: &mut [Money]) -> Money {
+    let mut total_repaid = Money::ZERO;
+    for (budget, debt) in budgets.iter_mut().zip(debt.iter_mut()) {
+        let repayment = (*budget).min(*debt);
+        *budget = *budget - repayment;
+        *debt = *debt - repayment;
+        total_repaid = total_repaid + repayment;
+    }
+    total_repaid
 }
 
 /// Piso e teto de capacidade de estádio sintética, em pessoas — mesma
@@ -327,8 +356,9 @@ mod tests {
         let roster = vec![player(ClubId::new(0), 100), player(ClubId::new(1), 50)];
         let contracts = vec![contract(100), contract(50)];
         let mut budgets = vec![Money::from_cents(10_000_000), Money::from_cents(10_000_000)];
+        let mut debt = vec![Money::ZERO; 2];
 
-        let total_paid = pay_salaries(&roster, &contracts, &mut budgets);
+        let total_paid = pay_salaries(&roster, &contracts, &mut budgets, &mut debt);
 
         assert_eq!(
             budgets[0].cents(),
@@ -342,6 +372,8 @@ mod tests {
             total_paid.cents(),
             salary_per_season(100).cents() + salary_per_season(50).cents()
         );
+        // Caixa sobrou pros dois — nenhuma dívida nova.
+        assert_eq!(debt, vec![Money::ZERO; 2]);
     }
 
     #[test]
@@ -352,7 +384,8 @@ mod tests {
         let roster = vec![player(ClubId::new(0), 150)];
         let contracts = vec![contract(100)];
         let mut budgets = vec![Money::from_cents(10_000_000)];
-        let total_paid = pay_salaries(&roster, &contracts, &mut budgets);
+        let mut debt = vec![Money::ZERO; 1];
+        let total_paid = pay_salaries(&roster, &contracts, &mut budgets, &mut debt);
         assert_eq!(total_paid, salary_per_season(100));
         assert_ne!(total_paid, salary_per_season(150));
     }
@@ -365,7 +398,8 @@ mod tests {
         let roster = vec![player(ClubId::new(0), 100), player(ClubId::new(0), 80)];
         let contracts = vec![contract(100), contract(80)];
         let mut budgets = vec![Money::from_cents(10_000_000)];
-        pay_salaries(&roster, &contracts, &mut budgets);
+        let mut debt = vec![Money::ZERO; 1];
+        let _ = pay_salaries(&roster, &contracts, &mut budgets, &mut debt);
         assert_eq!(
             budgets[0].cents(),
             10_000_000 - salary_per_season(100).cents() - salary_per_season(80).cents()
@@ -373,15 +407,19 @@ mod tests {
     }
 
     #[test]
-    fn pay_salaries_nunca_deixa_orcamento_negativo() {
+    fn pay_salaries_sem_caixa_suficiente_vira_dividida_em_vez_de_evaporar() {
         let roster = vec![player(ClubId::new(0), 200)]; // salário bem maior que o caixa
         let contracts = vec![contract(200)];
         let mut budgets = vec![Money::from_cents(100)];
-        let total_paid = pay_salaries(&roster, &contracts, &mut budgets);
+        let mut debt = vec![Money::ZERO; 1];
+        let total_paid = pay_salaries(&roster, &contracts, &mut budgets, &mut debt);
         assert_eq!(budgets[0], Money::ZERO);
         // Só o que de fato havia no caixa foi "pago", não o salário
         // nominal inteiro.
         assert_eq!(total_paid, Money::from_cents(100));
+        // A diferença entre o salário nominal e o que foi pago vira
+        // dívida — não evapora.
+        assert_eq!(debt[0], salary_per_season(200) - Money::from_cents(100));
     }
 
     #[test]
@@ -389,9 +427,10 @@ mod tests {
         let roster = vec![player(ClubId::new(0), 120), player(ClubId::new(1), 90)];
         let contracts = vec![contract(120), contract(90)];
         let mut budgets = vec![Money::from_cents(5_000_000), Money::from_cents(5_000_000)];
+        let mut debt = vec![Money::ZERO; 2];
         let total_before: i64 = budgets.iter().map(|b| b.cents()).sum();
 
-        pay_salaries(&roster, &contracts, &mut budgets);
+        let _ = pay_salaries(&roster, &contracts, &mut budgets, &mut debt);
 
         let total_after: i64 = budgets.iter().map(|b| b.cents()).sum();
         assert!(
@@ -561,5 +600,70 @@ mod tests {
         let mut budgets: Vec<Money> = vec![];
         let total_paid = distribute_prize_money(&[], &mut budgets);
         assert_eq!(total_paid, Money::ZERO);
+    }
+
+    #[test]
+    fn repay_debt_paga_o_que_o_caixa_permite_e_reduz_a_divida() {
+        let mut budgets = vec![Money::from_cents(300)];
+        let mut debt = vec![Money::from_cents(1_000)];
+        let total_repaid = repay_debt(&mut budgets, &mut debt);
+        assert_eq!(total_repaid, Money::from_cents(300));
+        assert_eq!(budgets[0], Money::ZERO);
+        assert_eq!(debt[0], Money::from_cents(700));
+    }
+
+    #[test]
+    fn repay_debt_zera_a_divida_quando_o_caixa_cobre_tudo() {
+        let mut budgets = vec![Money::from_cents(5_000)];
+        let mut debt = vec![Money::from_cents(1_000)];
+        let total_repaid = repay_debt(&mut budgets, &mut debt);
+        assert_eq!(total_repaid, Money::from_cents(1_000));
+        assert_eq!(budgets[0], Money::from_cents(4_000));
+        assert_eq!(debt[0], Money::ZERO);
+    }
+
+    #[test]
+    fn repay_debt_sem_divida_nenhuma_nao_muda_o_caixa() {
+        let mut budgets = vec![Money::from_cents(5_000)];
+        let mut debt = vec![Money::ZERO];
+        let total_repaid = repay_debt(&mut budgets, &mut debt);
+        assert_eq!(total_repaid, Money::ZERO);
+        assert_eq!(budgets[0], Money::from_cents(5_000));
+    }
+
+    #[test]
+    fn repay_debt_nunca_deixa_caixa_nem_divida_negativos() {
+        let mut budgets = vec![Money::ZERO];
+        let mut debt = vec![Money::from_cents(1_000)];
+        let total_repaid = repay_debt(&mut budgets, &mut debt);
+        assert_eq!(total_repaid, Money::ZERO);
+        assert_eq!(budgets[0], Money::ZERO);
+        assert_eq!(debt[0], Money::from_cents(1_000));
+    }
+
+    #[test]
+    fn pagar_divida_depois_salario_fecha_o_ciclo_de_uma_temporada_em_debito() {
+        // Simula o que `app::GameSession::dispatch` faz em duas
+        // temporadas seguidas: temporada 1 sem caixa (vira dívida);
+        // temporada 2 com caixa de sobra, mas `repay_debt` roda antes de
+        // `pay_salaries` (dívida vem primeiro), então o salário da
+        // temporada 2 só usa o que sobrou depois de pagar a dívida da
+        // temporada 1.
+        let roster = vec![player(ClubId::new(0), 200)];
+        let contracts = vec![contract(200)];
+        let mut budgets = vec![Money::from_cents(100)];
+        let mut debt = vec![Money::ZERO; 1];
+
+        let _ = pay_salaries(&roster, &contracts, &mut budgets, &mut debt);
+        let outstanding = salary_per_season(200) - Money::from_cents(100);
+        assert_eq!(debt[0], outstanding);
+
+        // Temporada 2: caixa de sobra chega (ex.: bilheteria), mas a
+        // dívida é paga primeiro.
+        budgets[0] = budgets[0] + outstanding + Money::from_cents(1);
+        let repaid = repay_debt(&mut budgets, &mut debt);
+        assert_eq!(repaid, outstanding);
+        assert_eq!(debt[0], Money::ZERO);
+        assert_eq!(budgets[0], Money::from_cents(1));
     }
 }

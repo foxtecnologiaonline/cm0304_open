@@ -316,6 +316,18 @@ aqui e volta ao design** — é para isso que o marco existe.
 > reporta o total por temporada; golden master bump 7→8
 > (`total_prize_money_paid_cents`).
 >
+> **Dívida** (`world::finance::repay_debt`) fecha o lado de
+> despesa/saldo de RF-CL-03: `world::pay_salaries` passou a registrar o
+> que não cabe no caixa como passivo por clube em vez de só descartar;
+> `repay_debt` desconta isso automaticamente no início da temporada
+> seguinte, antes de qualquer outro gasto (inclusive a própria folha
+> daquela temporada) — sem juros, sem prazo. Confirmado no caminho de
+> carreira de verdade, não só em teste isolado: `managerfc-cli play
+> --seasons 5 --seed 42` mostra dívida paga nas temporadas 4 e 5
+> (15.077,35 e 135.885,17), não zero em toda temporada.
+> `CommandReceipt::debt_repaid` reporta o total por temporada; golden
+> master bump 8→9 (`total_debt_repaid_cents`).
+>
 > Enquanto testava premiação, um proptest achou uma quebra real de
 > determinismo pré-existente em `rules::compute_table` (`ADR 0002`):
 > quando 3+ clubes empatam em todos os critérios configurados antes de

@@ -42,8 +42,12 @@ use serde::{Deserialize, Serialize};
 /// muda de novo). Bump 7→8: `total_prize_money_paid_cents`
 /// (`world::distribute_prize_money`, RF-CL-03 — premiação por posição
 /// final; orçamento final dos clubes muda de novo, mesma justificativa
-/// dos bumps de receita/despesa anteriores).
-const SCHEMA_VERSION: u16 = 8;
+/// dos bumps de receita/despesa anteriores). Bump 8→9:
+/// `total_debt_repaid_cents` (`world::repay_debt`, RF-CL-03 — dívida;
+/// `world::pay_salaries` agora registra o que não coube no caixa como
+/// dívida em vez de só descartar, então o orçamento final dos clubes
+/// muda de novo).
+const SCHEMA_VERSION: u16 = 9;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct TableRowSnapshot {
@@ -124,6 +128,10 @@ struct GoldenMaster {
     /// temporada — `world::distribute_prize_money`, RF-CL-03. Mesma
     /// justificativa de `i64` que `total_payroll_paid_cents`.
     total_prize_money_paid_cents: i64,
+    /// Soma de `CommandReceipt::debt_repaid` (em centavos) de cada
+    /// temporada — `world::repay_debt`, RF-CL-03. Mesma justificativa de
+    /// `i64` que `total_payroll_paid_cents`.
+    total_debt_repaid_cents: i64,
     /// Tabela final (depois da última temporada) de cada competição do
     /// pack, na mesma ordem que `app::Query::Competitions` devolve —
     /// determinística (ordem de id denso, `docs/02 §6.1`).
@@ -169,6 +177,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
     let mut total_match_day_revenue_cents = 0i64;
     let mut total_contracts_renewed = 0usize;
     let mut total_prize_money_paid_cents = 0i64;
+    let mut total_debt_repaid_cents = 0i64;
     for _ in 0..seasons {
         let receipt = session
             .dispatch(app::Command::AdvanceSeason)
@@ -183,6 +192,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_match_day_revenue_cents += receipt.match_day_revenue.cents();
         total_contracts_renewed += receipt.contracts_renewed;
         total_prize_money_paid_cents += receipt.prize_money_paid.cents();
+        total_debt_repaid_cents += receipt.debt_repaid.cents();
     }
 
     let app::QueryResult::Competitions(competitions_list) = session.query(app::Query::Competitions)
@@ -257,6 +267,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_match_day_revenue_cents,
         total_contracts_renewed,
         total_prize_money_paid_cents,
+        total_debt_repaid_cents,
         competitions,
         state_hash: String::new(),
     };
@@ -407,6 +418,10 @@ pub fn verify(seed: u64, pack_path: Option<std::path::PathBuf>, expect_path: &Pa
     eprintln!(
         "  premiação (centavos): esperado {}, obtido {}",
         expected.total_prize_money_paid_cents, actual.total_prize_money_paid_cents
+    );
+    eprintln!(
+        "  dívida paga (centavos): esperado {}, obtido {}",
+        expected.total_debt_repaid_cents, actual.total_debt_repaid_cents
     );
     report_competition_diff(&expected.competitions, &actual.competitions);
     eprintln!(
