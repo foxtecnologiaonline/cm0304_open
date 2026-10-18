@@ -306,8 +306,10 @@ aqui e volta ao design** — é para isso que o marco existe.
 > e "IA" de RF-MU-08, e reputação de país (a outra metade do requisito),
 > ainda faltam.
 >
-> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas sete
-> primeiras fatias reais: `world::generate_injury_proneness` sorteia uma
+> **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas oito
+> fatias reais — todo o requisito agora tem pelo menos um efeito real em
+> jogo, nenhum calibrado ainda:
+> `world::generate_injury_proneness` sorteia uma
 > **propensão a lesão** sintética (0-100) por jogador, uma vez por
 > carreira, e `world::roll_injuries` passa a variar a chance de lesão por
 > ela (2% a 10%, antes fixa em 6% pra todo mundo — propensão média
@@ -343,8 +345,15 @@ aqui e volta ao design** — é para isso que o marco existe.
 > o jogador é muito ambicioso, mesmo com preço e lealdade batendo —
 > reputação de clube entra no mercado pela primeira vez, só como filtro
 > de candidatura (RF-TR-02 completo ainda não usa reputação no preço em
-> si). O último atributo oculto do requisito (adaptação) ainda não
-> existe.
+> si). `world::generate_adaptation` sorteia **adaptação** (0-100) do
+> mesmo jeito, e `world::apply_adaptation_penalty` reduz a força de um
+> titular recém-transferido (até -15%, decaindo por até duas temporadas)
+> — malus puro, some depois da janela, adaptação máxima nunca sofre
+> nada. É o único atributo com estado de carreira próprio (`world::
+> initial_seasons_since_transfer`/`mark_transferred`/
+> `advance_seasons_since_transfer`): "quantas temporadas desde a última
+> transferência" muda durante o jogo, ao contrário de todo sorteio
+> fixo-por-carreira anterior.
 >
 > `world::progression` também avançou dentro de RF-JG-05 (`docs/01 §2.3`):
 > além de idade (M1), `advance_season` agora recebe a escalação titular da

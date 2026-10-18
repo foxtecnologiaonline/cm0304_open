@@ -35,7 +35,7 @@
           "wins": 9,
           "draws": 1,
           "losses": 4,
-          "goals_for": 29,
+          "goals_for": 30,
           "goals_against": 23,
           "points": 28
         },
@@ -46,8 +46,8 @@
           "wins": 7,
           "draws": 5,
           "losses": 2,
-          "goals_for": 27,
-          "goals_against": 12,
+          "goals_for": 26,
+          "goals_against": 11,
           "points": 26
         },
         {
@@ -101,7 +101,7 @@
           "wins": 4,
           "draws": 3,
           "losses": 7,
-          "goals_for": 17,
+          "goals_for": 16,
           "goals_against": 22,
           "points": 15
         },
@@ -215,5 +215,5 @@
       "cup_champion": null
     }
   ],
-  "state_hash": "bedbb750b5a0e571"
+  "state_hash": "bf12a5dc9a36e532"
 }

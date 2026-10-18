@@ -52,8 +52,15 @@
 //! ambicioso recusa ir pra um clube de reputação menor que a do seu
 //! clube atual em [`run_market_day`], mesmo com preço e lealdade batendo;
 //! pouco ambicioso aceita qualquer destino, igual a antes desta fatia.
+//! Adaptação ([`adaptation::generate_adaptation`]) é a oitava e última:
+//! recém-chegado de adaptação baixa rende um pouco menos (até -15% de
+//! força) nas duas primeiras temporadas depois de uma transferência
+//! ([`adaptation::apply_adaptation_penalty`]) — malus puro, nunca bônus,
+//! e some depois da janela. Com isto, os oito atributos ocultos de
+//! RF-JG-02 têm todos uma fatia real implementada.
 #![warn(clippy::all)]
 
+mod adaptation;
 mod condition;
 mod consistency;
 mod contract;
@@ -69,6 +76,10 @@ mod reputation;
 mod season;
 mod strength;
 
+pub use adaptation::{
+    advance_seasons_since_transfer, generate_adaptation, initial_seasons_since_transfer,
+    mark_transferred,
+};
 pub use condition::{FULL_CONDITION, apply_season_fatigue};
 pub use consistency::generate_consistency;
 pub use contract::{ContractState, advance_contracts, generate_initial_contracts};

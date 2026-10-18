@@ -163,6 +163,22 @@ pub struct GameSession {
     /// muda depois. Usada por `world::CareerRound::consistency` pra
     /// balançar a força de cada clube a cada rodada de liga.
     consistency: Vec<u8>,
+    /// Velocidade de adaptação de cada jogador, 0-100, no mesmo índice
+    /// denso que `roster` (`world::generate_adaptation`, sintética —
+    /// mesmo status de `consistency`). Gerada uma vez em [`Self::new`] e
+    /// nunca muda depois. Usada por `world::CareerRound::adaptation`
+    /// junto de `seasons_since_transfer` pra reduzir a força de um
+    /// recém-chegado por até duas temporadas.
+    adaptation: Vec<u8>,
+    /// Quantas temporadas desde a última transferência de cada jogador,
+    /// no mesmo índice denso que `roster` — ao contrário de todo outro
+    /// atributo acima, **muda durante a carreira**:
+    /// `world::initial_seasons_since_transfer` em [`Self::new`] (todo
+    /// mundo "já assentado"), `world::mark_transferred` zera quem acabou
+    /// de ser comprado (`dispatch`, logo depois de `world::run_market_day`)
+    /// e `world::advance_seasons_since_transfer` incrementa todo mundo em
+    /// 1 no fim de cada temporada.
+    seasons_since_transfer: Vec<u8>,
     world_seed: u64,
     /// Uma entrada por temporada já simulada — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
@@ -196,6 +212,8 @@ impl GameSession {
         let dirtiness = world::generate_dirtiness(&report.pack, world_seed);
         let big_game_mentality = world::generate_big_game_mentality(&report.pack, world_seed);
         let consistency = world::generate_consistency(&report.pack, world_seed);
+        let adaptation = world::generate_adaptation(&report.pack, world_seed);
+        let seasons_since_transfer = world::initial_seasons_since_transfer(&report.pack);
         let profiles =
             world::generate_match_profiles_from_roster(&report.pack, &roster, world_seed);
         let membership: Vec<CompetitionId> =
@@ -219,6 +237,8 @@ impl GameSession {
             dirtiness,
             big_game_mentality,
             consistency,
+            adaptation,
+            seasons_since_transfer,
             world_seed,
             history: Vec::new(),
         })
@@ -308,6 +328,13 @@ impl GameSession {
                     &self.club_reputation,
                     &mut self.budgets,
                 );
+                // Quem acabou de ser transferido volta a sofrer o malus de
+                // adaptação (RF-JG-02, `world::adaptation`) por até duas
+                // temporadas, mesmo que já tivesse se adaptado a um clube
+                // anterior.
+                let transferred_players: Vec<domain::PlayerId> =
+                    transfers.iter().map(|t| t.player).collect();
+                world::mark_transferred(&mut self.seasons_since_transfer, &transferred_players);
 
                 // Lesões da temporada: substitui completamente o estado
                 // anterior (`world::roll_injuries`), então um jogador
@@ -357,6 +384,8 @@ impl GameSession {
                     dirtiness: &self.dirtiness,
                     big_game_mentality: &self.big_game_mentality,
                     consistency: &self.consistency,
+                    adaptation: &self.adaptation,
+                    seasons_since_transfer: &self.seasons_since_transfer,
                 };
                 let result = world::run_season(
                     &self.pack,
@@ -408,6 +437,13 @@ impl GameSession {
                     self.world_seed,
                     season_index,
                 );
+
+                // Fecha a contabilidade de adaptação da temporada: o loop
+                // por rodada acima já leu `self.seasons_since_transfer` de
+                // quem foi transferido nesta mesma temporada (contando
+                // como `0`); agora todo mundo avança 1, preparando a
+                // contagem pra próxima (`world::adaptation`, RF-JG-02).
+                world::advance_seasons_since_transfer(&mut self.seasons_since_transfer);
 
                 let receipt = CommandReceipt {
                     season_index,

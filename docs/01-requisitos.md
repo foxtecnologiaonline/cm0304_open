@@ -203,8 +203,18 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > (`world::generate_club_reputation`, RF-MU-08) menor que a do clube
 > vendedor atual — um passo atrás de carreira. Destino de reputação
 > igual ou maior nunca é recusado por ambição, e pouco ambicioso aceita
-> qualquer destino, igual a antes desta fatia. Adaptação (o último
-> atributo oculto de RF-JG-02) ainda não existe.
+> qualquer destino, igual a antes desta fatia. **Adaptação** é a oitava
+> e última: `world::generate_adaptation` sorteia uma velocidade de
+> adaptação sintética (0-100) por jogador, uma vez por carreira, e
+> `world::apply_adaptation_penalty` reduz a força de um titular recém-
+> transferido (até -15%, decaindo linearmente por até duas temporadas,
+> `world::mark_transferred`/`world::advance_seasons_since_transfer`
+> controlam a contagem) — malus puro, nunca bônus, e some depois da
+> janela; jogador de adaptação máxima nunca sofre nada. Com isto, os oito
+> atributos ocultos de RF-JG-02 (consistência, jogo importante, sujeira,
+> lealdade, adaptação, propensão a lesão, ambição, profissionalismo) têm
+> todos uma fatia real implementada — nenhuma calibrada ainda, todas só
+> com a direção certa.
 > `world::condition`
 > cobre uma fatia mínima de RF-JG-07, só a parte de "condição física": a
 > condição de entrada de cada jogador na temporada é recalculada do zero a

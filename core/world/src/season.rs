@@ -66,6 +66,19 @@ pub struct CareerRound<'a> {
     /// (`crate::consistency::apply_consistency_swing`), mesmo índice denso
     /// do roster inteiro.
     pub consistency: &'a [u8],
+    /// Velocidade de adaptação de cada jogador, 0-100
+    /// (`crate::adaptation::generate_adaptation`) — reduz a força de um
+    /// recém-chegado por até duas temporadas
+    /// (`crate::adaptation::apply_adaptation_penalty`), mesmo índice denso
+    /// do roster inteiro.
+    pub adaptation: &'a [u8],
+    /// Quantas temporadas desde a última transferência de cada jogador
+    /// (`crate::adaptation::initial_seasons_since_transfer`/
+    /// `mark_transferred`/`advance_seasons_since_transfer`, estado mutável
+    /// de carreira — `app::GameSession` cuida da mutação, este campo é só
+    /// leitura durante o loop por rodada), mesmo índice denso do roster
+    /// inteiro.
+    pub seasons_since_transfer: &'a [u8],
 }
 
 /// Resultado de simular uma temporada inteira, competição por competição.
@@ -368,6 +381,16 @@ fn simulate_round_robin_for_career(
             );
             let starters =
                 crate::quality::starters_from_roster_excluding(career.roster, club, &suspended);
+            // Malus de adaptação (RF-JG-02, `crate::adaptation`): recém-
+            // chegado de adaptação baixa rende um pouco menos por até duas
+            // temporadas — antes do balanço de consistência, abaixo, pra
+            // os dois se combinarem na mesma força final.
+            let profile = crate::adaptation::apply_adaptation_penalty(
+                profile,
+                &starters,
+                career.adaptation,
+                career.seasons_since_transfer,
+            );
             // Balanço de consistência (RF-JG-02, `crate::consistency`):
             // ruído zero-médio por rodada, não um direcionamento como
             // sujeira/jogo importante — ver o doc do módulo.
@@ -533,6 +556,18 @@ mod tests {
         vec![100; pack.players.len()]
     }
 
+    /// Adaptação fixa "irrelevante" — mesmo motivo de `example_consistency`.
+    fn example_adaptation(pack: &LoadedPack) -> Vec<u8> {
+        vec![50; pack.players.len()]
+    }
+
+    /// Todo mundo "já assentado" — zera o malus de
+    /// `crate::adaptation::apply_adaptation_penalty` (ver o doc do
+    /// módulo), pros testes que não são sobre o efeito da adaptação em si.
+    fn example_seasons_since_transfer(pack: &LoadedPack) -> Vec<u8> {
+        crate::adaptation::initial_seasons_since_transfer(pack)
+    }
+
     #[test]
     fn roda_uma_temporada_no_pack_de_exemplo_sem_travar() {
         let p = example_pack();
@@ -569,6 +604,8 @@ mod tests {
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
         let consistency = example_consistency(&p);
+        let adaptation = example_adaptation(&p);
+        let seasons_since_transfer = example_seasons_since_transfer(&p);
         let career = CareerRound {
             roster: &roster,
             budgets: &mut budgets,
@@ -577,6 +614,8 @@ mod tests {
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
             consistency: &consistency,
+            adaptation: &adaptation,
+            seasons_since_transfer: &seasons_since_transfer,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -602,6 +641,8 @@ mod tests {
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
         let consistency = example_consistency(&p);
+        let adaptation = example_adaptation(&p);
+        let seasons_since_transfer = example_seasons_since_transfer(&p);
 
         let mut budgets_a = vec![Money::ZERO; p.clubs.len()];
         let career_a = CareerRound {
@@ -612,6 +653,8 @@ mod tests {
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
             consistency: &consistency,
+            adaptation: &adaptation,
+            seasons_since_transfer: &seasons_since_transfer,
         };
         let a = run_season(&p, &membership, &profiles, Some(career_a), 7, 0);
 
@@ -624,6 +667,8 @@ mod tests {
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
             consistency: &consistency,
+            adaptation: &adaptation,
+            seasons_since_transfer: &seasons_since_transfer,
         };
         let b = run_season(&p, &membership, &profiles, Some(career_b), 7, 0);
         assert_eq!(a, b);
@@ -647,6 +692,8 @@ mod tests {
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
         let consistency = example_consistency(&p);
+        let adaptation = example_adaptation(&p);
+        let seasons_since_transfer = example_seasons_since_transfer(&p);
 
         let total_suspensions: usize = (0..10)
             .map(|season_index| {
@@ -659,6 +706,8 @@ mod tests {
                     dirtiness: &dirtiness,
                     big_game_mentality: &big_game_mentality,
                     consistency: &consistency,
+                    adaptation: &adaptation,
+                    seasons_since_transfer: &seasons_since_transfer,
                 };
                 run_season(&p, &membership, &profiles, Some(career), 1, season_index).suspensions
             })
@@ -684,6 +733,8 @@ mod tests {
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
         let consistency = example_consistency(&p);
+        let adaptation = example_adaptation(&p);
+        let seasons_since_transfer = example_seasons_since_transfer(&p);
         let mut budgets = vec![Money::ZERO; p.clubs.len()];
 
         let career = CareerRound {
@@ -694,6 +745,8 @@ mod tests {
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
             consistency: &consistency,
+            adaptation: &adaptation,
+            seasons_since_transfer: &seasons_since_transfer,
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -723,6 +776,8 @@ mod tests {
         let dirtiness = example_dirtiness(&p);
         let big_game_mentality = example_big_game_mentality(&p);
         let consistency = example_consistency(&p);
+        let adaptation = example_adaptation(&p);
+        let seasons_since_transfer = example_seasons_since_transfer(&p);
 
         let high_reputation = vec![100; p.clubs.len()];
         let mut budgets_high = vec![Money::ZERO; p.clubs.len()];
@@ -734,6 +789,8 @@ mod tests {
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
             consistency: &consistency,
+            adaptation: &adaptation,
+            seasons_since_transfer: &seasons_since_transfer,
         };
         let high = run_season(&p, &membership, &profiles, Some(career_high), 42, 0);
 
@@ -747,6 +804,8 @@ mod tests {
             dirtiness: &dirtiness,
             big_game_mentality: &big_game_mentality,
             consistency: &consistency,
+            adaptation: &adaptation,
+            seasons_since_transfer: &seasons_since_transfer,
         };
         let low = run_season(&p, &membership, &profiles, Some(career_low), 42, 0);
 
