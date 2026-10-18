@@ -39,8 +39,11 @@ use serde::{Deserialize, Serialize};
 /// Bump 6→7: `total_contracts_renewed` (`world::advance_contracts`,
 /// RF-CL-02 — duração de contrato; salário passa a usar o CA travado no
 /// contrato em vez do CA corrente, então o orçamento final dos clubes
-/// muda de novo).
-const SCHEMA_VERSION: u16 = 7;
+/// muda de novo). Bump 7→8: `total_prize_money_paid_cents`
+/// (`world::distribute_prize_money`, RF-CL-03 — premiação por posição
+/// final; orçamento final dos clubes muda de novo, mesma justificativa
+/// dos bumps de receita/despesa anteriores).
+const SCHEMA_VERSION: u16 = 8;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct TableRowSnapshot {
@@ -117,6 +120,10 @@ struct GoldenMaster {
     /// (uma renovação por contrato que chegou a zero), mesma semântica de
     /// `total_suspensions`.
     total_contracts_renewed: usize,
+    /// Soma de `CommandReceipt::prize_money_paid` (em centavos) de cada
+    /// temporada — `world::distribute_prize_money`, RF-CL-03. Mesma
+    /// justificativa de `i64` que `total_payroll_paid_cents`.
+    total_prize_money_paid_cents: i64,
     /// Tabela final (depois da última temporada) de cada competição do
     /// pack, na mesma ordem que `app::Query::Competitions` devolve —
     /// determinística (ordem de id denso, `docs/02 §6.1`).
@@ -161,6 +168,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
     let mut total_payroll_paid_cents = 0i64;
     let mut total_match_day_revenue_cents = 0i64;
     let mut total_contracts_renewed = 0usize;
+    let mut total_prize_money_paid_cents = 0i64;
     for _ in 0..seasons {
         let receipt = session
             .dispatch(app::Command::AdvanceSeason)
@@ -174,6 +182,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_payroll_paid_cents += receipt.payroll_paid.cents();
         total_match_day_revenue_cents += receipt.match_day_revenue.cents();
         total_contracts_renewed += receipt.contracts_renewed;
+        total_prize_money_paid_cents += receipt.prize_money_paid.cents();
     }
 
     let app::QueryResult::Competitions(competitions_list) = session.query(app::Query::Competitions)
@@ -247,6 +256,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_payroll_paid_cents,
         total_match_day_revenue_cents,
         total_contracts_renewed,
+        total_prize_money_paid_cents,
         competitions,
         state_hash: String::new(),
     };
@@ -393,6 +403,10 @@ pub fn verify(seed: u64, pack_path: Option<std::path::PathBuf>, expect_path: &Pa
     eprintln!(
         "  contratos renovados: esperado {}, obtido {}",
         expected.total_contracts_renewed, actual.total_contracts_renewed
+    );
+    eprintln!(
+        "  premiação (centavos): esperado {}, obtido {}",
+        expected.total_prize_money_paid_cents, actual.total_prize_money_paid_cents
     );
     report_competition_diff(&expected.competitions, &actual.competitions);
     eprintln!(

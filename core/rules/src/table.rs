@@ -68,7 +68,13 @@ impl TableRow {
 ///
 /// O desempate final, **sempre**, é a ordem do `ClubId` — nunca existe
 /// "empate de verdade" na tabela devolvida, porque uma ordem indefinida
-/// quebraria o determinismo entre plataformas (`ADR 0002`).
+/// quebraria o determinismo entre plataformas (`ADR 0002`). A não-
+/// transitividade de `HeadToHead` (acima) por si só não quebra isso: dado
+/// um ciclo A > B > C > A, a tabela final ainda é sempre a mesma pra
+/// qualquer execução com a mesma entrada, porque a função pré-ordena por
+/// `ClubId` antes de aplicar `tiebreakers` — só fixa qual das ordens
+/// "igualmente válidas" (A,B,C ou B,C,A ou C,A,B) sai, nunca resolve o
+/// ciclo de verdade.
 ///
 /// Um resultado cujo `fixture` referencie um clube fora de `clubs` é
 /// **ignorado**, nunca causa `panic!` — `docs/02-arquitetura.md §9.2`:
@@ -101,6 +107,17 @@ pub fn compute_table(
     }
 
     let mut table: Vec<TableRow> = rows.into_values().collect();
+    // `rows.into_values()` percorre um `HashMap`, cuja ordem de iteração
+    // não é determinística entre execuções (`ADR 0002` proíbe exatamente
+    // isso) — importa aqui porque `HeadToHead` pode ser não-transitivo
+    // pra 3+ clubes empatados entre si (ver o doc da função): sem uma
+    // ordem de partida canônica, `sort_by` (estável) preservaria a ordem
+    // de entrada não-determinística entre os elementos que o comparador
+    // não consegue distinguir de forma transitiva, produzindo uma tabela
+    // diferente a cada execução para a mesma entrada. Ordenar por
+    // `ClubId` primeiro fixa essa ordem de entrada, então o resultado
+    // final fica sempre o mesmo, mesmo quando `HeadToHead` cicla.
+    table.sort_by_key(|row| row.club);
     table.sort_by(|a, b| compare_rows(a, b, tiebreakers, &head_to_head_points));
     table
 }
@@ -304,6 +321,39 @@ mod tests {
             pos_0 < pos_1,
             "vencedor do confronto direto deveria vir antes"
         );
+    }
+
+    #[test]
+    fn ciclo_nao_transitivo_de_confronto_direto_ainda_e_deterministico() {
+        // O caso que `head_to_head_desempata_par_a_par` (acima) evita de
+        // propósito: três clubes com pontos/saldo/gols idênticos, cada um
+        // vencendo o próximo num ciclo (0 bate 1, 1 bate 2, 2 bate 0) — sob
+        // `HeadToHead`, isso é não-transitivo por natureza (0 > 1 > 2 > 0,
+        // ver o doc da função), então não existe "a" ordem certa. O que
+        // `compute_table` garante não é resolver o ciclo (impossível), é
+        // que a mesma entrada sempre produz a mesma tabela — antes do pré-
+        // ordenamento por `ClubId` (ver o doc da função), a ordem de saída
+        // dependia de como `HashMap::into_values()` calhava de iterar,
+        // variando entre execuções mesmo pra esta entrada idêntica.
+        let clubs = [c(0), c(1), c(2)];
+        let results = [
+            (fixture(c(0), c(1)), score(1, 0)),
+            (fixture(c(1), c(2)), score(1, 0)),
+            (fixture(c(2), c(0)), score(1, 0)),
+        ];
+        let tiebreakers = [
+            Tiebreaker::Points,
+            Tiebreaker::GoalDifference,
+            Tiebreaker::HeadToHead,
+        ];
+        let first = compute_table(&clubs, &results, &tiebreakers);
+        for _ in 0..50 {
+            assert_eq!(
+                compute_table(&clubs, &results, &tiebreakers),
+                first,
+                "mesma entrada com confronto direto cíclico produziu tabelas diferentes"
+            );
+        }
     }
 
     #[test]

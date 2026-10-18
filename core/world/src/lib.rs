@@ -26,7 +26,10 @@
 //! — fatia mínima de RF-CL-02, sem contrato, duração, luvas ou cláusula.
 //! Bilheteria ([`finance::match_day_revenue`]) é a primeira receita
 //! recorrente de verdade — fatia mínima de RF-CL-03, só ingresso de
-//! partida em casa, sem TV, prêmio ou patrocínio. Duração de contrato
+//! partida em casa, sem TV ou patrocínio. Premiação
+//! ([`finance::distribute_prize_money`]) é a segunda: um pool fixo por
+//! competição de liga, dividido por posição final (campeão ganha mais,
+//! lanterna ganha menos) uma vez por temporada. Duração de contrato
 //! ([`contract`]) complementa a folha salarial: salário travado no CA do
 //! momento da assinatura, não no CA corrente, só reajustando quando o
 //! contrato de fato renova (automático, sem negociação) ou o jogador é
@@ -92,7 +95,10 @@ pub use consistency::generate_consistency;
 pub use contract::{ContractState, advance_contracts, generate_initial_contracts};
 pub use cup::{CupMatch, CupResult, cup_participants, generate_big_game_mentality, run_cup};
 pub use discipline::generate_dirtiness;
-pub use finance::{generate_budgets, generate_stadium_capacities, pay_salaries, salary_per_season};
+pub use finance::{
+    distribute_prize_money, generate_budgets, generate_stadium_capacities, pay_salaries,
+    salary_per_season,
+};
 pub use injuries::{generate_injury_proneness, roll_injuries};
 pub use market::{generate_ambition, generate_loyalty, run_market_day};
 pub use progression::{PlayerState, advance_season, generate_professionalism, initial_roster};

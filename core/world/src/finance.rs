@@ -11,11 +11,16 @@
 //! ver `crate::contract` para luvas/cláusula ainda não existirem.
 //! Bilheteria ([`match_day_revenue`]) é a primeira fatia real de receita —
 //! fatia mínima de RF-CL-03 (`docs/01 §2.2`): só o ingresso de partida em
-//! casa, nada de TV, prêmio ou patrocínio ainda (o resto de RF-CL-03 fica
-//! para quando essas fontes existirem).
+//! casa, nada de TV, prêmio ou patrocínio ainda. Premiação
+//! ([`distribute_prize_money`]) é a segunda: um valor fixo por competição
+//! por temporada, dividido entre os clubes conforme a posição final na
+//! tabela (1º lugar ganha mais, último ganha menos) — ainda sem TV nem
+//! patrocínio (o resto de RF-CL-03 fica para quando essas fontes
+//! existirem).
 
 use domain::{ClubId, DeterministicRng, Money};
 use pack::LoadedPack;
+use rules::TableRow;
 
 use crate::contract::ContractState;
 use crate::progression::PlayerState;
@@ -200,6 +205,51 @@ pub fn match_day_revenue(
     let attendance_permille = floor + rng.below(span);
     let attendance = capacity * attendance_permille / 1000;
     Money::from_cents(i64::from(attendance) * CENTS_PER_TICKET)
+}
+
+/// Pool total de premiação de uma competição de liga por temporada, em
+/// centavos — fatia de "prêmio" de RF-CL-03 (`docs/01 §2.2`): magnitude
+/// modesta por propósito (pequena fração da bilheteria/folha salarial de
+/// uma competição no pack de exemplo), não dado calibrado.
+const PRIZE_POOL_CENTS: i64 = 2_000_000; // 20.000,00
+
+/// Premiação de uma posição final `position` (1 = campeão) numa tabela de
+/// `n_clubs`, em centavos — peso linear decrescente (`n_clubs - position +
+/// 1`): o campeão pesa `n_clubs` vezes mais que o lanterna. Arredonda pra
+/// baixo (`PRIZE_POOL_CENTS` nem sempre se divide exatamente pelo peso
+/// total — a sobra fica retida, não é dívida de ninguém).
+fn prize_for_position(position: u32, n_clubs: u32) -> i64 {
+    let weight = i64::from(n_clubs - position + 1);
+    let total_weight = i64::from(n_clubs) * i64::from(n_clubs + 1) / 2;
+    PRIZE_POOL_CENTS * weight / total_weight
+}
+
+/// Distribui a premiação de fim de temporada de uma competição de liga —
+/// fatia de "prêmio" de RF-CL-03: `table[0]` (campeão) recebe a maior
+/// fração do pool fixo ([`PRIZE_POOL_CENTS`]), o lanterna a menor,
+/// decrescendo linearmente por posição ([`prize_for_position`]). `table`
+/// tem que já estar na ordem de posição final (`rules::compute_table`,
+/// como toda tabela deste crate) — o índice denso **é** a posição
+/// (`idx + 1`). Devolve o total de fato distribuído (pode ser menor que
+/// `PRIZE_POOL_CENTS` por arredondamento pra baixo). Tabela vazia
+/// (competição sem clube — não deveria acontecer com um pack validado)
+/// devolve `Money::ZERO` sem tocar `budgets`. Só liga: copa
+/// (`crate::cup`) não tem tabela, não entra aqui.
+#[must_use]
+pub fn distribute_prize_money(table: &[TableRow], budgets: &mut [Money]) -> Money {
+    let n_clubs = table.len() as u32;
+    if n_clubs == 0 {
+        return Money::ZERO;
+    }
+    let mut total_paid = Money::ZERO;
+    for (idx, row) in table.iter().enumerate() {
+        let position = idx as u32 + 1;
+        let prize = Money::from_cents(prize_for_position(position, n_clubs));
+        let club_idx = row.club.as_usize();
+        budgets[club_idx] = budgets[club_idx] + prize;
+        total_paid = total_paid + prize;
+    }
+    total_paid
 }
 
 #[cfg(test)]
@@ -451,5 +501,65 @@ mod tests {
             })
             .sum();
         assert!(high_total > low_total);
+    }
+
+    /// Linha de tabela mínima pra `distribute_prize_money` — só `club`
+    /// importa (posição vem do índice denso em `table`, não de nenhum
+    /// outro campo da linha).
+    fn row(club: u32) -> TableRow {
+        TableRow {
+            club: ClubId::new(club),
+            played: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
+            goals_for: 0,
+            goals_against: 0,
+        }
+    }
+
+    #[test]
+    fn distribute_prize_money_premia_mais_quem_termina_em_primeiro() {
+        let table = vec![row(0), row(1), row(2)];
+        let mut budgets = vec![Money::ZERO; 3];
+        let _ = distribute_prize_money(&table, &mut budgets);
+        assert!(budgets[0] > budgets[1]);
+        assert!(budgets[1] > budgets[2]);
+    }
+
+    #[test]
+    fn distribute_prize_money_credita_o_clube_certo_nao_a_posicao() {
+        // Clube 2 termina em primeiro (índice 0 da tabela) — o orçamento
+        // dele, não o do clube 0, tem que receber a maior premiação.
+        let table = vec![row(2), row(0), row(1)];
+        let mut budgets = vec![Money::ZERO; 3];
+        let _ = distribute_prize_money(&table, &mut budgets);
+        assert!(budgets[2] > budgets[0]);
+        assert!(budgets[2] > budgets[1]);
+    }
+
+    #[test]
+    fn distribute_prize_money_nunca_distribui_mais_que_o_pool() {
+        let table: Vec<TableRow> = (0..8).map(row).collect();
+        let mut budgets = vec![Money::ZERO; 8];
+        let total_paid = distribute_prize_money(&table, &mut budgets);
+        assert!(total_paid.cents() <= PRIZE_POOL_CENTS);
+        assert!(total_paid.cents() > 0);
+    }
+
+    #[test]
+    fn distribute_prize_money_total_pago_bate_com_a_soma_dos_orcamentos() {
+        let table: Vec<TableRow> = (0..5).map(row).collect();
+        let mut budgets = vec![Money::ZERO; 5];
+        let total_paid = distribute_prize_money(&table, &mut budgets);
+        let total_in_budgets: i64 = budgets.iter().map(|b| b.cents()).sum();
+        assert_eq!(total_in_budgets, total_paid.cents());
+    }
+
+    #[test]
+    fn distribute_prize_money_tabela_vazia_nao_distribui_nada() {
+        let mut budgets: Vec<Money> = vec![];
+        let total_paid = distribute_prize_money(&[], &mut budgets);
+        assert_eq!(total_paid, Money::ZERO);
     }
 }

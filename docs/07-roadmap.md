@@ -306,6 +306,30 @@ aqui e volta ao design** — é para isso que o marco existe.
 > e "IA" de RF-MU-08, e reputação de país (a outra metade do requisito),
 > ainda faltam.
 >
+> **Premiação** (`world::finance::distribute_prize_money`) é a segunda
+> fonte de receita real de RF-CL-03, ao lado da bilheteria: um pool fixo
+> por competição de liga, por temporada, dividido por posição final na
+> tabela (peso linear — campeão ganha mais, lanterna ganha menos). Pool
+> pequeno de propósito (bem menor que a bilheteria da mesma competição),
+> só liga (copa não tem tabela). `CommandReceipt::prize_money_paid`
+> reporta o total por temporada; golden master bump 7→8
+> (`total_prize_money_paid_cents`).
+>
+> Enquanto testava premiação, um proptest achou uma quebra real de
+> determinismo pré-existente em `rules::compute_table` (`ADR 0002`):
+> quando 3+ clubes empatam em todos os critérios configurados antes de
+> `HeadToHead`, esse critério pode ser não-transitivo por natureza (A > B
+> > C > A, documentado desde sempre na função) — o bug era que, nesse
+> caso raro, a tabela final dependia de como `HashMap::into_values()`
+> calhava de iterar internamente, não-determinístico entre execuções da
+> mesma entrada. Corrigido pré-ordenando por `ClubId` antes do sort real
+> (`table.sort_by_key(|row| row.club)`), o que fixa a ordem de entrada e
+> torna o resultado sempre o mesmo — não resolve o ciclo de verdade
+> (impossível), só garante que a mesma entrada nunca produz tabelas
+> diferentes. Teste de regressão dedicado em `rules::table` reproduz o
+> ciclo de propósito e chama `compute_table` 50 vezes seguidas sobre a
+> mesma entrada.
+>
 > **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas oito
 > fatias reais — todo o requisito agora tem pelo menos um efeito real em
 > jogo, nenhum calibrado ainda:

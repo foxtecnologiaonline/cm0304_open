@@ -107,9 +107,19 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > salarial (RF-CL-02, acima), não maior que ela: no pack de exemplo,
 > bilheteria fica em torno de 45-50% da folha, então a economia do mundo
 > ainda drena dinheiro a cada temporada, só mais devagar que antes desta
-> fatia. Sem TV, prêmio, patrocínio, dívida ou saldo negativo — o resto de
-> RF-CL-03 fica para quando essas fontes existirem. `CommandReceipt::match_day_revenue`
-> e `managerfc-cli play` já reportam o total recebido por temporada.
+> fatia. `CommandReceipt::match_day_revenue` e `managerfc-cli play` já
+> reportam o total recebido por temporada.
+>
+> `world::finance::distribute_prize_money` é a segunda fonte real de
+> receita de RF-CL-03 — **premiação**: um pool fixo por competição de
+> liga (não calibrado, pequeno de propósito — bem menor que a bilheteria
+> da mesma competição no pack de exemplo), dividido entre os clubes
+> conforme a posição final na tabela (peso linear: campeão pesa tantas
+> vezes mais que o lanterna quantos clubes tem a competição). Só liga —
+> copa não tem tabela, não entra aqui. Sem TV, patrocínio, dívida ou
+> saldo negativo ainda — o resto de RF-CL-03 fica para quando essas
+> fontes existirem. `CommandReceipt::prize_money_paid` e `managerfc-cli
+> play` já reportam o total recebido por temporada.
 >
 > O público sorteado por partida, antes decorativo (piso/teto fixos,
 > `docs/01 §2.4` RF-MU-08 citado como "futuro"), agora é influenciado pela

@@ -67,6 +67,11 @@ pub struct CommandReceipt {
     /// RF-CL-02, fatia de duração) — não conta renovação por transferência
     /// (`world::run_market_day`), essa já sai do mercado com contrato novo.
     pub contracts_renewed: usize,
+    /// Quanto os clubes receberam de premiação de fim de temporada, no
+    /// total (`world::distribute_prize_money`, `docs/01 §2.2`, RF-CL-03,
+    /// segunda fatia) — um pool fixo por competição de liga, dividido por
+    /// posição final na tabela.
+    pub prize_money_paid: domain::Money,
 }
 
 /// Uma carreira carregada em memória.
@@ -400,6 +405,17 @@ impl GameSession {
                     self.membership[club.as_usize()] = to;
                 }
 
+                // Premiação de fim de temporada (`world::distribute_prize_money`,
+                // `docs/01 §2.2` RF-CL-03, segunda fatia): um pool fixo por
+                // competição de liga, dividido por posição final — `result.tables`
+                // só tem entrada pra competição de liga que de fato rodou
+                // (copa não tem tabela, ver `world::season::SeasonResult`).
+                let mut prize_money_paid = domain::Money::ZERO;
+                for (_competition, table) in &result.tables {
+                    prize_money_paid =
+                        prize_money_paid + world::distribute_prize_money(table, &mut self.budgets);
+                }
+
                 // Condição de entrada na próxima temporada
                 // (`world::apply_season_fatigue`, `docs/01 §2.1` RF-JG-07,
                 // fatia mínima): titular que jogou muita partida de liga
@@ -456,6 +472,7 @@ impl GameSession {
                     payroll_paid,
                     match_day_revenue: result.match_day_revenue,
                     contracts_renewed,
+                    prize_money_paid,
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -885,17 +902,20 @@ mod tests {
             receipt.payroll_paid.cents() > 0,
             "esperava folha salarial positiva no pack de exemplo (256 jogadores com CA > 0)"
         );
-        // `payroll_paid` é a folha debitada, `match_day_revenue` é a
-        // bilheteria creditada (`world::finance::match_day_revenue`,
-        // RF-CL-03) — juntas explicam exatamente a variação do orçamento
-        // total: transferências (`run_market_day`) conservam dinheiro entre
-        // clubes, então não aparecem aqui.
+        // `payroll_paid` é a folha debitada, `match_day_revenue` e
+        // `prize_money_paid` são as duas receitas creditadas
+        // (`world::finance::match_day_revenue`/`distribute_prize_money`,
+        // RF-CL-03) — as três juntas explicam exatamente a variação do
+        // orçamento total: transferências (`run_market_day`) conservam
+        // dinheiro entre clubes, então não aparecem aqui.
         let budget_after: i64 = session.budgets.iter().map(|b| b.cents()).sum();
         assert_eq!(
             budget_before - budget_after,
-            receipt.payroll_paid.cents() - receipt.match_day_revenue.cents(),
-            "a queda do orçamento total deveria ser exatamente folha paga menos bilheteria \
-             recebida, já que transferências conservam dinheiro entre clubes"
+            receipt.payroll_paid.cents()
+                - receipt.match_day_revenue.cents()
+                - receipt.prize_money_paid.cents(),
+            "a queda do orçamento total deveria ser exatamente folha paga menos bilheteria e \
+             premiação recebidas, já que transferências conservam dinheiro entre clubes"
         );
     }
 
