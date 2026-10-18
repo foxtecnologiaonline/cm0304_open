@@ -3,15 +3,19 @@
 //! de valor de mercado) e RF-TR-05 (IA de transferência: identifica
 //! carência, orça, compra) de `docs/01 §2.4` — ambos marcados M2 lá porque
 //! a versão completa (negociação, disputa entre clubes, desistência,
-//! reputação) pede muito mais do que existe: sem negociação de verdade
-//! (`RF-TR-03`/`04`), sem demanda/reputação, sem janela por país
-//! (`RF-TR-01`). O que há aqui é mecânico e automático, sem nenhum jogador
-//! humano envolvido: cada clube, uma vez por "dia de mercado", tenta trocar
-//! seu titular mais fraco por um reserva melhor de outro clube que caiba no
-//! orçamento. [`market_value`] já considera **contrato** (duração restante
-//! — `world::ContractState`), **idade** e **PA** (potencial não realizado)
-//! — três das outras variáveis de RF-TR-02 completo (demanda ainda falta;
-//! reputação entra parcialmente via [`MarketPlayer::ambition`], abaixo).
+//! demanda) pede muito mais do que existe: sem negociação de verdade
+//! (`RF-TR-03`/`04`), sem demanda, sem janela por país (`RF-TR-01`). O que
+//! há aqui é mecânico e automático, sem nenhum jogador humano envolvido:
+//! cada clube, uma vez por "dia de mercado", tenta trocar seu titular mais
+//! fraco por um reserva melhor de outro clube que caiba no orçamento.
+//! [`market_value`] já considera **contrato** (duração restante —
+//! `world::ContractState`), **idade**, **PA** (potencial não realizado) e
+//! **reputação do clube vendedor** — quatro das outras variáveis de
+//! RF-TR-02 completo (só demanda ainda falta). Reputação entra duas vezes,
+//! com papéis diferentes: como fator de **preço** em [`market_value`]
+//! (clube mais reputado vende mais caro) e como filtro de **candidatura**
+//! via [`MarketPlayer::ambition`] (abaixo) — um jogador ambicioso recusa
+//! sair pra um clube menos reputado, preço nenhum muda isso.
 //! [`run_market_day`] também já considera **lealdade** (RF-JG-02, atributo
 //! oculto): jogador muito leal nunca é candidato a saída, mesmo que o
 //! preço bata. E **ambição** (RF-JG-02, atributo oculto): jogador muito
@@ -124,28 +128,50 @@ fn potential_premium_permille(current_ability: u8, potential_ability: u8) -> u32
     }
 }
 
+/// Prêmio sobre o valor de base conforme a reputação do clube **vendedor**,
+/// em milésimos — fatia de "reputação" de RF-TR-02 (`docs/01 §2.4`): um
+/// jogador de um clube mais reputado custa mais, mesmo com CA/idade/PA
+/// idênticos a um de um clube sem nome — "vestir a camisa" de um clube
+/// grande é, em si, parte do preço (exposição, prestígio, mídia — nenhum
+/// desses modelado de verdade, só o efeito agregado no preço). Faixas
+/// escolhidas só pra dar o efeito na direção certa, não calibradas —
+/// complementa (não substitui) a recusa de ambição em
+/// [`run_market_day`], que já usa a mesma reputação como filtro de
+/// candidatura, não de preço.
+fn reputation_premium_permille(seller_reputation: u8) -> u32 {
+    match seller_reputation {
+        0..=20 => 850,
+        21..=50 => 1000,
+        51..=80 => 1150,
+        _ => 1300,
+    }
+}
+
 /// Valor de mercado de um jogador — função de CA (quadrática: dobrar a
 /// habilidade quadruplica o valor de base), de duração restante de
 /// contrato ([`contract_discount_permille`]), de idade
-/// ([`age_value_permille`]) e de margem de PA ainda não realizada
-/// ([`potential_premium_permille`]) — o suficiente para um jogador de
+/// ([`age_value_permille`]), de margem de PA ainda não realizada
+/// ([`potential_premium_permille`]) e da reputação do clube vendedor
+/// ([`reputation_premium_permille`]) — o suficiente para um jogador de
 /// elite custar ordens de magnitude mais que um da base, para contrato
 /// curto baratear qualquer um, para idade inclinar o preço a favor do
-/// jovem e contra o veterano, e para potencial não realizado encarecer um
-/// jogador que ainda vai crescer muito — sem precisar ainda de
-/// reputação/demanda (RF-TR-02 completo). Constante de escala (`10_000`
-/// centavos por CA²) escolhida só pra dar números de magnitude plausível
-/// no pack de exemplo; não é dado calibrado nem carregável de pack ainda
-/// (`docs/03 §5`, mesmo status que as constantes de `engine::simulate`
-/// antes da calibração).
+/// jovem e contra o veterano, para potencial não realizado encarecer um
+/// jogador que ainda vai crescer muito, e para a camisa de um clube
+/// grande encarecer por si só — falta só demanda pro RF-TR-02 completo.
+/// Constante de escala (`10_000` centavos por CA²) escolhida só pra dar
+/// números de magnitude plausível no pack de exemplo; não é dado
+/// calibrado nem carregável de pack ainda (`docs/03 §5`, mesmo status que
+/// as constantes de `engine::simulate` antes da calibração).
 #[must_use]
 pub fn market_value(
     current_ability: u8,
     contract_seasons_remaining: u8,
     age_years: u8,
     potential_ability: u8,
+    seller_reputation: u8,
 ) -> Money {
     const CENTS_PER_CA_SQUARED: i64 = 10_000;
+    const PERMILLE: i64 = 1_000;
     let ca = i64::from(current_ability);
     let base = ca * ca * CENTS_PER_CA_SQUARED;
     let contract_discount = i64::from(contract_discount_permille(contract_seasons_remaining));
@@ -154,7 +180,18 @@ pub fn market_value(
         current_ability,
         potential_ability,
     ));
-    Money::from_cents(base * contract_discount * age_factor * potential_premium / 1_000_000_000)
+    let reputation_premium = i64::from(reputation_premium_permille(seller_reputation));
+    // Aplica cada fator em permilagem separadamente (em vez de multiplicar
+    // os quatro antes de uma única divisão por 10^12) — com `current_ability`
+    // até 255, `base` já passa de 6×10^8; multiplicar por até quatro fatores
+    // de ~1600 antes de dividir passaria de `i64::MAX`. Cada passo perde um
+    // pouco de precisão por arredondamento pra baixo, mas nenhum teste
+    // depende de mais de um fator não-neutro ao mesmo tempo.
+    let value = base * contract_discount / PERMILLE;
+    let value = value * age_factor / PERMILLE;
+    let value = value * potential_premium / PERMILLE;
+    let value = value * reputation_premium / PERMILLE;
+    Money::from_cents(value)
 }
 
 /// Lealdade a partir da qual um jogador nunca é candidato a saída em
@@ -291,6 +328,7 @@ pub fn run_market_day(
                     players[idx].contract_seasons_remaining,
                     players[idx].age_years,
                     players[idx].potential_ability,
+                    club_reputation[players[idx].club.as_usize()],
                 )
         }) else {
             continue;
@@ -301,6 +339,7 @@ pub fn run_market_day(
             players[winner_idx].contract_seasons_remaining,
             players[winner_idx].age_years,
             players[winner_idx].potential_ability,
+            club_reputation[players[winner_idx].club.as_usize()],
         );
         let seller = players[winner_idx].club;
         let player_id = players[winner_idx].player;
@@ -347,6 +386,11 @@ mod tests {
     // limiar de recusa) — testes que não são sobre ambição não precisam
     // pensar nisso.
     const LOW_AMBITION: u8 = 0;
+
+    // Reputação "neutra" por padrão (`reputation_premium_permille` dá
+    // 1000, nem desconto nem prêmio) — testes de `market_value` que não
+    // são sobre reputação não precisam pensar nisso.
+    const MID_SELLER_REPUTATION: u8 = 30;
 
     /// Reputação uniforme pra todo clube — zera o efeito de
     /// `accepts_destination` (nenhum destino é "pior" que outro), pros
@@ -458,35 +502,44 @@ mod tests {
 
     #[test]
     fn market_value_cresce_quadraticamente_com_ca() {
-        assert_eq!(market_value(0, FULL_CONTRACT, PRIME_AGE, 0), Money::ZERO);
+        assert_eq!(
+            market_value(0, FULL_CONTRACT, PRIME_AGE, 0, MID_SELLER_REPUTATION),
+            Money::ZERO
+        );
         assert!(
-            market_value(200, FULL_CONTRACT, PRIME_AGE, 200)
-                > market_value(100, FULL_CONTRACT, PRIME_AGE, 100)
+            market_value(200, FULL_CONTRACT, PRIME_AGE, 200, MID_SELLER_REPUTATION)
+                > market_value(100, FULL_CONTRACT, PRIME_AGE, 100, MID_SELLER_REPUTATION)
         );
         // Dobrar o CA (10 -> 20) quadruplica o valor.
         assert_eq!(
-            market_value(20, FULL_CONTRACT, PRIME_AGE, 20).cents(),
-            market_value(10, FULL_CONTRACT, PRIME_AGE, 10).cents() * 4
+            market_value(20, FULL_CONTRACT, PRIME_AGE, 20, MID_SELLER_REPUTATION).cents(),
+            market_value(10, FULL_CONTRACT, PRIME_AGE, 10, MID_SELLER_REPUTATION).cents() * 4
         );
     }
 
     #[test]
     fn market_value_cai_com_contrato_mais_curto() {
-        assert!(market_value(100, 5, PRIME_AGE, 100) > market_value(100, 2, PRIME_AGE, 100));
-        assert!(market_value(100, 2, PRIME_AGE, 100) > market_value(100, 1, PRIME_AGE, 100));
+        assert!(
+            market_value(100, 5, PRIME_AGE, 100, MID_SELLER_REPUTATION)
+                > market_value(100, 2, PRIME_AGE, 100, MID_SELLER_REPUTATION)
+        );
+        assert!(
+            market_value(100, 2, PRIME_AGE, 100, MID_SELLER_REPUTATION)
+                > market_value(100, 1, PRIME_AGE, 100, MID_SELLER_REPUTATION)
+        );
         // `0` (não deveria vir de `world::ContractState`) trata como `1`.
         assert_eq!(
-            market_value(100, 0, PRIME_AGE, 100),
-            market_value(100, 1, PRIME_AGE, 100)
+            market_value(100, 0, PRIME_AGE, 100, MID_SELLER_REPUTATION),
+            market_value(100, 1, PRIME_AGE, 100, MID_SELLER_REPUTATION)
         );
     }
 
     #[test]
     fn market_value_favorece_jovem_e_penaliza_veterano() {
-        let young = market_value(100, FULL_CONTRACT, 20, 100);
-        let prime = market_value(100, FULL_CONTRACT, PRIME_AGE, 100);
-        let declining = market_value(100, FULL_CONTRACT, 32, 100);
-        let veteran = market_value(100, FULL_CONTRACT, 38, 100);
+        let young = market_value(100, FULL_CONTRACT, 20, 100, MID_SELLER_REPUTATION);
+        let prime = market_value(100, FULL_CONTRACT, PRIME_AGE, 100, MID_SELLER_REPUTATION);
+        let declining = market_value(100, FULL_CONTRACT, 32, 100, MID_SELLER_REPUTATION);
+        let veteran = market_value(100, FULL_CONTRACT, 38, 100, MID_SELLER_REPUTATION);
         assert!(young > prime);
         assert!(prime > declining);
         assert!(declining > veteran);
@@ -494,11 +547,20 @@ mod tests {
 
     #[test]
     fn market_value_cresce_com_a_margem_de_potencial_nao_realizado() {
-        let no_gap = market_value(100, FULL_CONTRACT, PRIME_AGE, 100);
-        let small_gap = market_value(100, FULL_CONTRACT, PRIME_AGE, 110);
-        let big_gap = market_value(100, FULL_CONTRACT, PRIME_AGE, 160);
+        let no_gap = market_value(100, FULL_CONTRACT, PRIME_AGE, 100, MID_SELLER_REPUTATION);
+        let small_gap = market_value(100, FULL_CONTRACT, PRIME_AGE, 110, MID_SELLER_REPUTATION);
+        let big_gap = market_value(100, FULL_CONTRACT, PRIME_AGE, 160, MID_SELLER_REPUTATION);
         assert!(small_gap > no_gap);
         assert!(big_gap > small_gap);
+    }
+
+    #[test]
+    fn market_value_cresce_com_a_reputacao_do_clube_vendedor() {
+        let low = market_value(100, FULL_CONTRACT, PRIME_AGE, 100, 0);
+        let mid = market_value(100, FULL_CONTRACT, PRIME_AGE, 100, MID_SELLER_REPUTATION);
+        let high = market_value(100, FULL_CONTRACT, PRIME_AGE, 100, 100);
+        assert!(low < mid);
+        assert!(mid < high);
     }
 
     #[test]
@@ -535,14 +597,19 @@ mod tests {
         assert_eq!(t.player, PlayerId::new(2));
         assert_eq!(t.from, ClubId::new(1));
         assert_eq!(t.to, ClubId::new(0));
-        assert_eq!(t.fee, market_value(70, FULL_CONTRACT, PRIME_AGE, 70));
+        // Reputação 50 — mesma de `uniform_reputation(2)` usada no
+        // `run_market_day` acima, pro clube vendedor (clube 1).
+        assert_eq!(t.fee, market_value(70, FULL_CONTRACT, PRIME_AGE, 70, 50));
         assert_eq!(players[2].club, ClubId::new(0));
         // Orçamento debitado do comprador, creditado no vendedor.
         assert_eq!(
             budgets[0],
-            Money::from_cents(1_000_000_000) - market_value(70, FULL_CONTRACT, PRIME_AGE, 70)
+            Money::from_cents(1_000_000_000) - market_value(70, FULL_CONTRACT, PRIME_AGE, 70, 50)
         );
-        assert_eq!(budgets[1], market_value(70, FULL_CONTRACT, PRIME_AGE, 70));
+        assert_eq!(
+            budgets[1],
+            market_value(70, FULL_CONTRACT, PRIME_AGE, 70, 50)
+        );
     }
 
     #[test]

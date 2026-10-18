@@ -302,12 +302,15 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > jogador novo com muito espaço pra crescer vale mais, mesmo com CA baixo
 > hoje. Todas as faixas não calibradas, só a direção certa (confirmado
 > por varredura de seeds: 9 de 10 seeds testadas mudaram de resultado
-> real ao ligar o fator de PA, não é decorativo). **Reputação** entra
-> parcialmente, mas não em `market_value` em si: `ai::run_market_day`
-> passa a recusar uma venda pra um clube de reputação menor que a do
-> vendedor quando o jogador é muito ambicioso (RF-JG-02, "ambição",
-> `docs/01 §2.3`) — reputação como filtro de candidatura, não ainda como
-> fator de preço. Demanda ainda falta do RF-TR-02 completo.
+> real ao ligar o fator de PA, não é decorativo). **Reputação** entra de
+> duas formas agora: como fator de **preço** em `ai::market_value` —
+> jogador de um clube mais reputado custa mais, mesmo com CA/idade/PA
+> idênticos a um de um clube sem nome ("vestir a camisa" como parte do
+> preço) — e como filtro de **candidatura** em `ai::run_market_day`, que
+> recusa uma venda pra um clube de reputação menor que a do vendedor
+> quando o jogador é muito ambicioso (RF-JG-02, "ambição", `docs/01
+> §2.3`) — os dois papéis são independentes, um não substitui o outro.
+> Demanda ainda falta do RF-TR-02 completo.
 
 ### 2.5 Táticas e partida (`PA`)
 

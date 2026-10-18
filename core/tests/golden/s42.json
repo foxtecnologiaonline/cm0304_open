@@ -10,7 +10,7 @@
   "total_injuries": 37,
   "total_tired_players": 523,
   "total_suspensions": 26,
-  "total_payroll_paid_cents": 432395000,
+  "total_payroll_paid_cents": 426643748,
   "total_match_day_revenue_cents": 202434030,
   "total_contracts_renewed": 186,
   "total_prize_money_paid_cents": 11999976,
@@ -216,5 +216,5 @@
       "cup_champion": null
     }
   ],
-  "state_hash": "8a647b1fb7984ded"
+  "state_hash": "9241b6219b2bb8e1"
 }

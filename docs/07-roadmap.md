@@ -295,8 +295,9 @@ aqui e volta ao design** — é para isso que o marco existe.
 > **PA** (`domain::Ability::potential()`) também: margem de evolução
 > ainda não realizada carrega prêmio especulativo. Efeito real confirmado
 > por varredura de seeds (9 de 10 produziram resultado diferente ao
-> ligar o fator de PA sobre o mesmo mundo, não decorativo). Reputação e
-> demanda ainda faltam do RF-TR-02 completo.
+> ligar o fator de PA sobre o mesmo mundo, não decorativo). Reputação
+> entrou depois (ver M2, abaixo) como quinta variável; demanda ainda
+> falta do RF-TR-02 completo.
 >
 > **Reputação de clube** (RF-MU-08, `docs/01 §2.4`) também entrou — fatia
 > de "receita" do requisito (ele cita "atratividade, receita e IA"; só
@@ -329,6 +330,17 @@ aqui e volta ao design** — é para isso que o marco existe.
 > diferentes. Teste de regressão dedicado em `rules::table` reproduz o
 > ciclo de propósito e chama `compute_table` 50 vezes seguidas sobre a
 > mesma entrada.
+>
+> **Reputação do clube vendedor** entrou em `ai::market_value` como
+> quinta variável de preço (RF-TR-02, `docs/01 §2.4`) — jogador de um
+> clube mais reputado custa mais, mesmo com CA/idade/PA idênticos a um
+> de clube sem nome. Complementa (não substitui) a recusa de ambição:
+> um papel é preço, o outro é candidatura, independentes. `market_value`
+> mudou de "multiplica os quatro fatores de permilagem, divide por
+> 10^9" para dividir progressivamente a cada fator — com CA até 255 e
+> agora cinco fatores de até ~1600 cada, a multiplicação acumulada antes
+> de uma única divisão passaria de `i64::MAX`. Só demanda falta do
+> RF-TR-02 completo.
 >
 > **RF-JG-02** (atributos ocultos, `docs/01 §2.3`) ganhou suas oito
 > fatias reais — todo o requisito agora tem pelo menos um efeito real em
@@ -368,8 +380,10 @@ aqui e volta ao design** — é para isso que o marco existe.
 > transferência pra um clube de reputação menor que a do vendedor quando
 > o jogador é muito ambicioso, mesmo com preço e lealdade batendo —
 > reputação de clube entra no mercado pela primeira vez, só como filtro
-> de candidatura (RF-TR-02 completo ainda não usa reputação no preço em
-> si). `world::generate_adaptation` sorteia **adaptação** (0-100) do
+> de candidatura (na época, `RF-TR-02` completo ainda não usava
+> reputação no preço em si — passou a usar pouco depois, ver
+> `ai::market_value` abaixo). `world::generate_adaptation` sorteia
+> **adaptação** (0-100) do
 > mesmo jeito, e `world::apply_adaptation_penalty` reduz a força de um
 > titular recém-transferido (até -15%, decaindo por até duas temporadas)
 > — malus puro, some depois da janela, adaptação máxima nunca sofre

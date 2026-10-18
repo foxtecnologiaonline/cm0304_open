@@ -72,14 +72,15 @@ fn synthetic_ambition(player: PlayerId, world_seed: u64) -> u8 {
 /// índice denso que `roster` (`crate::contract`, invariante do módulo); já
 /// `club_reputation` está no índice denso de `budgets`/`ClubId`
 /// (`crate::reputation::generate_club_reputation`). A duração restante de
-/// cada contrato, a idade e o PA de `roster` entram em `ai::market_value`
-/// como desconto/prêmio (RF-TR-02); a lealdade filtra quem nunca é
-/// candidato a saída e a ambição recusa um passo atrás de reputação
-/// (RF-JG-02); todo jogador transferido assina um contrato novo no clube
-/// comprador (duração máxima, salário travado no CA do momento da venda —
-/// `crate::contract::fresh_contract`), mesma lógica de "clube novo
-/// renegocia" de uma renovação automática. Devolve o log de
-/// transferências, para quem chama (`app`) reportar o que aconteceu.
+/// cada contrato, a idade, o PA de `roster` e a reputação do clube
+/// vendedor entram em `ai::market_value` como desconto/prêmio (RF-TR-02);
+/// a lealdade filtra quem nunca é candidato a saída e a ambição recusa um
+/// passo atrás de reputação (RF-JG-02); todo jogador transferido assina
+/// um contrato novo no clube comprador (duração máxima, salário travado
+/// no CA do momento da venda — `crate::contract::fresh_contract`), mesma
+/// lógica de "clube novo renegocia" de uma renovação automática. Devolve
+/// o log de transferências, para quem chama (`app`) reportar o que
+/// aconteceu.
 pub fn run_market_day(
     roster: &mut [PlayerState],
     contracts: &mut [ContractState],
