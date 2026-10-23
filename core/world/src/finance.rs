@@ -11,16 +11,18 @@
 //! ver `crate::contract` para luvas/cláusula ainda não existirem.
 //! Bilheteria ([`match_day_revenue`]) é a primeira fatia real de receita —
 //! fatia mínima de RF-CL-03 (`docs/01 §2.2`): só o ingresso de partida em
-//! casa, nada de TV ou patrocínio ainda. Premiação
-//! ([`distribute_prize_money`]) é a segunda: um valor fixo por competição
-//! por temporada, dividido entre os clubes conforme a posição final na
-//! tabela (1º lugar ganha mais, último ganha menos). Dívida
+//! casa. Premiação ([`distribute_prize_money`]) é a segunda: um valor
+//! fixo por competição por temporada, dividido entre os clubes conforme
+//! a posição final na tabela (1º lugar ganha mais, último ganha menos).
+//! TV ([`distribute_tv_revenue`]) é a terceira: outro valor fixo por
+//! competição por temporada, mas dividido por **reputação**, não
+//! posição — clube reputado atrai audiência o ano inteiro, mesmo fora
+//! das primeiras colocações. Sem patrocínio ainda. Dívida
 //! ([`repay_debt`]) é a fatia mínima do lado de "despesa/saldo" de
 //! RF-CL-03: o que [`pay_salaries`] não consegue debitar do caixa vira
 //! passivo em vez de evaporar, pago automaticamente na temporada
 //! seguinte antes de qualquer outro gasto — sem juros, sem prazo, sem
-//! renegociação (o resto de RF-CL-03 — TV, patrocínio — fica para quando
-//! essas fontes existirem).
+//! renegociação.
 
 use domain::{ClubId, DeterministicRng, Money};
 use pack::LoadedPack;
@@ -277,6 +279,47 @@ pub fn distribute_prize_money(table: &[TableRow], budgets: &mut [Money]) -> Mone
         let club_idx = row.club.as_usize();
         budgets[club_idx] = budgets[club_idx] + prize;
         total_paid = total_paid + prize;
+    }
+    total_paid
+}
+
+/// Pool total de receita de TV de uma competição de liga por temporada,
+/// em centavos — fatia de "TV" de RF-CL-03 (`docs/01 §2.2`): magnitude
+/// modesta por propósito (mesma ordem de grandeza da premiação), não
+/// dado calibrado.
+const TV_REVENUE_POOL_CENTS: i64 = 3_000_000; // 30.000,00
+
+/// Distribui a receita de TV de fim de temporada de uma competição de
+/// liga — fatia de "TV" de RF-CL-03: ao contrário da premiação (por
+/// posição final) e da bilheteria (por público de cada partida em casa),
+/// TV reflete apelo de audiência o ano inteiro — dividida entre os
+/// clubes de `clubs` **proporcionalmente à reputação** de cada um
+/// (`club_reputation`, 0-100, `crate::reputation::generate_club_reputation`),
+/// não à posição na tabela: um clube reputado que caiu pra última
+/// posição ainda atrai mais audiência que um sem nome que subiu.
+/// Peso `reputação + 1` (nunca zero, até o clube de reputação mínima
+/// recebe uma fração) — arredonda pra baixo, a sobra fica retida.
+/// `clubs` vazio devolve `Money::ZERO` sem tocar `budgets`. Só liga:
+/// copa (`crate::cup`) não entra aqui, mesma exclusão de
+/// [`distribute_prize_money`].
+#[must_use]
+pub fn distribute_tv_revenue(
+    clubs: &[ClubId],
+    club_reputation: &[u8],
+    budgets: &mut [Money],
+) -> Money {
+    if clubs.is_empty() {
+        return Money::ZERO;
+    }
+    let weight_of = |club: ClubId| u32::from(club_reputation[club.as_usize()]) + 1;
+    let total_weight: u32 = clubs.iter().map(|&c| weight_of(c)).sum();
+    let mut total_paid = Money::ZERO;
+    for &club in clubs {
+        let share = TV_REVENUE_POOL_CENTS * i64::from(weight_of(club)) / i64::from(total_weight);
+        let payment = Money::from_cents(share);
+        let idx = club.as_usize();
+        budgets[idx] = budgets[idx] + payment;
+        total_paid = total_paid + payment;
     }
     total_paid
 }
@@ -599,6 +642,73 @@ mod tests {
     fn distribute_prize_money_tabela_vazia_nao_distribui_nada() {
         let mut budgets: Vec<Money> = vec![];
         let total_paid = distribute_prize_money(&[], &mut budgets);
+        assert_eq!(total_paid, Money::ZERO);
+    }
+
+    #[test]
+    fn distribute_tv_revenue_premia_mais_quem_e_mais_reputado() {
+        let clubs = vec![ClubId::new(0), ClubId::new(1), ClubId::new(2)];
+        let club_reputation = vec![10u8, 50, 100];
+        let mut budgets = vec![Money::ZERO; 3];
+        let _ = distribute_tv_revenue(&clubs, &club_reputation, &mut budgets);
+        assert!(budgets[2] > budgets[1]);
+        assert!(budgets[1] > budgets[0]);
+    }
+
+    #[test]
+    fn distribute_tv_revenue_ignora_posicao_na_tabela() {
+        // Diferente de `distribute_prize_money`: a ordem de `clubs` (que
+        // pra premiação seria a posição final) não deveria importar aqui
+        // — só a reputação de cada um.
+        let clubs_a = vec![ClubId::new(0), ClubId::new(1)];
+        let clubs_b = vec![ClubId::new(1), ClubId::new(0)];
+        let club_reputation = vec![20u8, 80];
+
+        let mut budgets_a = vec![Money::ZERO; 2];
+        let _ = distribute_tv_revenue(&clubs_a, &club_reputation, &mut budgets_a);
+
+        let mut budgets_b = vec![Money::ZERO; 2];
+        let _ = distribute_tv_revenue(&clubs_b, &club_reputation, &mut budgets_b);
+
+        assert_eq!(budgets_a, budgets_b);
+    }
+
+    #[test]
+    fn distribute_tv_revenue_reputacao_minima_ainda_recebe_algo() {
+        let clubs = vec![ClubId::new(0), ClubId::new(1)];
+        let club_reputation = vec![0u8, 100];
+        let mut budgets = vec![Money::ZERO; 2];
+        let _ = distribute_tv_revenue(&clubs, &club_reputation, &mut budgets);
+        assert!(
+            budgets[0].cents() > 0,
+            "clube de reputação mínima ainda deveria receber uma fração (peso reputação + 1)"
+        );
+    }
+
+    #[test]
+    fn distribute_tv_revenue_nunca_distribui_mais_que_o_pool() {
+        let clubs: Vec<ClubId> = (0..8).map(ClubId::new).collect();
+        let club_reputation = vec![50u8; 8];
+        let mut budgets = vec![Money::ZERO; 8];
+        let total_paid = distribute_tv_revenue(&clubs, &club_reputation, &mut budgets);
+        assert!(total_paid.cents() <= TV_REVENUE_POOL_CENTS);
+        assert!(total_paid.cents() > 0);
+    }
+
+    #[test]
+    fn distribute_tv_revenue_total_pago_bate_com_a_soma_dos_orcamentos() {
+        let clubs: Vec<ClubId> = (0..5).map(ClubId::new).collect();
+        let club_reputation = vec![30u8, 40, 50, 60, 70];
+        let mut budgets = vec![Money::ZERO; 5];
+        let total_paid = distribute_tv_revenue(&clubs, &club_reputation, &mut budgets);
+        let total_in_budgets: i64 = budgets.iter().map(|b| b.cents()).sum();
+        assert_eq!(total_in_budgets, total_paid.cents());
+    }
+
+    #[test]
+    fn distribute_tv_revenue_sem_clubes_nao_distribui_nada() {
+        let mut budgets: Vec<Money> = vec![];
+        let total_paid = distribute_tv_revenue(&[], &[], &mut budgets);
         assert_eq!(total_paid, Money::ZERO);
     }
 

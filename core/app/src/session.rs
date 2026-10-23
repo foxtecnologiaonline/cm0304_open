@@ -74,8 +74,14 @@ pub struct CommandReceipt {
     /// segunda fatia) — um pool fixo por competição de liga, dividido por
     /// posição final na tabela.
     pub prize_money_paid: domain::Money,
+    /// Quanto os clubes receberam de TV nesta temporada, no total
+    /// (`world::distribute_tv_revenue`, `docs/01 §2.2`, RF-CL-03, terceira
+    /// fatia) — outro pool fixo por competição de liga, mas dividido por
+    /// reputação do clube, não posição final (ver `prize_money_paid`,
+    /// acima).
+    pub tv_revenue_paid: domain::Money,
     /// Quanto os clubes pagaram de dívida acumulada nesta temporada, no
-    /// total (`world::repay_debt`, `docs/01 §2.2`, RF-CL-03, terceira
+    /// total (`world::repay_debt`, `docs/01 §2.2`, RF-CL-03, quarta
     /// fatia) — descontado do caixa antes da folha salarial desta mesma
     /// temporada (ver `payroll_paid`, acima).
     pub debt_repaid: domain::Money,
@@ -433,15 +439,25 @@ impl GameSession {
                     self.membership[club.as_usize()] = to;
                 }
 
-                // Premiação de fim de temporada (`world::distribute_prize_money`,
-                // `docs/01 §2.2` RF-CL-03, segunda fatia): um pool fixo por
-                // competição de liga, dividido por posição final — `result.tables`
-                // só tem entrada pra competição de liga que de fato rodou
+                // Premiação e TV de fim de temporada
+                // (`world::distribute_prize_money`/`distribute_tv_revenue`,
+                // `docs/01 §2.2` RF-CL-03, segunda e terceira fatia): dois
+                // pools fixos por competição de liga, um dividido por
+                // posição final, outro por reputação — `result.tables` só
+                // tem entrada pra competição de liga que de fato rodou
                 // (copa não tem tabela, ver `world::season::SeasonResult`).
                 let mut prize_money_paid = domain::Money::ZERO;
+                let mut tv_revenue_paid = domain::Money::ZERO;
                 for (_competition, table) in &result.tables {
                     prize_money_paid =
                         prize_money_paid + world::distribute_prize_money(table, &mut self.budgets);
+                    let clubs: Vec<domain::ClubId> = table.iter().map(|row| row.club).collect();
+                    tv_revenue_paid = tv_revenue_paid
+                        + world::distribute_tv_revenue(
+                            &clubs,
+                            &self.club_reputation,
+                            &mut self.budgets,
+                        );
                 }
 
                 // Condição de entrada na próxima temporada
@@ -501,6 +517,7 @@ impl GameSession {
                     match_day_revenue: result.match_day_revenue,
                     contracts_renewed,
                     prize_money_paid,
+                    tv_revenue_paid,
                     debt_repaid,
                 };
                 self.history.push(result);
@@ -931,20 +948,22 @@ mod tests {
             receipt.payroll_paid.cents() > 0,
             "esperava folha salarial positiva no pack de exemplo (256 jogadores com CA > 0)"
         );
-        // `payroll_paid` é a folha debitada, `match_day_revenue` e
-        // `prize_money_paid` são as duas receitas creditadas
-        // (`world::finance::match_day_revenue`/`distribute_prize_money`,
-        // RF-CL-03) — as três juntas explicam exatamente a variação do
-        // orçamento total: transferências (`run_market_day`) conservam
-        // dinheiro entre clubes, então não aparecem aqui.
+        // `payroll_paid` é a folha debitada, `match_day_revenue`,
+        // `prize_money_paid` e `tv_revenue_paid` são as três receitas
+        // creditadas (`world::finance::match_day_revenue`/
+        // `distribute_prize_money`/`distribute_tv_revenue`, RF-CL-03) —
+        // as quatro juntas explicam exatamente a variação do orçamento
+        // total: transferências (`run_market_day`) conservam dinheiro
+        // entre clubes, então não aparecem aqui.
         let budget_after: i64 = session.budgets.iter().map(|b| b.cents()).sum();
         assert_eq!(
             budget_before - budget_after,
             receipt.payroll_paid.cents()
                 - receipt.match_day_revenue.cents()
-                - receipt.prize_money_paid.cents(),
-            "a queda do orçamento total deveria ser exatamente folha paga menos bilheteria e \
-             premiação recebidas, já que transferências conservam dinheiro entre clubes"
+                - receipt.prize_money_paid.cents()
+                - receipt.tv_revenue_paid.cents(),
+            "a queda do orçamento total deveria ser exatamente folha paga menos bilheteria, \
+             premiação e TV recebidas, já que transferências conservam dinheiro entre clubes"
         );
     }
 

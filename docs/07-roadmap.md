@@ -316,6 +316,16 @@ aqui e volta ao design** — é para isso que o marco existe.
 > reporta o total por temporada; golden master bump 7→8
 > (`total_prize_money_paid_cents`).
 >
+> **TV** (`world::finance::distribute_tv_revenue`) é a terceira fonte de
+> receita real de RF-CL-03: outro pool fixo por competição de liga, por
+> temporada, mesma ordem de grandeza da premiação — mas dividido por
+> **reputação** (`world::generate_club_reputation`, peso reputação+1,
+> nunca zero), não por posição na tabela, ao contrário da premiação: um
+> clube reputado atrai audiência o ano inteiro, mesmo fora das primeiras
+> colocações. Só liga, mesma exclusão de copa da premiação.
+> `CommandReceipt::tv_revenue_paid` reporta o total por temporada; golden
+> master bump 9→10 (`total_tv_revenue_paid_cents`).
+>
 > **Dívida** (`world::finance::repay_debt`) fecha o lado de
 > despesa/saldo de RF-CL-03: `world::pay_salaries` passou a registrar o
 > que não cabe no caixa como passivo por clube em vez de só descartar;

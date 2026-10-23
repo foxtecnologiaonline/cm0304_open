@@ -46,8 +46,11 @@ use serde::{Deserialize, Serialize};
 /// `total_debt_repaid_cents` (`world::repay_debt`, RF-CL-03 — dívida;
 /// `world::pay_salaries` agora registra o que não coube no caixa como
 /// dívida em vez de só descartar, então o orçamento final dos clubes
-/// muda de novo).
-const SCHEMA_VERSION: u16 = 9;
+/// muda de novo). Bump 9→10: `total_tv_revenue_paid_cents`
+/// (`world::distribute_tv_revenue`, RF-CL-03 — receita de TV por
+/// reputação; orçamento final dos clubes muda de novo, mesma
+/// justificativa dos bumps de receita/despesa anteriores).
+const SCHEMA_VERSION: u16 = 10;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct TableRowSnapshot {
@@ -128,6 +131,10 @@ struct GoldenMaster {
     /// temporada — `world::distribute_prize_money`, RF-CL-03. Mesma
     /// justificativa de `i64` que `total_payroll_paid_cents`.
     total_prize_money_paid_cents: i64,
+    /// Soma de `CommandReceipt::tv_revenue_paid` (em centavos) de cada
+    /// temporada — `world::distribute_tv_revenue`, RF-CL-03. Mesma
+    /// justificativa de `i64` que `total_payroll_paid_cents`.
+    total_tv_revenue_paid_cents: i64,
     /// Soma de `CommandReceipt::debt_repaid` (em centavos) de cada
     /// temporada — `world::repay_debt`, RF-CL-03. Mesma justificativa de
     /// `i64` que `total_payroll_paid_cents`.
@@ -177,6 +184,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
     let mut total_match_day_revenue_cents = 0i64;
     let mut total_contracts_renewed = 0usize;
     let mut total_prize_money_paid_cents = 0i64;
+    let mut total_tv_revenue_paid_cents = 0i64;
     let mut total_debt_repaid_cents = 0i64;
     for _ in 0..seasons {
         let receipt = session
@@ -192,6 +200,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_match_day_revenue_cents += receipt.match_day_revenue.cents();
         total_contracts_renewed += receipt.contracts_renewed;
         total_prize_money_paid_cents += receipt.prize_money_paid.cents();
+        total_tv_revenue_paid_cents += receipt.tv_revenue_paid.cents();
         total_debt_repaid_cents += receipt.debt_repaid.cents();
     }
 
@@ -267,6 +276,7 @@ fn simulate(pack_path: &Path, world_seed: u64, seasons: u32) -> Result<GoldenMas
         total_match_day_revenue_cents,
         total_contracts_renewed,
         total_prize_money_paid_cents,
+        total_tv_revenue_paid_cents,
         total_debt_repaid_cents,
         competitions,
         state_hash: String::new(),
@@ -418,6 +428,10 @@ pub fn verify(seed: u64, pack_path: Option<std::path::PathBuf>, expect_path: &Pa
     eprintln!(
         "  premiação (centavos): esperado {}, obtido {}",
         expected.total_prize_money_paid_cents, actual.total_prize_money_paid_cents
+    );
+    eprintln!(
+        "  TV (centavos): esperado {}, obtido {}",
+        expected.total_tv_revenue_paid_cents, actual.total_tv_revenue_paid_cents
     );
     eprintln!(
         "  dívida paga (centavos): esperado {}, obtido {}",

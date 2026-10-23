@@ -119,6 +119,17 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > copa não tem tabela, não entra aqui. `CommandReceipt::prize_money_paid`
 > e `managerfc-cli play` já reportam o total recebido por temporada.
 >
+> `world::finance::distribute_tv_revenue` é a terceira fonte real de
+> receita de RF-CL-03 — **TV**: outro pool fixo por competição de liga
+> (mesma ordem de grandeza da premiação, não calibrado), mas dividido
+> entre os clubes conforme a **reputação** (`world::generate_club_reputation`,
+> peso reputação+1, nunca zero), não a posição final na tabela — ao
+> contrário da premiação, um clube reputado que caiu pra última posição
+> ainda atrai mais audiência que um sem nome que subiu. Só liga — copa
+> não entra aqui, mesma exclusão da premiação.
+> `CommandReceipt::tv_revenue_paid` e `managerfc-cli play` já reportam o
+> total recebido por temporada.
+>
 > `world::finance::repay_debt` é a fatia mínima do lado de "despesa/saldo"
 > de RF-CL-03 — **dívida**: o que `world::pay_salaries` não consegue
 > debitar do caixa (acima) vira passivo por clube em vez de evaporar,
@@ -126,7 +137,7 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > gasto (dívida vem primeiro, igual contabilidade de verdade). Sem
 > juros, sem prazo, sem renegociação — só um desconto até o limite do
 > que o clube tem agora. `CommandReceipt::debt_repaid` e `managerfc-cli
-> play` já reportam o total pago por temporada. Sem TV, patrocínio ou
+> play` já reportam o total pago por temporada. Sem patrocínio ou
 > saldo negativo ainda — o resto de RF-CL-03 fica para quando essas
 > fontes existirem.
 >

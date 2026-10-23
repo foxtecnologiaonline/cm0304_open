@@ -1,5 +1,5 @@
 {
-  "schema_version": 9,
+  "schema_version": 10,
   "pack_id": "example.two-tier",
   "pack_version": "0.1.0",
   "world_seed": 42,
@@ -10,10 +10,11 @@
   "total_injuries": 37,
   "total_tired_players": 523,
   "total_suspensions": 26,
-  "total_payroll_paid_cents": 426643748,
+  "total_payroll_paid_cents": 426805169,
   "total_match_day_revenue_cents": 202434030,
   "total_contracts_renewed": 186,
   "total_prize_money_paid_cents": 11999976,
+  "total_tv_revenue_paid_cents": 17999978,
   "total_debt_repaid_cents": 0,
   "competitions": [
     {
@@ -217,5 +218,5 @@
       "cup_champion": null
     }
   ],
-  "state_hash": "c5f1062bbf73de78"
+  "state_hash": "139885459478f721"
 }

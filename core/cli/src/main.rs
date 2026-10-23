@@ -447,7 +447,7 @@ fn play(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
                 "temporada {}: {} partidas, {} movimentação(ões) de acesso/queda, \
                  {} transferência(s), {} lesão(ões), {} jogador(es) cansado(s) pra próxima, \
                  {} suspensão(ões), {} em folha salarial, {} em bilheteria, \
-                 {} em premiação, {} em dívida paga, {} contrato(s) renovado(s)",
+                 {} em premiação, {} em TV, {} em dívida paga, {} contrato(s) renovado(s)",
                 receipt.season_index + 1,
                 receipt.matches_played,
                 receipt.movements,
@@ -458,6 +458,7 @@ fn play(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
                 receipt.payroll_paid,
                 receipt.match_day_revenue,
                 receipt.prize_money_paid,
+                receipt.tv_revenue_paid,
                 receipt.debt_repaid,
                 receipt.contracts_renewed
             ),

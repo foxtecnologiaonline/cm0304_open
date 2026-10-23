@@ -25,15 +25,17 @@
 //! ([`finance::pay_salaries`]) é a primeira despesa recorrente de verdade
 //! — fatia mínima de RF-CL-02, sem contrato, duração, luvas ou cláusula.
 //! Bilheteria ([`finance::match_day_revenue`]) é a primeira receita
-//! recorrente de verdade — fatia mínima de RF-CL-03, só ingresso de
-//! partida em casa, sem TV ou patrocínio. Premiação
-//! ([`finance::distribute_prize_money`]) é a segunda: um pool fixo por
-//! competição de liga, dividido por posição final (campeão ganha mais,
-//! lanterna ganha menos) uma vez por temporada. Dívida
-//! ([`finance::repay_debt`]) fecha o lado de despesa: salário que o
-//! caixa não cobre não evapora, vira passivo, pago automaticamente na
-//! temporada seguinte antes de qualquer outro gasto — sem juros, sem
-//! prazo. Duração de contrato
+//! recorrente de verdade — fatia mínima de RF-CL-03, por público de
+//! cada partida em casa. Premiação ([`finance::distribute_prize_money`])
+//! é a segunda: um pool fixo por competição de liga, dividido por
+//! posição final (campeão ganha mais, lanterna ganha menos) uma vez por
+//! temporada. TV ([`finance::distribute_tv_revenue`]) é a terceira: outro
+//! pool fixo, dividido por **reputação** em vez de posição — clube
+//! reputado atrai audiência o ano inteiro, mesmo fora das primeiras
+//! colocações. Sem patrocínio ainda. Dívida ([`finance::repay_debt`])
+//! fecha o lado de despesa: salário que o caixa não cobre não evapora,
+//! vira passivo, pago automaticamente na temporada seguinte antes de
+//! qualquer outro gasto — sem juros, sem prazo. Duração de contrato
 //! ([`contract`]) complementa a folha salarial: salário travado no CA do
 //! momento da assinatura, não no CA corrente, só reajustando quando o
 //! contrato de fato renova (automático, sem negociação) ou o jogador é
@@ -100,8 +102,8 @@ pub use contract::{ContractState, advance_contracts, generate_initial_contracts}
 pub use cup::{CupMatch, CupResult, cup_participants, generate_big_game_mentality, run_cup};
 pub use discipline::generate_dirtiness;
 pub use finance::{
-    distribute_prize_money, generate_budgets, generate_stadium_capacities, pay_salaries,
-    repay_debt, salary_per_season,
+    distribute_prize_money, distribute_tv_revenue, generate_budgets, generate_stadium_capacities,
+    pay_salaries, repay_debt, salary_per_season,
 };
 pub use injuries::{generate_injury_proneness, roll_injuries};
 pub use market::{generate_ambition, generate_loyalty, run_market_day};
