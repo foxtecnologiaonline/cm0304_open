@@ -152,7 +152,8 @@ Decisões embutidas nesse contrato:
 > **Estado de implementação:** o crate `app` já tem uma primeira fatia real
 > — `GameSession::new/dispatch/query`, dois `Command` (`AdvanceSeason` e
 > `AdvanceRound`, que joga uma rodada por vez) e quatro `Query`
-> (`Competitions`, `Standings`, `CurrentSeason`, `SeasonProgress`), com `StandingsRow`
+> (`Competitions`, `Standings`, `CurrentSeason`, `SeasonProgress`, `Manager`, `Clubs`, `Club`,
+> `Squad`, `Player`, `Fixtures`, `RoundResults`), com `StandingsRow`
 > como projeção de verdade (nome de clube já resolvido, nunca `ClubId` cru).
 > `managerfc-cli play` é o primeiro consumidor externo dessa fronteira —
 > prova que ela funciona de fora do próprio crate, não só nos testes

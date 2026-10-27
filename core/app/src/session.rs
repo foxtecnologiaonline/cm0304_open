@@ -15,8 +15,9 @@ use domain::CompetitionId;
 use crate::command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
 use crate::error::AppError;
 use crate::query::{
-    CompetitionKind, CompetitionSummary, CupChampionRow, ManagerInfo, Query, QueryResult,
-    SeasonProgress, StandingsRow,
+    AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
+    FixtureList, FixtureRow, ManagerInfo, MatchScore, PlayerDetail, PlayerRow, Query, QueryResult,
+    ResultRow, RoundResults, SeasonProgress, StandingsRow,
 };
 
 /// Confirmação de que um [`Command`] foi processado, com o suficiente para
@@ -278,6 +279,10 @@ pub struct GameSession {
     /// Temporada em andamento (pré-temporada feita, rodadas em curso), se
     /// houver. `None` entre temporadas.
     season: Option<ActiveSeason>,
+    /// A última temporada **concluída**, mantida só pra `Query::Fixtures`/
+    /// `Query::RoundResults` responderem entre temporadas. Substituída a
+    /// cada fechamento (nunca acumula — custo de memória constante).
+    last_run: Option<world::SeasonRun>,
     /// Comandos despachados com sucesso, codificados (`Command::encode`),
     /// na ordem — vira o `command_log` do save.
     command_log: Vec<u8>,
@@ -352,6 +357,7 @@ impl GameSession {
             world_seed,
             history: Vec::new(),
             season: None,
+            last_run: None,
             command_log: Vec::new(),
             manager: None,
         })
@@ -658,6 +664,7 @@ impl GameSession {
         world::advance_seasons_since_transfer(&mut self.seasons_since_transfer);
 
         self.history.push(result);
+        self.last_run = Some(run);
     }
 
     /// Responde uma consulta — nunca muda estado (`docs/02 §4`).
@@ -672,7 +679,196 @@ impl GameSession {
             Query::CurrentSeason => QueryResult::CurrentSeason(self.history.len() as u32),
             Query::SeasonProgress => QueryResult::SeasonProgress(self.season_progress()),
             Query::Manager => QueryResult::Manager(self.manager_info()),
+            Query::Clubs => QueryResult::Clubs(self.clubs()),
+            Query::Club { club } => QueryResult::Club(self.club_detail(club)),
+            Query::Squad { club } => QueryResult::Squad(self.squad(club)),
+            Query::Player { player } => QueryResult::Player(self.player_detail(player)),
+            Query::Fixtures { club } => QueryResult::Fixtures(self.fixtures(club)),
+            Query::RoundResults { matchday } => {
+                QueryResult::RoundResults(self.round_results(matchday))
+            }
         }
+    }
+
+    /// A temporada a consultar: a em andamento ou, entre temporadas, a
+    /// última concluída.
+    fn queried_run(&self) -> Option<&world::SeasonRun> {
+        self.season
+            .as_ref()
+            .map(|a| &a.run)
+            .or(self.last_run.as_ref())
+    }
+
+    fn competition_name_of(&self, club: domain::ClubId) -> &str {
+        &self.pack.competition(self.membership[club.as_usize()]).name
+    }
+
+    fn clubs(&self) -> Vec<ClubRow> {
+        self.pack
+            .clubs
+            .iter()
+            .map(|c| ClubRow {
+                id: c.id,
+                name: c.name.clone(),
+                competition_name: self.competition_name_of(c.id).to_string(),
+                reputation: self.club_reputation[c.id.as_usize()],
+            })
+            .collect()
+    }
+
+    fn club_detail(&self, club: domain::ClubId) -> Option<ClubDetail> {
+        let resolved = self.pack.clubs.get(club.as_usize())?;
+        let mut squad_size = 0u32;
+        let mut payroll = domain::Money::ZERO;
+        for (state, contract) in self.roster.iter().zip(&self.contracts) {
+            if state.club == club {
+                squad_size += 1;
+                payroll = payroll + world::salary_per_season(contract.signed_ability);
+            }
+        }
+        Some(ClubDetail {
+            id: club,
+            name: resolved.name.clone(),
+            nation_name: self.pack.nation(resolved.nation).name.clone(),
+            competition_name: self.competition_name_of(club).to_string(),
+            reputation: self.club_reputation[club.as_usize()],
+            budget: self.budgets[club.as_usize()],
+            debt: self.debt[club.as_usize()],
+            stadium_capacity: self.stadium_capacities[club.as_usize()],
+            squad_size,
+            payroll_per_season: payroll,
+        })
+    }
+
+    fn player_row(&self, idx: usize) -> PlayerRow {
+        let state = &self.roster[idx];
+        let contract = &self.contracts[idx];
+        let resolved = &self.pack.players[idx];
+        let age = state.age_years.clamp(0, 255) as u8;
+        PlayerRow {
+            id: state.player,
+            club: state.club,
+            name: format!("{} {}", resolved.first_name, resolved.last_name),
+            position: state.position,
+            age,
+            current_ability: state.ability.current(),
+            condition: state.condition,
+            injured: state.injured,
+            suspended: self
+                .season
+                .as_ref()
+                .is_some_and(|a| a.run.is_suspended(state.player)),
+            contract_seasons_remaining: contract.seasons_remaining,
+            salary_per_season: world::salary_per_season(contract.signed_ability),
+            market_value: ai::market_value(
+                state.ability.current(),
+                contract.seasons_remaining,
+                age,
+                state.ability.potential(),
+                self.club_reputation[state.club.as_usize()],
+            ),
+        }
+    }
+
+    fn squad(&self, club: domain::ClubId) -> Option<Vec<PlayerRow>> {
+        if club.as_usize() >= self.pack.clubs.len() {
+            return None;
+        }
+        let position_order = |p: domain::Position| match p {
+            domain::Position::Goalkeeper => 0u8,
+            domain::Position::Defender => 1,
+            domain::Position::Midfielder => 2,
+            domain::Position::Forward => 3,
+        };
+        let mut rows: Vec<PlayerRow> = (0..self.roster.len())
+            .filter(|&i| self.roster[i].club == club)
+            .map(|i| self.player_row(i))
+            .collect();
+        rows.sort_by(|a, b| {
+            position_order(a.position)
+                .cmp(&position_order(b.position))
+                .then(b.current_ability.cmp(&a.current_ability))
+                .then(a.id.cmp(&b.id))
+        });
+        Some(rows)
+    }
+
+    fn player_detail(&self, player: domain::PlayerId) -> Option<PlayerDetail> {
+        let idx = player.as_usize();
+        let resolved = self.pack.players.get(idx)?;
+        let row = self.player_row(idx);
+        let attributes = domain::Attribute::ALL
+            .iter()
+            .map(|&attribute| AttributeValue {
+                attribute,
+                value: resolved.attributes.get(attribute),
+            })
+            .collect();
+        Some(PlayerDetail {
+            club_name: self.pack.club(row.club).name.clone(),
+            nation_name: self.pack.nation(resolved.nation).name.clone(),
+            row,
+            attributes,
+        })
+    }
+
+    fn fixtures(&self, club: domain::ClubId) -> Option<FixtureList> {
+        if club.as_usize() >= self.pack.clubs.len() {
+            return None;
+        }
+        let run = self.queried_run()?;
+        let entries = run.fixtures_of(club);
+        if entries.is_empty() {
+            return None;
+        }
+        let rows = entries
+            .into_iter()
+            .map(|e| FixtureRow {
+                matchday: e.matchday,
+                competition_name: self.pack.competition(e.competition).name.clone(),
+                home: e.fixture.home,
+                home_name: self.pack.club(e.fixture.home).name.clone(),
+                away: e.fixture.away,
+                away_name: self.pack.club(e.fixture.away).name.clone(),
+                score: e.score.map(|s| MatchScore {
+                    home_goals: s.home_goals,
+                    away_goals: s.away_goals,
+                }),
+            })
+            .collect();
+        Some(FixtureList {
+            season_index: run.season_index(),
+            rows,
+        })
+    }
+
+    fn round_results(&self, matchday: Option<u32>) -> Option<RoundResults> {
+        let run = self.queried_run()?;
+        let matchday = match matchday {
+            Some(m) => m,
+            None => run.next_matchday().checked_sub(1)?,
+        };
+        let results = run.round_results(matchday);
+        if results.is_empty() {
+            return None;
+        }
+        let rows = results
+            .into_iter()
+            .map(|(competition, fixture, score)| ResultRow {
+                competition_name: self.pack.competition(competition).name.clone(),
+                home_name: self.pack.club(fixture.home).name.clone(),
+                away_name: self.pack.club(fixture.away).name.clone(),
+                score: MatchScore {
+                    home_goals: score.home_goals,
+                    away_goals: score.away_goals,
+                },
+            })
+            .collect();
+        Some(RoundResults {
+            season_index: run.season_index(),
+            matchday,
+            rows,
+        })
     }
 
     fn manager_info(&self) -> Option<ManagerInfo> {
@@ -1564,6 +1760,211 @@ mod tests {
         let reloaded = GameSession::load(&example_pack_path(), &managed.to_save()).unwrap();
         assert_eq!(manager(&reloaded), manager(&managed));
         assert_eq!(reloaded.to_save(), managed.to_save());
+    }
+
+    fn all_clubs(session: &GameSession) -> Vec<domain::ClubId> {
+        session.pack.clubs.iter().map(|c| c.id).collect()
+    }
+
+    fn squad_of(session: &GameSession, club: u32) -> Vec<PlayerRow> {
+        match session.query(Query::Squad {
+            club: domain::ClubId::new(club),
+        }) {
+            QueryResult::Squad(Some(rows)) => rows,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    fn fixtures_of(session: &GameSession, club: u32) -> Option<FixtureList> {
+        match session.query(Query::Fixtures {
+            club: domain::ClubId::new(club),
+        }) {
+            QueryResult::Fixtures(f) => f,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    fn round_results(session: &GameSession, matchday: Option<u32>) -> Option<RoundResults> {
+        match session.query(Query::RoundResults { matchday }) {
+            QueryResult::RoundResults(r) => r,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn query_clubs_lista_todos_com_competicao_e_reputacao() {
+        let session = GameSession::new(&example_pack_path(), 42).unwrap();
+        let QueryResult::Clubs(rows) = session.query(Query::Clubs) else {
+            panic!("resposta inesperada")
+        };
+        assert_eq!(rows.len(), 16);
+        assert!(
+            rows.iter()
+                .all(|r| !r.name.is_empty() && r.reputation <= 100)
+        );
+        assert_eq!(rows[0].competition_name, "Primeira Divisão de Estrelônia");
+        assert_eq!(rows[15].competition_name, "Segunda Divisão de Estrelônia");
+        assert!(rows.windows(2).all(|w| w[0].id < w[1].id), "ordem de id");
+    }
+
+    #[test]
+    fn query_club_traz_financas_estadio_e_folha_coerentes_com_o_estado() {
+        let session = GameSession::new(&example_pack_path(), 42).unwrap();
+        let club = domain::ClubId::new(4);
+        let QueryResult::Club(Some(detail)) = session.query(Query::Club { club }) else {
+            panic!("resposta inesperada")
+        };
+        assert_eq!(detail.id, club);
+        assert_eq!(detail.budget, session.budgets[4]);
+        assert_eq!(detail.debt, domain::Money::ZERO);
+        assert_eq!(detail.stadium_capacity, session.stadium_capacities[4]);
+        assert_eq!(detail.squad_size, 16);
+        assert!(detail.payroll_per_season.cents() > 0);
+        assert_eq!(detail.nation_name, "Estrelônia");
+
+        let QueryResult::Club(none) = session.query(Query::Club {
+            club: domain::ClubId::new(999),
+        }) else {
+            panic!("resposta inesperada")
+        };
+        assert!(none.is_none());
+    }
+
+    #[test]
+    fn query_squad_ordena_por_posicao_e_habilidade_e_cobre_so_o_clube() {
+        let session = GameSession::new(&example_pack_path(), 42).unwrap();
+        let rows = squad_of(&session, 2);
+        assert_eq!(rows.len(), 16);
+        assert!(rows.iter().all(|r| r.club == domain::ClubId::new(2)));
+        let order = |p: domain::Position| match p {
+            domain::Position::Goalkeeper => 0,
+            domain::Position::Defender => 1,
+            domain::Position::Midfielder => 2,
+            domain::Position::Forward => 3,
+        };
+        for pair in rows.windows(2) {
+            let (a, b) = (&pair[0], &pair[1]);
+            assert!(order(a.position) <= order(b.position));
+            if a.position == b.position {
+                assert!(a.current_ability >= b.current_ability);
+            }
+        }
+        assert!(rows.iter().all(|r| r.market_value.cents() > 0));
+        assert!(rows.iter().all(|r| !r.injured && !r.suspended));
+        let QueryResult::Squad(none) = session.query(Query::Squad {
+            club: domain::ClubId::new(999),
+        }) else {
+            panic!("resposta inesperada")
+        };
+        assert!(none.is_none());
+    }
+
+    #[test]
+    fn query_player_traz_os_36_atributos_do_pack_e_nao_expoe_potencial() {
+        let session = GameSession::new(&example_pack_path(), 42).unwrap();
+        let player = domain::PlayerId::new(10);
+        let QueryResult::Player(Some(detail)) = session.query(Query::Player { player }) else {
+            panic!("resposta inesperada")
+        };
+        assert_eq!(detail.attributes.len(), 36);
+        let pack_player = &session.pack.players[10];
+        for av in &detail.attributes {
+            assert_eq!(av.value, pack_player.attributes.get(av.attribute));
+            assert!((1..=20).contains(&av.value));
+        }
+        assert_eq!(detail.row.id, player);
+        assert_eq!(detail.club_name, session.pack.club(detail.row.club).name);
+        assert_eq!(detail.row.current_ability, pack_player.ability.current());
+
+        let QueryResult::Player(none) = session.query(Query::Player {
+            player: domain::PlayerId::new(99_999),
+        }) else {
+            panic!("resposta inesperada")
+        };
+        assert!(none.is_none());
+    }
+
+    #[test]
+    fn query_fixtures_so_existe_depois_de_a_temporada_comecar_e_sobrevive_ao_fim() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert!(
+            fixtures_of(&session, 0).is_none(),
+            "calendário só ao começar"
+        );
+
+        for _ in 0..3 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+        }
+        let list = fixtures_of(&session, 0).unwrap();
+        assert_eq!(list.season_index, 0);
+        assert_eq!(list.rows.len(), 14);
+        assert_eq!(list.rows.iter().filter(|r| r.score.is_some()).count(), 3);
+        assert!(list.rows.iter().all(|r| !r.home_name.is_empty()));
+
+        session.dispatch(Command::AdvanceSeason).unwrap();
+        let done = fixtures_of(&session, 0).unwrap();
+        assert_eq!(done.season_index, 0, "entre temporadas, a última concluída");
+        assert!(done.rows.iter().all(|r| r.score.is_some()));
+
+        session.dispatch(Command::AdvanceRound).unwrap();
+        let next = fixtures_of(&session, 0).unwrap();
+        assert_eq!(next.season_index, 1, "a nova temporada substitui a antiga");
+        assert_eq!(next.rows.iter().filter(|r| r.score.is_some()).count(), 1);
+    }
+
+    #[test]
+    fn query_round_results_cobre_a_ultima_rodada_ou_uma_especifica() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert!(round_results(&session, None).is_none());
+
+        session.dispatch(Command::AdvanceRound).unwrap();
+        let first = round_results(&session, None).unwrap();
+        assert_eq!((first.season_index, first.matchday), (0, 0));
+        assert_eq!(first.rows.len(), 8);
+        assert_eq!(round_results(&session, Some(0)), Some(first));
+        assert!(
+            round_results(&session, Some(1)).is_none(),
+            "ainda não jogada"
+        );
+
+        session.dispatch(Command::AdvanceSeason).unwrap();
+        assert_eq!(round_results(&session, None).unwrap().matchday, 13);
+    }
+
+    #[test]
+    fn resultados_por_rodada_somam_os_gols_da_tabela_final() {
+        let mut session = GameSession::new(&example_pack_path(), 9).unwrap();
+        session.dispatch(Command::AdvanceSeason).unwrap();
+        let from_rounds: u32 = (0..14)
+            .flat_map(|m| round_results(&session, Some(m)).unwrap().rows)
+            .map(|r| r.score.home_goals + r.score.away_goals)
+            .sum();
+        let from_tables: u32 = session
+            .history
+            .last()
+            .unwrap()
+            .tables
+            .iter()
+            .flat_map(|(_, t)| t.iter())
+            .map(|row| row.goals_for)
+            .sum();
+        assert_eq!(from_rounds, from_tables);
+    }
+
+    #[test]
+    fn suspensao_aparece_no_elenco_durante_a_temporada() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        let mut seen = false;
+        for _ in 0..13 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+            seen |= all_clubs(&session)
+                .iter()
+                .any(|c| squad_of(&session, c.index()).iter().any(|p| p.suspended));
+        }
+        assert!(
+            seen,
+            "com ~4% de expulsão por clube por rodada, alguém é suspenso"
+        );
     }
 
     #[test]

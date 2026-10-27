@@ -29,6 +29,26 @@ pub enum Query {
     /// O técnico e o clube sob seu comando (`Command::TakeClub`); `None`
     /// numa sessão só observadora.
     Manager,
+    /// Todos os clubes do pack, para escolher um (`Command::TakeClub`) ou
+    /// navegar. Ordem de id.
+    Clubs,
+    /// Ficha de um clube: finanças, estádio, folha. `None` se não existe.
+    Club { club: domain::ClubId },
+    /// Elenco de um clube, ordenado por posição (goleiro → atacante) e, em
+    /// cada posição, do melhor pro pior. `None` se o clube não existe.
+    Squad { club: domain::ClubId },
+    /// Detalhe de um jogador: linha de elenco + atributos visíveis. `None`
+    /// se não existe.
+    Player { player: domain::PlayerId },
+    /// Calendário do clube na temporada em andamento (ou na última
+    /// concluída, entre temporadas), com placar das partidas já jogadas.
+    /// `None` se nenhuma temporada foi montada ainda ou o clube não está em
+    /// nenhuma liga.
+    Fixtures { club: domain::ClubId },
+    /// Resultados de todas as ligas numa rodada da temporada em andamento
+    /// (ou da última concluída). `matchday: None` = a última jogada.
+    /// `None` se nada foi jogado ainda ou a rodada não foi jogada.
+    RoundResults { matchday: Option<u32> },
 }
 
 /// Resposta a uma [`Query`]. Cada variante corresponde a exatamente uma
@@ -47,6 +67,125 @@ pub enum QueryResult {
     CurrentSeason(u32),
     SeasonProgress(SeasonProgress),
     Manager(Option<ManagerInfo>),
+    Clubs(Vec<ClubRow>),
+    Club(Option<ClubDetail>),
+    Squad(Option<Vec<PlayerRow>>),
+    Player(Option<PlayerDetail>),
+    Fixtures(Option<FixtureList>),
+    RoundResults(Option<RoundResults>),
+}
+
+/// Um clube numa lista (ver [`Query::Clubs`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClubRow {
+    pub id: domain::ClubId,
+    pub name: String,
+    /// Competição **atual** (muda com acesso/queda).
+    pub competition_name: String,
+    /// 0-100.
+    pub reputation: u8,
+}
+
+/// Ficha de um clube (ver [`Query::Club`]). Valores em centavos
+/// (`domain::Money`); a UI formata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClubDetail {
+    pub id: domain::ClubId,
+    pub name: String,
+    pub nation_name: String,
+    pub competition_name: String,
+    pub reputation: u8,
+    pub budget: domain::Money,
+    pub debt: domain::Money,
+    pub stadium_capacity: u32,
+    pub squad_size: u32,
+    /// Folha salarial de uma temporada, pelos contratos de hoje.
+    pub payroll_per_season: domain::Money,
+}
+
+/// Um jogador numa lista de elenco (ver [`Query::Squad`]). Nunca expõe o
+/// potencial (PA): é oculto até o scouting existir (RF-SC-01, M3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlayerRow {
+    pub id: domain::PlayerId,
+    pub club: domain::ClubId,
+    pub name: String,
+    pub position: domain::Position,
+    pub age: u8,
+    /// CA 0-200.
+    pub current_ability: u8,
+    /// 0-100 (`world::FULL_CONDITION` = descansado).
+    pub condition: u8,
+    pub injured: bool,
+    /// Cumpre suspensão na próxima rodada.
+    pub suspended: bool,
+    pub contract_seasons_remaining: u8,
+    pub salary_per_season: domain::Money,
+    /// Quanto o mercado paga hoje (`ai::market_value`).
+    pub market_value: domain::Money,
+}
+
+/// Um atributo visível e seu valor (1-20).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttributeValue {
+    /// `attribute.key()` é a chave de localização.
+    pub attribute: domain::Attribute,
+    pub value: u8,
+}
+
+/// Detalhe de um jogador (ver [`Query::Player`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlayerDetail {
+    pub row: PlayerRow,
+    pub club_name: String,
+    pub nation_name: String,
+    /// Os 36 atributos visíveis, na ordem de `domain::Attribute::ALL`.
+    pub attributes: Vec<AttributeValue>,
+}
+
+/// Placar de uma partida já jogada.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatchScore {
+    pub home_goals: u32,
+    pub away_goals: u32,
+}
+
+/// Uma partida do calendário (ver [`Query::Fixtures`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixtureRow {
+    /// Rodada, 0-based.
+    pub matchday: u32,
+    pub competition_name: String,
+    pub home: domain::ClubId,
+    pub home_name: String,
+    pub away: domain::ClubId,
+    pub away_name: String,
+    /// `None` se ainda não foi jogada.
+    pub score: Option<MatchScore>,
+}
+
+/// Calendário de um clube numa temporada (ver [`Query::Fixtures`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixtureList {
+    pub season_index: u32,
+    pub rows: Vec<FixtureRow>,
+}
+
+/// Uma partida de uma rodada, já jogada (ver [`Query::RoundResults`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResultRow {
+    pub competition_name: String,
+    pub home_name: String,
+    pub away_name: String,
+    pub score: MatchScore,
+}
+
+/// Resultados de uma rodada (ver [`Query::RoundResults`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoundResults {
+    pub season_index: u32,
+    pub matchday: u32,
+    pub rows: Vec<ResultRow>,
 }
 
 /// Quem está no comando e de quê (ver [`Query::Manager`]).

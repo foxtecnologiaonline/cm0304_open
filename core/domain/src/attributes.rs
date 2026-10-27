@@ -125,6 +125,51 @@ impl Attribute {
         )
     }
 
+    /// Chave `snake_case` estável do atributo — a inversa de
+    /// [`Self::parse`]. É o identificador que a UI usa para localizar o
+    /// nome (`docs/06`, RF-PL-06): o núcleo nunca devolve texto traduzido.
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Finishing => "finishing",
+            Self::Heading => "heading",
+            Self::Passing => "passing",
+            Self::Crossing => "crossing",
+            Self::Dribbling => "dribbling",
+            Self::FirstTouch => "first_touch",
+            Self::Tackling => "tackling",
+            Self::Marking => "marking",
+            Self::LongShots => "long_shots",
+            Self::SetPieces => "set_pieces",
+            Self::Penalties => "penalties",
+            Self::LongThrows => "long_throws",
+            Self::Dominance => "dominance",
+            Self::Technique => "technique",
+            Self::Vision => "vision",
+            Self::Decisions => "decisions",
+            Self::Positioning => "positioning",
+            Self::Anticipation => "anticipation",
+            Self::Concentration => "concentration",
+            Self::Determination => "determination",
+            Self::Leadership => "leadership",
+            Self::Teamwork => "teamwork",
+            Self::Aggression => "aggression",
+            Self::Composure => "composure",
+            Self::Creativity => "creativity",
+            Self::OffTheBall => "off_the_ball",
+            Self::Pace => "pace",
+            Self::Acceleration => "acceleration",
+            Self::Stamina => "stamina",
+            Self::Strength => "strength",
+            Self::Agility => "agility",
+            Self::Balance => "balance",
+            Self::Reflexes => "reflexes",
+            Self::Rushing => "rushing",
+            Self::AerialAbility => "aerial_ability",
+            Self::Distribution => "distribution",
+        }
+    }
+
     /// Analisa o nome `snake_case` usado nos data packs (`docs/03 §7`,
     /// `people/*.json`). `None` para qualquer string desconhecida — vira um
     /// item em `issues` de `pack::resolve`, nunca um `panic` (mesmo padrão
@@ -261,6 +306,13 @@ impl Ability {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_e_a_inversa_de_parse_para_todo_atributo() {
+        for attr in Attribute::ALL {
+            assert_eq!(Attribute::parse(attr.key()), Some(attr));
+        }
+    }
 
     #[test]
     fn todas_as_variantes_tem_indice_unico_e_denso() {

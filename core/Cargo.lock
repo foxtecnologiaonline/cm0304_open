@@ -64,6 +64,7 @@ dependencies = [
 name = "app"
 version = "0.0.1"
 dependencies = [
+ "ai",
  "domain",
  "engine",
  "pack",
