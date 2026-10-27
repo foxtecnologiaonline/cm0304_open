@@ -65,6 +65,13 @@ pub enum Query {
     TransferWindow,
     /// Propostas da IA por jogadores do clube sob comando, ainda de pé.
     IncomingOffers,
+    /// Caixa de entrada do técnico, da mais nova pra mais antiga, paginada.
+    Inbox {
+        unread_only: bool,
+        offset: u32,
+        /// Limitado a [`MAX_INBOX_PAGE`].
+        limit: u16,
+    },
     /// Busca de jogadores (mercado), do melhor pro pior CA, paginada.
     Search {
         filter: PlayerFilter,
@@ -74,6 +81,9 @@ pub enum Query {
         limit: u16,
     },
 }
+
+/// Maior página que [`Query::Inbox`] devolve.
+pub const MAX_INBOX_PAGE: u16 = 50;
 
 /// Maior página que [`Query::Search`] devolve.
 pub const MAX_SEARCH_PAGE: u16 = 50;
@@ -120,6 +130,17 @@ pub enum QueryResult {
     TransferWindow(TransferWindowInfo),
     IncomingOffers(Vec<IncomingOfferRow>),
     Search(SearchPage),
+    Inbox(InboxPage),
+}
+
+/// Uma página da caixa de entrada (ver [`Query::Inbox`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboxPage {
+    /// Mensagens que casam com o filtro (todas as páginas).
+    pub total: u32,
+    /// Não lidas na caixa inteira (para o selo da UI).
+    pub unread: u32,
+    pub rows: Vec<crate::inbox::InboxMessage>,
 }
 
 /// Uma página de resultados de [`Query::Search`].

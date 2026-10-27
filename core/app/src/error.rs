@@ -73,6 +73,9 @@ pub enum AppError {
     SquadTooSmall,
     /// Comando que só vale para jogador do clube sob comando (treino, ...).
     NotYourPlayer,
+    /// `Command::MarkInboxRead` com uma mensagem que não existe (id errado
+    /// ou já descartada pelo limite da caixa).
+    UnknownMessage,
 }
 
 impl fmt::Display for AppError {
@@ -109,6 +112,7 @@ impl fmt::Display for AppError {
                 )
             }
             AppError::NotYourPlayer => write!(f, "esse jogador não é do seu clube"),
+            AppError::UnknownMessage => write!(f, "essa mensagem não existe mais"),
             AppError::NoClubTaken => write!(f, "nenhum clube sob seu comando ainda"),
             AppError::InvalidLineup(reason) => write!(f, "escalação inválida: {reason}"),
             AppError::UnknownClub(club) => write!(f, "o pack não tem o clube {club}"),
@@ -151,7 +155,8 @@ impl std::error::Error for AppError {
             | AppError::UnknownOffer
             | AppError::OfferNoLongerValid
             | AppError::SquadTooSmall
-            | AppError::NotYourPlayer => None,
+            | AppError::NotYourPlayer
+            | AppError::UnknownMessage => None,
         }
     }
 }

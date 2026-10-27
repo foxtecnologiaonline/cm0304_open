@@ -14,6 +14,7 @@
 
 mod command;
 mod error;
+mod inbox;
 mod query;
 mod session;
 mod slots;
@@ -22,6 +23,7 @@ pub use ai::Formation;
 pub use command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
 pub use engine::Side;
 pub use error::AppError;
+pub use inbox::{INBOX_CAPACITY, InboxKind, InboxMessage};
 pub use query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
     FixtureList, FixtureRow, IncomingOfferRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow,
@@ -29,6 +31,7 @@ pub use query::{
     QueryResult, ResultRow, RoundResults, SearchPage, SeasonProgress, StandingsRow,
     TransferWindowInfo,
 };
+pub use query::{InboxPage, MAX_INBOX_PAGE};
 pub use query::{MAX_SEARCH_PAGE, PlayerFilter};
 pub use session::{CommandReceipt, GameSession};
 pub use slots::{SAVE_SLOT_COUNT, autosave_path, slot_path};

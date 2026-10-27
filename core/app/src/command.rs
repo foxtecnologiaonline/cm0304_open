@@ -124,6 +124,10 @@ pub enum Command {
     },
     /// [`Command::SetTraining`] para o elenco inteiro do clube.
     SetTeamTraining { training: Training },
+    /// Marca uma mensagem da caixa de entrada como lida.
+    MarkInboxRead { id: u32 },
+    /// Marca toda a caixa de entrada como lida ("processar tudo").
+    MarkAllInboxRead,
 }
 
 const TAG_ADVANCE_SEASON: u8 = 1;
@@ -141,6 +145,8 @@ const TAG_RENEW_CONTRACT: u8 = 12;
 const TAG_RESPOND_TO_OFFER: u8 = 13;
 const TAG_SET_TRAINING: u8 = 14;
 const TAG_SET_TEAM_TRAINING: u8 = 15;
+const TAG_MARK_INBOX_READ: u8 = 16;
+const TAG_MARK_ALL_INBOX_READ: u8 = 17;
 
 impl Command {
     /// Acrescenta a codificação deste comando ao log.
@@ -231,6 +237,11 @@ impl Command {
                 out.push(TAG_SET_TEAM_TRAINING);
                 out.push(training.code());
             }
+            Command::MarkInboxRead { id } => {
+                out.push(TAG_MARK_INBOX_READ);
+                out.extend_from_slice(&id.to_le_bytes());
+            }
+            Command::MarkAllInboxRead => out.push(TAG_MARK_ALL_INBOX_READ),
         }
     }
 
@@ -345,6 +356,10 @@ impl Command {
             TAG_SET_TEAM_TRAINING => Command::SetTeamTraining {
                 training: Training::from_code(take(1)?[0]).ok_or_else(bad)?,
             },
+            TAG_MARK_INBOX_READ => Command::MarkInboxRead {
+                id: u32::from_le_bytes(take(4)?.try_into().map_err(|_| bad())?),
+            },
+            TAG_MARK_ALL_INBOX_READ => Command::MarkAllInboxRead,
             _ => return Err(bad()),
         };
         *pos = cursor;
@@ -432,6 +447,8 @@ mod tests {
             Command::SetTeamTraining {
                 training: Training::Light,
             },
+            Command::MarkInboxRead { id: 12 },
+            Command::MarkAllInboxRead,
             Command::AdvanceRound,
             Command::AdvanceSeason,
             Command::AdvanceRound,
@@ -478,6 +495,8 @@ mod tests {
             }),
             15
         );
+        assert_eq!(tag_of(Command::MarkInboxRead { id: 1 }), 16);
+        assert_eq!(tag_of(Command::MarkAllInboxRead), 17);
         assert_eq!(tag_of(Command::BeginSeason), 10);
         assert_eq!(
             tag_of(Command::MakeOffer {

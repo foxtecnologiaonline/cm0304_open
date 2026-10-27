@@ -14,6 +14,7 @@ use domain::CompetitionId;
 
 use crate::command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
 use crate::error::AppError;
+use crate::inbox::{Inbox, InboxKind};
 use crate::query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
     FixtureList, FixtureRow, IncomingOfferRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow,
@@ -21,7 +22,7 @@ use crate::query::{
     QueryResult, ResultRow, RoundResults, SearchPage, SeasonProgress, StandingsRow,
     TransferWindowInfo,
 };
-use crate::query::{MAX_SEARCH_PAGE, PlayerFilter};
+use crate::query::{InboxPage, MAX_INBOX_PAGE, MAX_SEARCH_PAGE, PlayerFilter};
 use engine::Side;
 
 /// Confirmação de que um [`Command`] foi processado, com o suficiente para
@@ -320,6 +321,8 @@ pub struct GameSession {
     training: Vec<world::Training>,
     /// Variação de CA de cada jogador na última temporada concluída.
     ca_change: Vec<i8>,
+    /// Caixa de entrada do técnico (vazia sem clube sob comando).
+    inbox: Inbox,
     /// `(temporada, rodada)` para a qual já se sorteou proposta — no máximo
     /// uma geração por rodada.
     offers_generated_for: Option<(u32, u32)>,
@@ -408,6 +411,7 @@ impl GameSession {
             next_offer_id: 0,
             training: vec![world::Training::Normal; pack_players],
             ca_change: vec![0; pack_players],
+            inbox: Inbox::default(),
             offers_generated_for: None,
             command_log: Vec::new(),
             manager: None,
@@ -508,6 +512,16 @@ impl GameSession {
             }
             Command::SetTeamTraining { training } => {
                 self.set_training(None, *training)?;
+                self.idle_receipt()
+            }
+            Command::MarkInboxRead { id } => {
+                if !self.inbox.mark_read(*id) {
+                    return Err(AppError::UnknownMessage);
+                }
+                self.idle_receipt()
+            }
+            Command::MarkAllInboxRead => {
+                self.inbox.mark_all_read();
                 self.idle_receipt()
             }
             Command::RespondToOffer { offer, accept } => {
@@ -798,14 +812,18 @@ impl GameSession {
     /// temporada e dura `WINTER_WINDOW_MATCHDAYS` rodadas. Fora de uma
     /// temporada em andamento não há janela.
     fn window_info(&self) -> TransferWindowInfo {
-        let Some(active) = &self.season else {
+        Self::window_of(self.season.as_ref().map(|a| &a.run))
+    }
+
+    fn window_of(run: Option<&world::SeasonRun>) -> TransferWindowInfo {
+        let Some(run) = run else {
             return TransferWindowInfo {
                 open: false,
                 matchdays_until_change: None,
             };
         };
-        let next = active.run.next_matchday();
-        let winter_start = active.run.total_matchdays() / 2;
+        let next = run.next_matchday();
+        let winter_start = run.total_matchdays() / 2;
         let winter_end = winter_start + WINTER_WINDOW_MATCHDAYS;
         let (open, until) = if next < SUMMER_WINDOW_MATCHDAYS {
             (true, Some(SUMMER_WINDOW_MATCHDAYS - next))
@@ -861,6 +879,151 @@ impl GameSession {
             }
         }
         Ok(())
+    }
+
+    /// Mensagens da pré-temporada (só com clube sob comando).
+    fn notify_pre_season(&mut self, season_index: u32) {
+        let Some(club) = self.manager.as_ref().map(|m| m.club) else {
+            return;
+        };
+        self.inbox.push(season_index, 0, InboxKind::SeasonStarted);
+        let own = |p: &&world::PlayerState| p.club == club;
+        let injured = self.roster.iter().filter(own).filter(|p| p.injured).count();
+        if injured > 0 {
+            self.inbox.push(
+                season_index,
+                0,
+                InboxKind::PlayersInjured {
+                    count: injured as u16,
+                },
+            );
+        }
+        let expiring = self
+            .roster
+            .iter()
+            .zip(&self.contracts)
+            .filter(|(p, c)| p.club == club && c.seasons_remaining <= 1)
+            .count();
+        if expiring > 0 {
+            self.inbox.push(
+                season_index,
+                0,
+                InboxKind::ContractsExpiring {
+                    count: expiring as u16,
+                },
+            );
+        }
+        let debt = self.debt[club.as_usize()];
+        if debt.cents() > 0 {
+            self.inbox
+                .push(season_index, 0, InboxKind::DebtWarning { debt });
+        }
+        self.inbox
+            .push(season_index, 0, InboxKind::TransferWindowOpened);
+    }
+
+    /// Mensagens depois de uma rodada: resultado, trocas de escalação,
+    /// suspensões para a próxima e mudança de janela.
+    fn notify_round(
+        &mut self,
+        active: &ActiveSeason,
+        report: &world::MatchdayReport,
+        managed_played: bool,
+        window_before: bool,
+    ) {
+        let Some(club) = self.manager.as_ref().map(|m| m.club) else {
+            return;
+        };
+        let season = active.run.season_index();
+        let matchday = report.matchday;
+        if managed_played && let Some(m) = &self.last_match {
+            self.inbox.push(
+                season,
+                matchday,
+                InboxKind::MatchPlayed {
+                    home: m.home,
+                    away: m.away,
+                    home_goals: m.goals.0,
+                    away_goals: m.goals.1,
+                },
+            );
+        }
+        for &(out, incoming) in &report.lineup_adjustments {
+            self.inbox.push(
+                season,
+                matchday,
+                InboxKind::LineupAdjusted { out, incoming },
+            );
+        }
+        if !active.run.is_finished() {
+            let mut suspended: Vec<domain::PlayerId> =
+                self.suspended_in(&active.run, club).into_iter().collect();
+            suspended.sort();
+            for player in suspended {
+                self.inbox
+                    .push(season, matchday, InboxKind::PlayerSuspended { player });
+            }
+            let window_after = Self::window_of(Some(&active.run)).open;
+            if window_after != window_before {
+                let kind = if window_after {
+                    InboxKind::TransferWindowOpened
+                } else {
+                    InboxKind::TransferWindowClosed
+                };
+                self.inbox.push(season, matchday + 1, kind);
+            }
+        }
+    }
+
+    /// Mensagem de fim de temporada com a posição do clube e o que mudou.
+    fn notify_season_end(&mut self, result: &world::SeasonResult, total_matchdays: u32) {
+        let Some(club) = self.manager.as_ref().map(|m| m.club) else {
+            return;
+        };
+        let Some((position, clubs)) = result.tables.iter().find_map(|(_, table)| {
+            table
+                .iter()
+                .position(|row| row.club == club)
+                .map(|i| (i as u32 + 1, table.len() as u32))
+        }) else {
+            return;
+        };
+        let movement = result.movements.iter().find(|(c, _, _)| *c == club);
+        let (promoted, relegated) = movement.map_or((false, false), |&(_, from, to)| {
+            let (from_tier, to_tier) = (
+                self.pack.competition(from).tier,
+                self.pack.competition(to).tier,
+            );
+            (to_tier < from_tier, to_tier > from_tier)
+        });
+        self.inbox.push(
+            result.season_index,
+            total_matchdays,
+            InboxKind::SeasonEnded {
+                position,
+                clubs,
+                promoted,
+                relegated,
+            },
+        );
+    }
+
+    fn inbox_page(&self, unread_only: bool, offset: u32, limit: u16) -> InboxPage {
+        let matching: Vec<_> = self
+            .inbox
+            .newest_first()
+            .filter(|m| !unread_only || !m.read)
+            .copied()
+            .collect();
+        InboxPage {
+            total: matching.len() as u32,
+            unread: self.inbox.unread() as u32,
+            rows: matching
+                .into_iter()
+                .skip(offset as usize)
+                .take(usize::from(limit.clamp(1, MAX_INBOX_PAGE)))
+                .collect(),
+        }
     }
 
     /// Ver [`Command::MakeOffer`].
@@ -1022,6 +1185,16 @@ impl GameSession {
         ) {
             let id = self.next_offer_id;
             self.next_offer_id += 1;
+            self.inbox.push(
+                season,
+                next,
+                InboxKind::OfferReceived {
+                    offer: id,
+                    player,
+                    from,
+                    fee,
+                },
+            );
             self.incoming.push(world::IncomingOffer {
                 id,
                 player,
@@ -1148,6 +1321,7 @@ impl GameSession {
         receipt.season_index = active.run.season_index();
         receipt.matchdays_total = active.run.total_matchdays();
 
+        let window_before = Self::window_of(Some(&active.run)).open;
         let external = self.play_managed_fixture(&mut active);
         let report = {
             let mut career = career_round!(self);
@@ -1161,6 +1335,7 @@ impl GameSession {
         receipt.lineup_adjustments = report.lineup_adjustments.len();
         receipt.match_day_revenue = report.match_day_revenue;
 
+        self.notify_round(&active, &report, external.is_some(), window_before);
         if active.run.is_finished() {
             self.end_season(active, &mut receipt);
             receipt.season_completed = true;
@@ -1253,6 +1428,7 @@ impl GameSession {
         // saber exatamente quem jogou, não só o perfil agregado do time.
         let starters = world::starters_from_roster_all_clubs(&self.pack, &self.roster);
 
+        self.notify_pre_season(season_index);
         ActiveSeason {
             run: world::SeasonRun::start(&self.pack, &self.membership, season_index),
             starters,
@@ -1361,6 +1537,7 @@ impl GameSession {
         // contagem pra próxima (`world::adaptation`, RF-JG-02).
         world::advance_seasons_since_transfer(&mut self.seasons_since_transfer);
 
+        self.notify_season_end(&result, run.total_matchdays());
         self.history.push(result);
         self.last_run = Some(run);
     }
@@ -1393,6 +1570,11 @@ impl GameSession {
             ),
             Query::TransferWindow => QueryResult::TransferWindow(self.window_info()),
             Query::IncomingOffers => QueryResult::IncomingOffers(self.incoming_offer_rows()),
+            Query::Inbox {
+                unread_only,
+                offset,
+                limit,
+            } => QueryResult::Inbox(self.inbox_page(unread_only, offset, limit)),
             Query::Search {
                 filter,
                 offset,
@@ -3787,6 +3969,245 @@ mod tests {
             with_offer.training[o.player.id.as_usize()],
             Training::Normal
         );
+    }
+
+    fn inbox(session: &GameSession, unread_only: bool, offset: u32, limit: u16) -> InboxPage {
+        match session.query(Query::Inbox {
+            unread_only,
+            offset,
+            limit,
+        }) {
+            QueryResult::Inbox(page) => page,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    fn kinds(session: &GameSession) -> Vec<InboxKind> {
+        inbox(session, false, 0, 50)
+            .rows
+            .iter()
+            .map(|m| m.kind)
+            .collect()
+    }
+
+    #[test]
+    fn sessao_observadora_nao_tem_caixa_de_entrada() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        session.dispatch(Command::AdvanceSeason).unwrap();
+        let page = inbox(&session, false, 0, 50);
+        assert_eq!((page.total, page.unread), (0, 0));
+    }
+
+    #[test]
+    fn pre_temporada_gera_inicio_contratos_e_janela_mais_novas_primeiro() {
+        let mut session = managed(3);
+        session.dispatch(Command::BeginSeason).unwrap();
+        let page = inbox(&session, false, 0, 50);
+        let kinds: Vec<_> = page.rows.iter().map(|m| m.kind).collect();
+        assert!(kinds.contains(&InboxKind::SeasonStarted));
+        assert!(kinds.contains(&InboxKind::TransferWindowOpened));
+        assert!(
+            page.rows.windows(2).all(|w| w[0].id > w[1].id),
+            "mais nova primeiro"
+        );
+        assert_eq!(page.unread, page.total);
+
+        let expiring = squad_of(&session, 3)
+            .iter()
+            .filter(|p| p.contract_seasons_remaining <= 1)
+            .count();
+        let reported = kinds.iter().find_map(|k| match k {
+            InboxKind::ContractsExpiring { count } => Some(usize::from(*count)),
+            _ => None,
+        });
+        assert_eq!(reported.unwrap_or(0), expiring);
+        let injured = squad_of(&session, 3).iter().filter(|p| p.injured).count();
+        let reported_injured = kinds.iter().find_map(|k| match k {
+            InboxKind::PlayersInjured { count } => Some(usize::from(*count)),
+            _ => None,
+        });
+        assert_eq!(reported_injured.unwrap_or(0), injured);
+    }
+
+    #[test]
+    fn cada_rodada_registra_o_resultado_do_clube_do_tecnico() {
+        let mut session = managed(3);
+        for _ in 0..3 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+            let last = last_match(&session).unwrap();
+            let newest_result = inbox(&session, false, 0, 50)
+                .rows
+                .into_iter()
+                .find_map(|m| match m.kind {
+                    InboxKind::MatchPlayed {
+                        home_goals,
+                        away_goals,
+                        home,
+                        away,
+                    } => Some((home, away, home_goals, away_goals)),
+                    _ => None,
+                })
+                .unwrap();
+            assert_eq!(newest_result.2, last.home_goals);
+            assert_eq!(newest_result.3, last.away_goals);
+            assert_eq!(newest_result.0, last.home);
+            assert_eq!(newest_result.1, last.away);
+        }
+        let results = kinds(&session)
+            .into_iter()
+            .filter(|k| matches!(k, InboxKind::MatchPlayed { .. }))
+            .count();
+        assert_eq!(results, 3);
+    }
+
+    #[test]
+    fn janela_que_fecha_e_reabre_avisa_e_fim_de_temporada_resume_a_campanha() {
+        let mut session = managed(3);
+        session.dispatch(Command::BeginSeason).unwrap();
+        for _ in 0..4 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+        }
+        assert!(kinds(&session).contains(&InboxKind::TransferWindowClosed));
+        for _ in 0..3 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+        }
+        let opened = kinds(&session)
+            .iter()
+            .filter(|k| **k == InboxKind::TransferWindowOpened)
+            .count();
+        assert_eq!(opened, 2, "verão e inverno");
+
+        session.dispatch(Command::AdvanceSeason).unwrap();
+        let ended = inbox(&session, false, 0, 50)
+            .rows
+            .into_iter()
+            .find_map(|m| match m.kind {
+                InboxKind::SeasonEnded {
+                    position,
+                    clubs,
+                    promoted,
+                    relegated,
+                } => Some((position, clubs, promoted, relegated, m)),
+                _ => None,
+            })
+            .expect("fim de temporada avisa");
+        assert!((1..=8).contains(&ended.0));
+        assert_eq!(ended.1, 8);
+        assert!(!(ended.2 && ended.3));
+        assert_eq!(ended.4.season_index, 0);
+        assert_eq!(ended.4.matchday, 14);
+        // O que a mensagem diz bate com a divisão em que o clube ficou.
+        let info = manager(&session).unwrap();
+        if ended.2 {
+            assert_eq!(info.competition_name, "Primeira Divisão de Estrelônia");
+        }
+        if ended.3 {
+            assert_eq!(info.competition_name, "Segunda Divisão de Estrelônia");
+        }
+    }
+
+    #[test]
+    fn proposta_da_ia_aparece_na_caixa_com_o_mesmo_id_da_lista_de_propostas() {
+        let session = session_with_incoming_offer();
+        let offers = incoming(&session);
+        let from_inbox: Vec<u32> = kinds(&session)
+            .into_iter()
+            .filter_map(|k| match k {
+                InboxKind::OfferReceived { offer, .. } => Some(offer),
+                _ => None,
+            })
+            .collect();
+        assert!(offers.iter().all(|o| from_inbox.contains(&o.id)));
+        assert!(
+            InboxKind::OfferReceived {
+                offer: 0,
+                player: domain::PlayerId::new(0),
+                from: domain::ClubId::new(0),
+                fee: domain::Money::ZERO
+            }
+            .needs_action()
+        );
+    }
+
+    #[test]
+    fn troca_de_escalacao_e_suspensao_viram_mensagens() {
+        let mut session = managed(3);
+        let lineup = valid_lineup(&session, 3);
+        session
+            .dispatch(Command::SetLineup {
+                formation: Formation::F442,
+                starters: lineup.clone(),
+            })
+            .unwrap();
+        session.dispatch(Command::AdvanceRound).unwrap();
+        session.roster[lineup[4].as_usize()].injured = true;
+        session.dispatch(Command::AdvanceRound).unwrap();
+        let adjusted = kinds(&session)
+            .into_iter()
+            .any(|k| matches!(k, InboxKind::LineupAdjusted { out, .. } if out == lineup[4]));
+        assert!(adjusted);
+
+        // Suspensão: joga até alguém do clube ser suspenso (4%/rodada/clube).
+        let mut found = false;
+        'seeds: for seed in 0..40u64 {
+            let mut s = GameSession::new(&example_pack_path(), seed).unwrap();
+            take(&mut s, 3, "Zé").unwrap();
+            for _ in 0..13 {
+                s.dispatch(Command::AdvanceRound).unwrap();
+                if kinds(&s)
+                    .iter()
+                    .any(|k| matches!(k, InboxKind::PlayerSuspended { .. }))
+                {
+                    let suspended_now = squad_of(&s, 3).iter().any(|p| p.suspended);
+                    assert!(suspended_now, "a mensagem bate com o elenco");
+                    found = true;
+                    break 'seeds;
+                }
+            }
+        }
+        assert!(found, "alguma seed suspende alguém do clube");
+    }
+
+    #[test]
+    fn marcar_como_lida_filtra_pagina_e_sobrevive_ao_save_e_load() {
+        let mut session = managed(3);
+        session.dispatch(Command::BeginSeason).unwrap();
+        for _ in 0..3 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+        }
+        let before = inbox(&session, false, 0, 50);
+        assert!(before.total >= 5);
+        let id = before.rows[0].id;
+        session.dispatch(Command::MarkInboxRead { id }).unwrap();
+        let after = inbox(&session, false, 0, 50);
+        assert_eq!(after.unread, before.unread - 1);
+        assert!(after.rows[0].read);
+        assert_eq!(inbox(&session, true, 0, 50).total, after.unread);
+        assert!(matches!(
+            session.dispatch(Command::MarkInboxRead { id: 9_999 }),
+            Err(AppError::UnknownMessage)
+        ));
+
+        // Paginação: duas páginas de 2 não repetem mensagem.
+        let p1 = inbox(&session, false, 0, 2);
+        let p2 = inbox(&session, false, 2, 2);
+        assert_eq!((p1.rows.len(), p2.rows.len()), (2, 2));
+        assert!(p1.rows.iter().all(|a| p2.rows.iter().all(|b| a.id != b.id)));
+        assert_eq!(
+            inbox(&session, false, 0, 0).rows.len(),
+            1,
+            "limite mínimo de 1"
+        );
+
+        let reloaded = GameSession::load(&example_pack_path(), &session.to_save()).unwrap();
+        assert_eq!(
+            inbox(&reloaded, false, 0, 50),
+            inbox(&session, false, 0, 50)
+        );
+
+        session.dispatch(Command::MarkAllInboxRead).unwrap();
+        assert_eq!(inbox(&session, false, 0, 50).unread, 0);
+        assert_eq!(inbox(&session, true, 0, 50).total, 0);
     }
 
     fn first_player_ids(session: &GameSession, club: u32, n: usize) -> Vec<domain::PlayerId> {

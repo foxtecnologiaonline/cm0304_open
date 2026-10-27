@@ -637,6 +637,19 @@ visíveis ainda não evoluem), delegação ao auxiliar (RF-TC-03, M3), moral
 individual e fadiga acumulada de verdade (RF-JG-07 completo): fica a moral
 por clube e a condição por temporada já existentes.
 
+**F8a feita (caixa de entrada, RF-CA-07):** `app::inbox` — fila de eventos
+do técnico com dados **estruturados** (`InboxKind` carrega ids; a UI
+resolve os nomes e localiza o texto): início de temporada, resultado de
+cada rodada, jogadores lesionados, suspensões da próxima rodada, titular
+trocado, proposta recebida, contratos a vencer, janela aberta/fechada,
+dívida, fim de temporada (posição, subiu/caiu). `needs_action()` marca o
+que pede decisão ("processar tudo" para ali). `Query::Inbox { unread_only,
+offset, limit }` (mais novas primeiro, página ≤ 50) e
+`Command::{MarkInboxRead, MarkAllInboxRead}` — ler é comando, então entra
+no log do save e o replay reproduz a caixa exata, incluindo o que já foi
+lido. Limitada a 200 mensagens (as mais antigas saem; ids nunca
+reaproveitados), só existe com clube sob comando.
+
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04
 (familiaridade posicional) entra só como penalidade fora de posição;
