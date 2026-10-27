@@ -85,6 +85,11 @@ pub struct CommandReceipt {
     /// fatia) — descontado do caixa antes da folha salarial desta mesma
     /// temporada (ver `payroll_paid`, acima).
     pub debt_repaid: domain::Money,
+    /// Quanto os clubes receberam de patrocínio nesta temporada, no total
+    /// (`world::pay_sponsorship`, `docs/01 §2.2`, RF-CL-03, quinta fatia) —
+    /// valor absoluto por clube escalado pela reputação, não um pool
+    /// dividido entre clubes (ver `tv_revenue_paid`, acima).
+    pub sponsorship_paid: domain::Money,
 }
 
 /// Uma carreira carregada em memória.
@@ -460,6 +465,13 @@ impl GameSession {
                         );
                 }
 
+                // Patrocínio de fim de temporada (`world::pay_sponsorship`,
+                // RF-CL-03, quinta fatia): valor absoluto por clube do
+                // pack inteiro, não por competição — por isso fica fora
+                // do loop de tabelas acima.
+                let sponsorship_paid =
+                    world::pay_sponsorship(&self.club_reputation, &mut self.budgets);
+
                 // Condição de entrada na próxima temporada
                 // (`world::apply_season_fatigue`, `docs/01 §2.1` RF-JG-07,
                 // fatia mínima): titular que jogou muita partida de liga
@@ -519,6 +531,7 @@ impl GameSession {
                     prize_money_paid,
                     tv_revenue_paid,
                     debt_repaid,
+                    sponsorship_paid,
                 };
                 self.history.push(result);
                 Ok(receipt)
@@ -949,21 +962,23 @@ mod tests {
             "esperava folha salarial positiva no pack de exemplo (256 jogadores com CA > 0)"
         );
         // `payroll_paid` é a folha debitada, `match_day_revenue`,
-        // `prize_money_paid` e `tv_revenue_paid` são as três receitas
-        // creditadas (`world::finance::match_day_revenue`/
-        // `distribute_prize_money`/`distribute_tv_revenue`, RF-CL-03) —
-        // as quatro juntas explicam exatamente a variação do orçamento
-        // total: transferências (`run_market_day`) conservam dinheiro
-        // entre clubes, então não aparecem aqui.
+        // `prize_money_paid`, `tv_revenue_paid` e `sponsorship_paid` são as
+        // receitas creditadas (`world::finance::match_day_revenue`/
+        // `distribute_prize_money`/`distribute_tv_revenue`/
+        // `pay_sponsorship`, RF-CL-03) — todas juntas explicam exatamente a
+        // variação do orçamento total: transferências (`run_market_day`)
+        // conservam dinheiro entre clubes, então não aparecem aqui.
         let budget_after: i64 = session.budgets.iter().map(|b| b.cents()).sum();
         assert_eq!(
             budget_before - budget_after,
             receipt.payroll_paid.cents()
                 - receipt.match_day_revenue.cents()
                 - receipt.prize_money_paid.cents()
-                - receipt.tv_revenue_paid.cents(),
+                - receipt.tv_revenue_paid.cents()
+                - receipt.sponsorship_paid.cents(),
             "a queda do orçamento total deveria ser exatamente folha paga menos bilheteria, \
-             premiação e TV recebidas, já que transferências conservam dinheiro entre clubes"
+             premiação, TV e patrocínio recebidos, já que transferências conservam dinheiro \
+             entre clubes"
         );
     }
 

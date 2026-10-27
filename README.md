@@ -83,7 +83,8 @@ cm0304_open/
 │  │                       #    bilheteria influenciada por reputação de clube (M2, docs/01
 │  │                       #    RF-CL-03/RF-MU-08) + premiação por posição final na tabela
 │  │                       #    (M2, docs/01 RF-CL-03) + TV por reputação de clube, não posição
-│  │                       #    (M2, docs/01 RF-CL-03) + dívida: salário sem caixa vira passivo,
+│  │                       #    (M2, docs/01 RF-CL-03) + patrocínio absoluto por clube (M2,
+│  │                       #    docs/01 RF-CL-03) + dívida: salário sem caixa vira passivo,
 │  │                       #    pago na temporada seguinte antes de qualquer outro gasto (M2,
 │  │                       #    docs/01 RF-CL-03)
 │  ├─ app/                 # ✅ dispatch/query (GameSession) — a fronteira que a ponte vai expor
@@ -108,7 +109,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 375 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 380 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier

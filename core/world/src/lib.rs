@@ -32,7 +32,9 @@
 //! temporada. TV ([`finance::distribute_tv_revenue`]) é a terceira: outro
 //! pool fixo, dividido por **reputação** em vez de posição — clube
 //! reputado atrai audiência o ano inteiro, mesmo fora das primeiras
-//! colocações. Sem patrocínio ainda. Dívida ([`finance::repay_debt`])
+//! colocações. Patrocínio ([`finance::pay_sponsorship`]) é a quarta: valor
+//! absoluto por clube, escalado pela reputação, não um pool dividido
+//! entre clubes. Dívida ([`finance::repay_debt`])
 //! fecha o lado de despesa: salário que o caixa não cobre não evapora,
 //! vira passivo, pago automaticamente na temporada seguinte antes de
 //! qualquer outro gasto — sem juros, sem prazo. Duração de contrato
@@ -103,7 +105,7 @@ pub use cup::{CupMatch, CupResult, cup_participants, generate_big_game_mentality
 pub use discipline::generate_dirtiness;
 pub use finance::{
     distribute_prize_money, distribute_tv_revenue, generate_budgets, generate_stadium_capacities,
-    pay_salaries, repay_debt, salary_per_season,
+    pay_salaries, pay_sponsorship, repay_debt, salary_per_season,
 };
 pub use injuries::{generate_injury_proneness, roll_injuries};
 pub use market::{generate_ambition, generate_loyalty, run_market_day};

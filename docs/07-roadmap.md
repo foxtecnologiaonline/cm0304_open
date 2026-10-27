@@ -326,6 +326,15 @@ aqui e volta ao design** — é para isso que o marco existe.
 > `CommandReceipt::tv_revenue_paid` reporta o total por temporada; golden
 > master bump 9→10 (`total_tv_revenue_paid_cents`).
 >
+> **Patrocínio** (`world::finance::pay_sponsorship`) fecha as fontes de
+> receita de RF-CL-03: valor absoluto por clube (500,00 a 2.500,00 por
+> temporada, linear na reputação), não um pool dividido como premiação e
+> TV, e vale pra todo clube do pack, não só os de tabela de liga.
+> `CommandReceipt::sponsorship_paid` reporta o total por temporada;
+> golden master bump 10→11 (`total_sponsorship_paid_cents`). Como o
+> orçamento alimenta o mercado, o dinheiro extra muda transferências e
+> folha de temporadas seguintes, não só o saldo (visível no `play`).
+>
 > **Dívida** (`world::finance::repay_debt`) fecha o lado de
 > despesa/saldo de RF-CL-03: `world::pay_salaries` passou a registrar o
 > que não cabe no caixa como passivo por clube em vez de só descartar;

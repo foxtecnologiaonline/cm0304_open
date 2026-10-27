@@ -17,7 +17,9 @@
 //! TV ([`distribute_tv_revenue`]) é a terceira: outro valor fixo por
 //! competição por temporada, mas dividido por **reputação**, não
 //! posição — clube reputado atrai audiência o ano inteiro, mesmo fora
-//! das primeiras colocações. Sem patrocínio ainda. Dívida
+//! das primeiras colocações. Patrocínio ([`pay_sponsorship`]) é a quarta:
+//! ao contrário das duas anteriores, não é um pool dividido entre clubes
+//! — é um valor absoluto por clube, escalado pela reputação. Dívida
 //! ([`repay_debt`]) é a fatia mínima do lado de "despesa/saldo" de
 //! RF-CL-03: o que [`pay_salaries`] não consegue debitar do caixa vira
 //! passivo em vez de evaporar, pago automaticamente na temporada
@@ -319,6 +321,39 @@ pub fn distribute_tv_revenue(
         let payment = Money::from_cents(share);
         let idx = club.as_usize();
         budgets[idx] = budgets[idx] + payment;
+        total_paid = total_paid + payment;
+    }
+    total_paid
+}
+
+/// Faixa do patrocínio anual de um clube, em centavos: reputação 0 recebe
+/// o piso, reputação 100 recebe o teto, linear entre os dois — fatia de
+/// "patrocínio" de RF-CL-03 (`docs/01 §2.2`), magnitude modesta por
+/// propósito (mesma ordem de grandeza da premiação por clube), não dado
+/// calibrado.
+const SPONSORSHIP_MIN_CENTS: i64 = 50_000; // 500,00
+const SPONSORSHIP_MAX_CENTS: i64 = 250_000; // 2.500,00
+
+/// Patrocínio anual de um clube de reputação `reputation` (0-100).
+fn sponsorship_for(reputation: u8) -> i64 {
+    let span = SPONSORSHIP_MAX_CENTS - SPONSORSHIP_MIN_CENTS;
+    SPONSORSHIP_MIN_CENTS + span * i64::from(reputation.min(100)) / 100
+}
+
+/// Credita o patrocínio de fim de temporada em todos os clubes — fatia de
+/// "patrocínio" de RF-CL-03, a quarta e última fonte de receita do
+/// requisito. Ao contrário de premiação e TV, não é um pool dividido entre
+/// os clubes de uma competição: é um valor **absoluto por clube**,
+/// escalado pela reputação (`club_reputation`, 0-100), então um clube não
+/// ganha nem perde patrocínio pelo que os outros recebem, e vale pra todo
+/// clube do pack — inclusive os que não aparecem em nenhuma tabela de
+/// liga. Devolve o total creditado.
+#[must_use]
+pub fn pay_sponsorship(club_reputation: &[u8], budgets: &mut [Money]) -> Money {
+    let mut total_paid = Money::ZERO;
+    for (budget, &reputation) in budgets.iter_mut().zip(club_reputation) {
+        let payment = Money::from_cents(sponsorship_for(reputation));
+        *budget = *budget + payment;
         total_paid = total_paid + payment;
     }
     total_paid
@@ -710,6 +745,46 @@ mod tests {
         let mut budgets: Vec<Money> = vec![];
         let total_paid = distribute_tv_revenue(&[], &[], &mut budgets);
         assert_eq!(total_paid, Money::ZERO);
+    }
+
+    #[test]
+    fn patrocinio_escala_linear_da_reputacao_minima_a_maxima() {
+        assert_eq!(sponsorship_for(0), SPONSORSHIP_MIN_CENTS);
+        assert_eq!(sponsorship_for(100), SPONSORSHIP_MAX_CENTS);
+        assert_eq!(
+            sponsorship_for(50),
+            (SPONSORSHIP_MIN_CENTS + SPONSORSHIP_MAX_CENTS) / 2
+        );
+    }
+
+    #[test]
+    fn patrocinio_nunca_passa_do_teto_mesmo_com_reputacao_fora_da_faixa() {
+        assert_eq!(sponsorship_for(255), SPONSORSHIP_MAX_CENTS);
+    }
+
+    #[test]
+    fn patrocinio_e_absoluto_por_clube_nao_depende_dos_outros() {
+        let mut sozinho = vec![Money::ZERO];
+        let _ = pay_sponsorship(&[80], &mut sozinho);
+        let mut acompanhado = vec![Money::ZERO, Money::ZERO, Money::ZERO];
+        let _ = pay_sponsorship(&[80, 10, 99], &mut acompanhado);
+        assert_eq!(sozinho[0], acompanhado[0]);
+    }
+
+    #[test]
+    fn patrocinio_credita_o_orcamento_e_bate_com_o_total_reportado() {
+        let mut budgets = vec![Money::from_cents(1_000); 3];
+        let before: i64 = budgets.iter().map(|b| b.cents()).sum();
+        let total_paid = pay_sponsorship(&[0, 50, 100], &mut budgets);
+        let after: i64 = budgets.iter().map(|b| b.cents()).sum();
+        assert_eq!(after - before, total_paid.cents());
+        assert!(budgets[2] > budgets[1] && budgets[1] > budgets[0]);
+    }
+
+    #[test]
+    fn patrocinio_sem_clubes_nao_paga_nada() {
+        let mut budgets: Vec<Money> = vec![];
+        assert_eq!(pay_sponsorship(&[], &mut budgets), Money::ZERO);
     }
 
     #[test]

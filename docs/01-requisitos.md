@@ -130,6 +130,15 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > `CommandReceipt::tv_revenue_paid` e `managerfc-cli play` já reportam o
 > total recebido por temporada.
 >
+> `world::finance::pay_sponsorship` é a quarta e última fonte de receita
+> de RF-CL-03 — **patrocínio**: ao contrário de premiação e TV, não é um
+> pool dividido entre os clubes de uma competição, é um valor **absoluto
+> por clube** (de 500,00 a 2.500,00 por temporada, linear na reputação
+> 0-100; não calibrado), então um clube não ganha nem perde patrocínio pelo
+> que os outros recebem, e vale pra todo clube do pack, inclusive os que
+> não estão em nenhuma tabela de liga. `CommandReceipt::sponsorship_paid`
+> e `managerfc-cli play` já reportam o total recebido por temporada.
+>
 > `world::finance::repay_debt` é a fatia mínima do lado de "despesa/saldo"
 > de RF-CL-03 — **dívida**: o que `world::pay_salaries` não consegue
 > debitar do caixa (acima) vira passivo por clube em vez de evaporar,
@@ -137,9 +146,10 @@ Prioridade: **M** = Must (1.0 não existe sem), **S** = Should, **C** = Could, *
 > gasto (dívida vem primeiro, igual contabilidade de verdade). Sem
 > juros, sem prazo, sem renegociação — só um desconto até o limite do
 > que o clube tem agora. `CommandReceipt::debt_repaid` e `managerfc-cli
-> play` já reportam o total pago por temporada. Sem patrocínio ou
-> saldo negativo ainda — o resto de RF-CL-03 fica para quando essas
-> fontes existirem.
+> play` já reportam o total pago por temporada. As quatro fontes de
+> receita de RF-CL-03 (bilheteria, premiação, TV, patrocínio) e a dívida
+> existem; falta só saldo negativo de verdade (hoje o caixa nunca passa de
+> zero, o excedente vira dívida) e negociação com a diretoria (RF-CL-04, M3).
 >
 > O público sorteado por partida, antes decorativo (piso/teto fixos,
 > `docs/01 §2.4` RF-MU-08 citado como "futuro"), agora é influenciado pela

@@ -364,7 +364,7 @@ fn calibrate(
         // Finalizações por time (não por partida): docs/04 §4.1 mira 12,5
         // por time, então divide por 2 lados além de por partida.
         avg_shots_per_team_permille: shots * 1000 / matches / 2,
-        conversion_permille: if shots == 0 { 0 } else { goals * 1000 / shots },
+        conversion_permille: (goals * 1000).checked_div(shots).unwrap_or(0),
     };
 
     let badge = |ok: bool| if ok { "OK  " } else { "FORA" };
@@ -447,7 +447,8 @@ fn play(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
                 "temporada {}: {} partidas, {} movimentação(ões) de acesso/queda, \
                  {} transferência(s), {} lesão(ões), {} jogador(es) cansado(s) pra próxima, \
                  {} suspensão(ões), {} em folha salarial, {} em bilheteria, \
-                 {} em premiação, {} em TV, {} em dívida paga, {} contrato(s) renovado(s)",
+                 {} em premiação, {} em TV, {} em patrocínio, {} em dívida paga, \
+                 {} contrato(s) renovado(s)",
                 receipt.season_index + 1,
                 receipt.matches_played,
                 receipt.movements,
@@ -459,6 +460,7 @@ fn play(seasons: u32, seed: u64, pack_path: Option<PathBuf>) -> ExitCode {
                 receipt.match_day_revenue,
                 receipt.prize_money_paid,
                 receipt.tv_revenue_paid,
+                receipt.sponsorship_paid,
                 receipt.debt_repaid,
                 receipt.contracts_renewed
             ),
