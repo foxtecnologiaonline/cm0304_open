@@ -12,47 +12,12 @@ use std::path::Path;
 
 use domain::CompetitionId;
 
+use crate::command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
 use crate::error::AppError;
 use crate::query::{
-    CompetitionKind, CompetitionSummary, CupChampionRow, Query, QueryResult, SeasonProgress,
-    StandingsRow,
+    CompetitionKind, CompetitionSummary, CupChampionRow, ManagerInfo, Query, QueryResult,
+    SeasonProgress, StandingsRow,
 };
-
-/// Comando: muda o estado da sessão. Mais chegam junto de
-/// elenco/transferências/treino (M2, `docs/07-roadmap.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Command {
-    /// Simula o que falta da temporada atual (ou uma inteira, se ainda não
-    /// começou) e aplica promoção/rebaixamento para a seguinte. Equivale a
-    /// despachar [`Command::AdvanceRound`] até a temporada acabar — o
-    /// recibo é a soma dos recibos das rodadas.
-    AdvanceSeason,
-    /// Joga uma rodada (dia de jogos) de todas as ligas. O primeiro
-    /// `AdvanceRound` de uma temporada faz antes a pré-temporada (dívida,
-    /// folha, mercado, lesões, calendário); o último faz depois o fechamento
-    /// (acesso/queda, copa, premiação, TV, patrocínio, fadiga, progressão,
-    /// contratos) e marca [`CommandReceipt::season_completed`].
-    AdvanceRound,
-}
-
-impl Command {
-    /// Código de 1 byte no log de comandos do save (`persist::SaveFile`).
-    /// **Nunca renumerar nem reutilizar** — saves existentes dependem disso.
-    const fn tag(self) -> u8 {
-        match self {
-            Command::AdvanceSeason => 1,
-            Command::AdvanceRound => 2,
-        }
-    }
-
-    fn from_tag(tag: u8) -> Option<Self> {
-        match tag {
-            1 => Some(Command::AdvanceSeason),
-            2 => Some(Command::AdvanceRound),
-            _ => None,
-        }
-    }
-}
 
 /// Confirmação de que um [`Command`] foi processado, com o suficiente para
 /// a UI decidir o que mostrar em seguida — nunca o estado inteiro (isso é
@@ -313,9 +278,19 @@ pub struct GameSession {
     /// Temporada em andamento (pré-temporada feita, rodadas em curso), se
     /// houver. `None` entre temporadas.
     season: Option<ActiveSeason>,
-    /// Um byte por comando despachado com sucesso (`Command::tag`), na
-    /// ordem — vira o `command_log` do save.
+    /// Comandos despachados com sucesso, codificados (`Command::encode`),
+    /// na ordem — vira o `command_log` do save.
     command_log: Vec<u8>,
+    /// O técnico e o clube que ele assumiu (`Command::TakeClub`); `None`
+    /// numa sessão só observadora.
+    manager: Option<Manager>,
+}
+
+/// Estado do técnico sob comando de um clube.
+#[derive(Debug)]
+struct Manager {
+    club: domain::ClubId,
+    coach: CoachProfile,
 }
 
 impl GameSession {
@@ -378,6 +353,7 @@ impl GameSession {
             history: Vec::new(),
             season: None,
             command_log: Vec::new(),
+            manager: None,
         })
     }
 
@@ -397,9 +373,9 @@ impl GameSession {
                 loaded_pack_version: session.pack_version,
             });
         }
-        for (position, &tag) in save.command_log.iter().enumerate() {
-            let command =
-                Command::from_tag(tag).ok_or(AppError::InvalidCommandLog { position, tag })?;
+        let mut position = 0;
+        while position < save.command_log.len() {
+            let command = Command::decode(&save.command_log, &mut position)?;
             session.dispatch(command)?;
         }
         Ok(session)
@@ -435,7 +411,7 @@ impl GameSession {
     /// Processa um comando, mudando o estado da sessão. Todo comando que
     /// dá certo entra no log do save (`Self::to_save`).
     pub fn dispatch(&mut self, command: Command) -> Result<CommandReceipt, AppError> {
-        let receipt = match command {
+        let receipt = match &command {
             Command::AdvanceRound => self.advance_round(),
             Command::AdvanceSeason => {
                 let mut total = self.advance_round();
@@ -445,9 +421,43 @@ impl GameSession {
                 }
                 total
             }
+            Command::TakeClub { club, coach } => {
+                self.take_club(*club, coach.clone())?;
+                CommandReceipt {
+                    season_index: self.history.len() as u32,
+                    ..CommandReceipt::default()
+                }
+            }
         };
-        self.command_log.push(command.tag());
+        command.encode(&mut self.command_log);
         Ok(receipt)
+    }
+
+    /// Valida e registra o técnico e seu clube (ver [`Command::TakeClub`]).
+    fn take_club(&mut self, club: domain::ClubId, coach: CoachProfile) -> Result<(), AppError> {
+        if self.manager.is_some() {
+            return Err(AppError::ClubAlreadyTaken);
+        }
+        if !self.history.is_empty() || self.season.is_some() {
+            return Err(AppError::CareerAlreadyStarted);
+        }
+        if club.as_usize() >= self.pack.clubs.len() {
+            return Err(AppError::UnknownClub(club));
+        }
+        if coach.name.trim().is_empty() {
+            return Err(AppError::InvalidCoach("nome vazio"));
+        }
+        if coach.name.len() > MAX_COACH_NAME_BYTES {
+            return Err(AppError::InvalidCoach("nome longo demais"));
+        }
+        if coach.nation.as_usize() >= self.pack.nations.len() {
+            return Err(AppError::InvalidCoach("nacionalidade inexistente no pack"));
+        }
+        if coach.reputation > 100 {
+            return Err(AppError::InvalidCoach("reputação acima de 100"));
+        }
+        self.manager = Some(Manager { club, coach });
+        Ok(())
     }
 
     /// Joga uma rodada; se a temporada ainda não começou, faz a
@@ -661,7 +671,25 @@ impl GameSession {
             }
             Query::CurrentSeason => QueryResult::CurrentSeason(self.history.len() as u32),
             Query::SeasonProgress => QueryResult::SeasonProgress(self.season_progress()),
+            Query::Manager => QueryResult::Manager(self.manager_info()),
         }
+    }
+
+    fn manager_info(&self) -> Option<ManagerInfo> {
+        let manager = self.manager.as_ref()?;
+        let club = self.pack.club(manager.club);
+        Some(ManagerInfo {
+            coach_name: manager.coach.name.clone(),
+            coach_nation_name: self.pack.nation(manager.coach.nation).name.clone(),
+            coach_reputation: manager.coach.reputation,
+            club: manager.club,
+            club_name: club.name.clone(),
+            competition_name: self
+                .pack
+                .competition(self.membership[manager.club.as_usize()])
+                .name
+                .clone(),
+        })
     }
 
     fn season_progress(&self) -> SeasonProgress {
@@ -1420,6 +1448,122 @@ mod tests {
         assert_eq!(format!("{a:?}"), format!("{b:?}"));
         assert_eq!(reloaded.budgets, original.budgets);
         assert_eq!(reloaded.to_save(), original.to_save());
+    }
+
+    fn coach(name: &str) -> CoachProfile {
+        CoachProfile {
+            name: name.to_string(),
+            nation: domain::NationId::new(0),
+            reputation: 30,
+        }
+    }
+
+    fn take(session: &mut GameSession, club: u32, name: &str) -> Result<CommandReceipt, AppError> {
+        session.dispatch(Command::TakeClub {
+            club: domain::ClubId::new(club),
+            coach: coach(name),
+        })
+    }
+
+    fn manager(session: &GameSession) -> Option<ManagerInfo> {
+        match session.query(Query::Manager) {
+            QueryResult::Manager(m) => m,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn take_club_registra_o_tecnico_e_a_query_manager_resolve_os_nomes() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert_eq!(manager(&session), None, "sem TakeClub, sessão observadora");
+
+        let receipt = take(&mut session, 3, "Zé Treinador").unwrap();
+        assert_eq!(receipt.matches_played, 0, "TakeClub não joga nada");
+        let info = manager(&session).unwrap();
+        assert_eq!(info.coach_name, "Zé Treinador");
+        assert_eq!(info.coach_reputation, 30);
+        assert_eq!(info.club, domain::ClubId::new(3));
+        assert_eq!(info.club_name, session.pack.club(info.club).name);
+        assert_eq!(info.coach_nation_name, "Estrelônia");
+        assert_eq!(info.competition_name, "Primeira Divisão de Estrelônia");
+    }
+
+    #[test]
+    fn take_club_recusa_pedidos_invalidos_sem_mudar_o_estado() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert!(matches!(
+            take(&mut session, 999, "Zé"),
+            Err(AppError::UnknownClub(_))
+        ));
+        assert!(matches!(
+            take(&mut session, 0, "   "),
+            Err(AppError::InvalidCoach("nome vazio"))
+        ));
+        assert!(matches!(
+            take(&mut session, 0, &"x".repeat(MAX_COACH_NAME_BYTES + 1)),
+            Err(AppError::InvalidCoach("nome longo demais"))
+        ));
+        let bad_nation = session.dispatch(Command::TakeClub {
+            club: domain::ClubId::new(0),
+            coach: CoachProfile {
+                nation: domain::NationId::new(77),
+                ..coach("Zé")
+            },
+        });
+        assert!(matches!(bad_nation, Err(AppError::InvalidCoach(_))));
+        let bad_rep = session.dispatch(Command::TakeClub {
+            club: domain::ClubId::new(0),
+            coach: CoachProfile {
+                reputation: 101,
+                ..coach("Zé")
+            },
+        });
+        assert!(matches!(bad_rep, Err(AppError::InvalidCoach(_))));
+        assert_eq!(manager(&session), None);
+        assert!(
+            session.to_save().command_log.is_empty(),
+            "comando recusado nunca entra no log"
+        );
+    }
+
+    #[test]
+    fn take_club_so_vale_uma_vez_e_so_antes_da_primeira_rodada() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        take(&mut session, 0, "Zé").unwrap();
+        assert!(matches!(
+            take(&mut session, 1, "Outro"),
+            Err(AppError::ClubAlreadyTaken)
+        ));
+
+        let mut late = GameSession::new(&example_pack_path(), 42).unwrap();
+        late.dispatch(Command::AdvanceRound).unwrap();
+        assert!(matches!(
+            take(&mut late, 0, "Zé"),
+            Err(AppError::CareerAlreadyStarted)
+        ));
+    }
+
+    #[test]
+    fn take_club_sobrevive_ao_save_e_load_e_nao_muda_a_simulacao() {
+        let mut observer = GameSession::new(&example_pack_path(), 21).unwrap();
+        let mut managed = GameSession::new(&example_pack_path(), 21).unwrap();
+        take(&mut managed, 2, "Zé Treinador").unwrap();
+        for _ in 0..2 {
+            observer.dispatch(Command::AdvanceSeason).unwrap();
+            managed.dispatch(Command::AdvanceSeason).unwrap();
+        }
+        // Nada consome o clube assumido ainda: o mundo é idêntico.
+        assert_eq!(observer.budgets, managed.budgets);
+        for comp in observer.pack.competitions.iter().map(|c| c.id) {
+            assert_eq!(
+                observer.query(Query::Standings { competition: comp }),
+                managed.query(Query::Standings { competition: comp })
+            );
+        }
+
+        let reloaded = GameSession::load(&example_pack_path(), &managed.to_save()).unwrap();
+        assert_eq!(manager(&reloaded), manager(&managed));
+        assert_eq!(reloaded.to_save(), managed.to_save());
     }
 
     #[test]

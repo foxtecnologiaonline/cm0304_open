@@ -463,7 +463,7 @@ completo e golden como rede de segurança):
 |---|---|---|
 | F0 | Medir em escala MVP (48 clubes, ~1.500 jogadores): tempo de temporada e RAM vs. critério MVP #2 e RNF-02/08; otimizar hotspots | Arquitetura falha cara se descoberta tarde (`00 §7`) |
 | F1 ✅ | Temporada resumível por rodada (`AdvanceRound`); `AdvanceSeason` vira loop; golden idêntico; save v2 com log de comandos | Maior refator; tudo abaixo depende dele |
-| F2 | Clube do usuário + perfil do técnico (RF-CA-01) + save v2 com log de comandos + teste cross-platform | Critério MVP #4 |
+| F2 ✅ | Clube do usuário + perfil do técnico (RF-CA-01); o save v2 já veio na F1; teste cross-platform fica pra F9 | Critério MVP #4 |
 | F3 | Queries da UI: elenco, jogador, clube/finanças, calendário, última partida | A UI só enxerga o que `Query` expõe |
 | F4 | Escalação/formação/instruções (RF-PA-01/02), penalidade fora de posição | Primeira decisão real |
 | F5 | Partida ao vivo em texto, substituições, estatísticas (RF-PA-05/06/07) | Precisa de F1 + F4 |
@@ -497,6 +497,16 @@ meio da temporada reabre no mesmo ponto (testado). Pré-temporada
 (dívida/folha/mercado/lesões) vem no recibo da 1ª rodada, fechamento
 (acesso/queda, copa, premiação, TV, patrocínio, fadiga, progressão,
 contratos) no da última.
+
+**F2 feita:** `Command::TakeClub { club, coach }` (uma vez, antes da
+primeira rodada; valida clube, nome, nacionalidade e reputação) +
+`CoachProfile` (nome, nacionalidade, reputação — "experiência prévia" de
+RF-CA-01 fica fora, sem consumidor) + `Query::Manager`. Comandos agora têm
+payload variável no log (`app::command`: tag + campos little-endian, tags
+imutáveis, `decode` nunca panica — proptest). Sem `TakeClub` a sessão é só
+observadora (headless/golden/calibrate). Nada consome o clube assumido
+ainda, e isso é testado: o mundo é idêntico com e sem `TakeClub` — as
+fases F4-F6 passam a respeitá-lo (a IA deixa de decidir pelo clube).
 
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04

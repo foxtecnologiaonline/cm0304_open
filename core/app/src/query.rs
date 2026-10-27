@@ -26,6 +26,9 @@ pub enum Query {
     /// começou — o que a UI precisa para mostrar "Rodada 5 de 14" e para
     /// decidir entre "Iniciar temporada" e "Próxima rodada".
     SeasonProgress,
+    /// O técnico e o clube sob seu comando (`Command::TakeClub`); `None`
+    /// numa sessão só observadora.
+    Manager,
 }
 
 /// Resposta a uma [`Query`]. Cada variante corresponde a exatamente uma
@@ -43,6 +46,19 @@ pub enum QueryResult {
     CupChampion(Option<CupChampionRow>),
     CurrentSeason(u32),
     SeasonProgress(SeasonProgress),
+    Manager(Option<ManagerInfo>),
+}
+
+/// Quem está no comando e de quê (ver [`Query::Manager`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManagerInfo {
+    pub coach_name: String,
+    pub coach_nation_name: String,
+    pub coach_reputation: u8,
+    pub club: domain::ClubId,
+    pub club_name: String,
+    /// Competição **atual** do clube (muda com acesso/queda).
+    pub competition_name: String,
 }
 
 /// Progresso da temporada atual (ver [`Query::SeasonProgress`]).

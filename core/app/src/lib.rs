@@ -15,15 +15,17 @@
 //! bastar e precisa virar um log de comandos de verdade.
 #![warn(clippy::all)]
 
+mod command;
 mod error;
 mod query;
 mod session;
 mod slots;
 
+pub use command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
 pub use error::AppError;
 pub use query::{
-    CompetitionKind, CompetitionSummary, CupChampionRow, Query, QueryResult, SeasonProgress,
-    StandingsRow,
+    CompetitionKind, CompetitionSummary, CupChampionRow, ManagerInfo, Query, QueryResult,
+    SeasonProgress, StandingsRow,
 };
-pub use session::{Command, CommandReceipt, GameSession};
+pub use session::{CommandReceipt, GameSession};
 pub use slots::{SAVE_SLOT_COUNT, autosave_path, slot_path};

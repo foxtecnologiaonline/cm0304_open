@@ -32,6 +32,16 @@ pub enum AppError {
     /// [`crate::Command`] conhecido — save de uma versão mais nova do jogo,
     /// ou corrompido de um jeito que o checksum não pegou.
     InvalidCommandLog { position: usize, tag: u8 },
+    /// [`crate::Command::TakeClub`] com um clube que não existe no pack.
+    UnknownClub(domain::ClubId),
+    /// [`crate::Command::TakeClub`] com perfil de técnico inválido (nome
+    /// vazio/longo demais, nacionalidade inexistente, reputação > 100).
+    InvalidCoach(&'static str),
+    /// [`crate::Command::TakeClub`] depois de já haver um clube assumido.
+    ClubAlreadyTaken,
+    /// [`crate::Command::TakeClub`] depois da primeira rodada da carreira:
+    /// trocar de clube no meio do jogo é demissão/convite (RF-CA-03, M3).
+    CareerAlreadyStarted,
 }
 
 impl fmt::Display for AppError {
@@ -53,6 +63,13 @@ impl fmt::Display for AppError {
                 "save é do pack '{save_pack_id}' v{save_pack_version}, mas foi carregado com \
                  '{loaded_pack_id}' v{loaded_pack_version}"
             ),
+            AppError::UnknownClub(club) => write!(f, "o pack não tem o clube {club}"),
+            AppError::InvalidCoach(reason) => write!(f, "perfil de técnico inválido: {reason}"),
+            AppError::ClubAlreadyTaken => write!(f, "já há um clube sob seu comando"),
+            AppError::CareerAlreadyStarted => write!(
+                f,
+                "só dá para assumir um clube antes da primeira rodada da carreira"
+            ),
             AppError::InvalidCommandLog { position, tag } => write!(
                 f,
                 "log de comandos do save inválido: comando desconhecido (código {tag}) na \
@@ -70,7 +87,11 @@ impl std::error::Error for AppError {
             AppError::PackInvalid { .. }
             | AppError::NoCompetitions
             | AppError::SavePackMismatch { .. }
-            | AppError::InvalidCommandLog { .. } => None,
+            | AppError::InvalidCommandLog { .. }
+            | AppError::UnknownClub(_)
+            | AppError::InvalidCoach(_)
+            | AppError::ClubAlreadyTaken
+            | AppError::CareerAlreadyStarted => None,
         }
     }
 }
