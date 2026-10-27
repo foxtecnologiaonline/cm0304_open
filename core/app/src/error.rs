@@ -47,6 +47,14 @@ pub enum AppError {
     NoClubTaken,
     /// Escalação recusada (motivo em português, mostrável direto na UI).
     InvalidLineup(&'static str),
+    /// Comando que não vale com uma partida ao vivo em andamento (trocar
+    /// formação/escalação, iniciar outra partida).
+    MatchInProgress,
+    /// Comando de partida ao vivo sem nenhuma partida em andamento
+    /// (`Command::StartMatch` primeiro).
+    NoLiveMatch,
+    /// Substituição recusada (motivo em português, mostrável direto na UI).
+    InvalidSubstitution(&'static str),
 }
 
 impl fmt::Display for AppError {
@@ -68,6 +76,9 @@ impl fmt::Display for AppError {
                 "save é do pack '{save_pack_id}' v{save_pack_version}, mas foi carregado com \
                  '{loaded_pack_id}' v{loaded_pack_version}"
             ),
+            AppError::MatchInProgress => write!(f, "há uma partida ao vivo em andamento"),
+            AppError::NoLiveMatch => write!(f, "nenhuma partida ao vivo em andamento"),
+            AppError::InvalidSubstitution(reason) => write!(f, "substituição inválida: {reason}"),
             AppError::NoClubTaken => write!(f, "nenhum clube sob seu comando ainda"),
             AppError::InvalidLineup(reason) => write!(f, "escalação inválida: {reason}"),
             AppError::UnknownClub(club) => write!(f, "o pack não tem o clube {club}"),
@@ -100,7 +111,10 @@ impl std::error::Error for AppError {
             | AppError::ClubAlreadyTaken
             | AppError::CareerAlreadyStarted
             | AppError::NoClubTaken
-            | AppError::InvalidLineup(_) => None,
+            | AppError::InvalidLineup(_)
+            | AppError::MatchInProgress
+            | AppError::NoLiveMatch
+            | AppError::InvalidSubstitution(_) => None,
         }
     }
 }

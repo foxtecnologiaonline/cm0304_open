@@ -71,6 +71,19 @@ pub enum Command {
         mentality: Mentality,
         pressing: Pressing,
     },
+    /// Começa a próxima partida do clube sob comando **ao vivo**: faz a
+    /// pré-temporada se a temporada ainda não começou, prepara a rodada e
+    /// deixa a partida parada no minuto 0. Depois, [`Command::PlayMinutes`],
+    /// [`Command::Substitute`] e [`Command::SetInstructions`] conduzem o
+    /// jogo; [`Command::AdvanceRound`] termina o que faltar e conclui a
+    /// rodada (as outras partidas são simuladas nesse momento). Se o clube
+    /// não joga nesta rodada, nada fica ao vivo.
+    StartMatch,
+    /// Joga até `minutes` minutos da partida ao vivo (menos, se ela acabar).
+    PlayMinutes { minutes: u8 },
+    /// Substitui `out` (em campo) por `incoming` (no banco) na partida ao
+    /// vivo — até 3 por partida, valendo do próximo minuto.
+    Substitute { out: PlayerId, incoming: PlayerId },
 }
 
 const TAG_ADVANCE_SEASON: u8 = 1;
@@ -79,6 +92,9 @@ const TAG_TAKE_CLUB: u8 = 3;
 const TAG_SET_FORMATION: u8 = 4;
 const TAG_SET_LINEUP: u8 = 5;
 const TAG_SET_INSTRUCTIONS: u8 = 6;
+const TAG_START_MATCH: u8 = 7;
+const TAG_PLAY_MINUTES: u8 = 8;
+const TAG_SUBSTITUTE: u8 = 9;
 
 impl Command {
     /// Acrescenta a codificação deste comando ao log.
@@ -118,6 +134,19 @@ impl Command {
                 out.push(TAG_SET_INSTRUCTIONS);
                 out.push(mentality.code());
                 out.push(pressing.code());
+            }
+            Command::StartMatch => out.push(TAG_START_MATCH),
+            Command::PlayMinutes { minutes } => {
+                out.push(TAG_PLAY_MINUTES);
+                out.push(*minutes);
+            }
+            Command::Substitute {
+                out: leaving,
+                incoming,
+            } => {
+                out.push(TAG_SUBSTITUTE);
+                out.extend_from_slice(&leaving.index().to_le_bytes());
+                out.extend_from_slice(&incoming.index().to_le_bytes());
             }
         }
     }
@@ -179,6 +208,18 @@ impl Command {
                 mentality: Mentality::from_code(take(1)?[0]).ok_or_else(bad)?,
                 pressing: Pressing::from_code(take(1)?[0]).ok_or_else(bad)?,
             },
+            TAG_START_MATCH => Command::StartMatch,
+            TAG_PLAY_MINUTES => Command::PlayMinutes {
+                minutes: take(1)?[0],
+            },
+            TAG_SUBSTITUTE => {
+                let leaving = u32::from_le_bytes(take(4)?.try_into().map_err(|_| bad())?);
+                let incoming = u32::from_le_bytes(take(4)?.try_into().map_err(|_| bad())?);
+                Command::Substitute {
+                    out: PlayerId::new(leaving),
+                    incoming: PlayerId::new(incoming),
+                }
+            }
             _ => return Err(bad()),
         };
         *pos = cursor;
@@ -233,6 +274,12 @@ mod tests {
                 pressing: Pressing::High,
             },
             take_club(),
+            Command::StartMatch,
+            Command::PlayMinutes { minutes: 45 },
+            Command::Substitute {
+                out: PlayerId::new(3),
+                incoming: PlayerId::new(77),
+            },
             Command::AdvanceRound,
             Command::AdvanceSeason,
             Command::AdvanceRound,
@@ -259,6 +306,15 @@ mod tests {
             4
         );
         assert_eq!(tag_of(set_lineup()), 5);
+        assert_eq!(tag_of(Command::StartMatch), 7);
+        assert_eq!(tag_of(Command::PlayMinutes { minutes: 1 }), 8);
+        assert_eq!(
+            tag_of(Command::Substitute {
+                out: PlayerId::new(1),
+                incoming: PlayerId::new(2)
+            }),
+            9
+        );
         assert_eq!(
             tag_of(Command::SetInstructions {
                 mentality: Mentality::Balanced,

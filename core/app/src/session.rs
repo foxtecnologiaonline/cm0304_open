@@ -16,9 +16,11 @@ use crate::command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
 use crate::error::AppError;
 use crate::query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
-    FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchScore, PlayerDetail,
-    PlayerRow, Query, QueryResult, ResultRow, RoundResults, SeasonProgress, StandingsRow,
+    FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow, MatchScore,
+    MatchView, PitchPlayer, PlayerDetail, PlayerMatchRow, PlayerRef, PlayerRow, Query, QueryResult,
+    ResultRow, RoundResults, SeasonProgress, StandingsRow,
 };
+use engine::Side;
 
 /// Confirmação de que um [`Command`] foi processado, com o suficiente para
 /// a UI decidir o que mostrar em seguida — nunca o estado inteiro (isso é
@@ -293,6 +295,10 @@ pub struct GameSession {
     /// `Query::RoundResults` responderem entre temporadas. Substituída a
     /// cada fechamento (nunca acumula — custo de memória constante).
     last_run: Option<world::SeasonRun>,
+    /// Partida do clube sob comando em andamento (`Command::StartMatch`).
+    live: Option<world::LiveGame>,
+    /// Relatório da última partida concluída do clube sob comando.
+    last_match: Option<world::MatchReport>,
     /// Comandos despachados com sucesso, codificados (`Command::encode`),
     /// na ordem — vira o `command_log` do save.
     command_log: Vec<u8>,
@@ -371,6 +377,8 @@ impl GameSession {
             history: Vec::new(),
             season: None,
             last_run: None,
+            live: None,
+            last_match: None,
             command_log: Vec::new(),
             manager: None,
         })
@@ -462,6 +470,15 @@ impl GameSession {
                 self.set_instructions(*mentality, *pressing)?;
                 self.idle_receipt()
             }
+            Command::StartMatch => self.start_match()?,
+            Command::PlayMinutes { minutes } => {
+                self.play_minutes(*minutes)?;
+                self.idle_receipt()
+            }
+            Command::Substitute { out, incoming } => {
+                self.substitute(*out, *incoming)?;
+                self.idle_receipt()
+            }
         };
         command.encode(&mut self.command_log);
         Ok(receipt)
@@ -506,6 +523,206 @@ impl GameSession {
         Ok(())
     }
 
+    /// Joga a partida do clube sob comando — a ao vivo que estava em
+    /// andamento (terminando o que faltar) ou, se não há, uma instantânea
+    /// (a mesma `LiveGame`, sem intervenção, então o placar é o mesmo que o
+    /// do modo ao vivo sem mexer em nada). Guarda o relatório em
+    /// `last_match` e devolve o resultado para a rodada usar no lugar da
+    /// simulação. `None` se não há técnico ou o clube não joga nesta rodada.
+    fn play_managed_fixture(&mut self, active: &mut ActiveSeason) -> Option<world::ExternalResult> {
+        self.manager.as_ref()?;
+        let mut game = match self.live.take() {
+            Some(game) => game,
+            None => {
+                {
+                    let career = career_round!(self);
+                    active
+                        .run
+                        .begin_matchday(&self.pack, &career, self.world_seed);
+                }
+                self.new_live_game(active)?
+            }
+        };
+        game.play_to_end(&self.pack);
+        let external = game.external_result();
+        self.last_match = Some(game.report());
+        Some(external)
+    }
+
+    /// A partida do clube sob comando na rodada já preparada, parada no
+    /// minuto 0.
+    fn new_live_game(&self, active: &ActiveSeason) -> Option<world::LiveGame> {
+        let manager = self.manager.as_ref()?;
+        let prepared = active.run.prepared_fixture_of(manager.club)?;
+        let unavailable = self.suspended_in(&active.run, manager.club);
+        Some(world::LiveGame::new(
+            &self.pack,
+            &self.roster,
+            &prepared,
+            Some(&manager.setup),
+            &unavailable,
+            self.world_seed,
+        ))
+    }
+
+    /// Ver [`Command::StartMatch`].
+    fn start_match(&mut self) -> Result<CommandReceipt, AppError> {
+        if self.manager.is_none() {
+            return Err(AppError::NoClubTaken);
+        }
+        if self.live.is_some() {
+            return Err(AppError::MatchInProgress);
+        }
+        let mut receipt = CommandReceipt::default();
+        let mut active = match self.season.take() {
+            Some(active) => active,
+            None => self.begin_season(&mut receipt),
+        };
+        receipt.season_index = active.run.season_index();
+        receipt.matchdays_total = active.run.total_matchdays();
+        receipt.matchday = active.run.next_matchday();
+        {
+            let career = career_round!(self);
+            active
+                .run
+                .begin_matchday(&self.pack, &career, self.world_seed);
+        }
+        self.live = self.new_live_game(&active);
+        self.season = Some(active);
+        Ok(receipt)
+    }
+
+    fn play_minutes(&mut self, minutes: u8) -> Result<(), AppError> {
+        let game = self.live.as_mut().ok_or(AppError::NoLiveMatch)?;
+        game.advance(&self.pack, minutes);
+        Ok(())
+    }
+
+    fn substitute(
+        &mut self,
+        out: domain::PlayerId,
+        incoming: domain::PlayerId,
+    ) -> Result<(), AppError> {
+        use world::SubstitutionError as E;
+        let game = self.live.as_mut().ok_or(AppError::NoLiveMatch)?;
+        let side = game.managed_side().ok_or(AppError::NoLiveMatch)?;
+        game.substitute(&self.pack, &self.roster, side, out, incoming)
+            .map_err(|e| {
+                AppError::InvalidSubstitution(match e {
+                    E::MatchFinished => "a partida já acabou",
+                    E::SideNotManaged => "só o seu time pode substituir",
+                    E::NoSubstitutionsLeft => "limite de 3 substituições por partida",
+                    E::PlayerNotOnPitch => "o jogador não está em campo",
+                    E::PlayerNotOnBench => "o jogador não está no banco",
+                })
+            })
+    }
+
+    fn player_ref(&self, id: domain::PlayerId) -> PlayerRef {
+        let p = &self.pack.players[id.as_usize()];
+        PlayerRef {
+            id,
+            name: format!("{} {}", p.first_name, p.last_name),
+        }
+    }
+
+    fn pitch_player(&self, slot_position: domain::Position, id: domain::PlayerId) -> PitchPlayer {
+        let state = &self.roster[id.as_usize()];
+        PitchPlayer {
+            player: self.player_ref(id),
+            slot_position,
+            natural_position: state.position,
+            condition: state.condition,
+        }
+    }
+
+    /// Monta o retrato de uma partida; `game` só existe ao vivo e traz o
+    /// onze em campo e o banco.
+    fn match_view(
+        &self,
+        report: &world::MatchReport,
+        lines_from: usize,
+        game: Option<&world::LiveGame>,
+    ) -> MatchView {
+        let lines = report
+            .lines
+            .iter()
+            .skip(lines_from)
+            .map(|l| MatchLineRow {
+                minute: l.minute,
+                kind: l.kind,
+                side: l.side,
+                player: l.player.map(|p| self.player_ref(p)),
+                other: l.other.map(|p| self.player_ref(p)),
+                home_goals: l.home_goals,
+                away_goals: l.away_goals,
+            })
+            .collect();
+        let players = report
+            .players
+            .iter()
+            .map(|p| PlayerMatchRow {
+                player: self.player_ref(p.player),
+                club: p.club,
+                side: p.side,
+                position: p.position,
+                started: p.started,
+                minutes: p.minutes,
+                shots: p.shots,
+                goals: p.goals,
+                assists: p.assists,
+                rating_x10: p.rating_x10,
+            })
+            .collect();
+        let managed_side = game.and_then(world::LiveGame::managed_side).or_else(|| {
+            let club = self.manager.as_ref()?.club;
+            if club == report.home {
+                Some(Side::Home)
+            } else if club == report.away {
+                Some(Side::Away)
+            } else {
+                None
+            }
+        });
+        let (on_pitch, bench, substitutions_left) = match (game, managed_side) {
+            (Some(game), Some(side)) => (
+                game.on_pitch(side)
+                    .iter()
+                    .map(|&(slot, id)| self.pitch_player(slot, id))
+                    .collect(),
+                game.bench(side)
+                    .iter()
+                    .map(|&id| self.pitch_player(self.roster[id.as_usize()].position, id))
+                    .collect(),
+                game.substitutions_left(side),
+            ),
+            _ => (Vec::new(), Vec::new(), 0),
+        };
+        MatchView {
+            season_index: report.season_index,
+            competition_name: self.pack.competition(report.competition).name.clone(),
+            home: report.home,
+            home_name: self.pack.club(report.home).name.clone(),
+            away: report.away,
+            away_name: self.pack.club(report.away).name.clone(),
+            minute: report.minute,
+            finished: report.finished,
+            home_goals: report.goals.0,
+            away_goals: report.goals.1,
+            home_shots: report.shots.0,
+            away_shots: report.shots.1,
+            home_xg_milli: report.xg_milli.0,
+            away_xg_milli: report.xg_milli.1,
+            managed_side,
+            lines,
+            total_lines: report.lines.len(),
+            players,
+            on_pitch,
+            bench,
+            substitutions_left,
+        }
+    }
+
     /// Joga uma rodada; se a temporada ainda não começou, faz a
     /// pré-temporada antes, e se a rodada foi a última, o fechamento depois.
     fn advance_round(&mut self) -> CommandReceipt {
@@ -517,11 +734,12 @@ impl GameSession {
         receipt.season_index = active.run.season_index();
         receipt.matchdays_total = active.run.total_matchdays();
 
+        let external = self.play_managed_fixture(&mut active);
         let report = {
             let mut career = career_round!(self);
             active
                 .run
-                .play_matchday(&self.pack, &mut career, self.world_seed)
+                .commit_matchday(&self.pack, &mut career, self.world_seed, external)
         };
         receipt.matchday = report.matchday;
         receipt.matches_played = report.matches_played;
@@ -739,6 +957,16 @@ impl GameSession {
                 QueryResult::RoundResults(self.round_results(matchday))
             }
             Query::Lineup => QueryResult::Lineup(self.lineup_info()),
+            Query::LiveMatch { lines_from } => QueryResult::LiveMatch(
+                self.live
+                    .as_ref()
+                    .map(|game| self.match_view(&game.report(), lines_from, Some(game))),
+            ),
+            Query::LastMatch => QueryResult::LastMatch(
+                self.last_match
+                    .as_ref()
+                    .map(|report| self.match_view(report, 0, None)),
+            ),
         }
     }
 
@@ -748,6 +976,9 @@ impl GameSession {
     }
 
     fn set_formation(&mut self, formation: ai::Formation) -> Result<(), AppError> {
+        if self.live.is_some() {
+            return Err(AppError::MatchInProgress);
+        }
         let setup = &mut self.manager_mut()?.setup;
         setup.formation = formation;
         setup.starters = None;
@@ -759,9 +990,15 @@ impl GameSession {
         mentality: world::Mentality,
         pressing: world::Pressing,
     ) -> Result<(), AppError> {
-        let setup = &mut self.manager_mut()?.setup;
-        setup.mentality = mentality;
-        setup.pressing = pressing;
+        let manager = self.manager_mut()?;
+        manager.setup.mentality = mentality;
+        manager.setup.pressing = pressing;
+        // Com a partida ao vivo, vale do próximo minuto em diante.
+        if let Some(game) = self.live.as_mut()
+            && let Some(side) = game.managed_side()
+        {
+            game.set_instructions(&self.pack, &self.roster, side, mentality, pressing);
+        }
         Ok(())
     }
 
@@ -772,6 +1009,9 @@ impl GameSession {
         starters: &[domain::PlayerId],
     ) -> Result<(), AppError> {
         let club = self.manager.as_ref().ok_or(AppError::NoClubTaken)?.club;
+        if self.live.is_some() {
+            return Err(AppError::MatchInProgress);
+        }
         if starters.len() != 11 {
             return Err(AppError::InvalidLineup(
                 "a escalação precisa de exatamente 11 jogadores",
@@ -806,14 +1046,21 @@ impl GameSession {
     /// Quem está suspenso na próxima rodada, entre os jogadores de `club`.
     fn suspended_of(&self, club: domain::ClubId) -> HashSet<domain::PlayerId> {
         match &self.season {
-            Some(active) => self
-                .roster
-                .iter()
-                .filter(|p| p.club == club && active.run.is_suspended(p.player))
-                .map(|p| p.player)
-                .collect(),
+            Some(active) => self.suspended_in(&active.run, club),
             None => HashSet::new(),
         }
+    }
+
+    fn suspended_in(
+        &self,
+        run: &world::SeasonRun,
+        club: domain::ClubId,
+    ) -> HashSet<domain::PlayerId> {
+        self.roster
+            .iter()
+            .filter(|p| p.club == club && run.is_suspended(p.player))
+            .map(|p| p.player)
+            .collect()
     }
 
     fn lineup_info(&self) -> Option<LineupInfo> {
@@ -1116,7 +1363,7 @@ mod tests {
     use super::*;
     use ai::Formation;
     use std::path::PathBuf;
-    use world::{Mentality, Pressing};
+    use world::{MatchLineKind, Mentality, Pressing};
 
     fn example_pack_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/core/example-two-tier")
@@ -1918,6 +2165,314 @@ mod tests {
         let reloaded = GameSession::load(&example_pack_path(), &managed.to_save()).unwrap();
         assert_eq!(manager(&reloaded), manager(&managed));
         assert_eq!(reloaded.to_save(), managed.to_save());
+    }
+
+    fn live_view(session: &GameSession, lines_from: usize) -> Option<MatchView> {
+        match session.query(Query::LiveMatch { lines_from }) {
+            QueryResult::LiveMatch(v) => v,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    fn last_match(session: &GameSession) -> Option<MatchView> {
+        match session.query(Query::LastMatch) {
+            QueryResult::LastMatch(v) => v,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn partida_ao_vivo_comeca_parada_no_minuto_zero_com_onze_banco_e_tres_trocas() {
+        let mut session = managed(3);
+        assert!(live_view(&session, 0).is_none());
+        let receipt = session.dispatch(Command::StartMatch).unwrap();
+        assert!(
+            receipt.payroll_paid.cents() > 0,
+            "pré-temporada no StartMatch"
+        );
+        assert_eq!(receipt.matches_played, 0);
+
+        let view = live_view(&session, 0).unwrap();
+        assert_eq!((view.minute, view.finished), (0, false));
+        assert_eq!((view.home_goals, view.away_goals), (0, 0));
+        assert_eq!(view.on_pitch.len(), 11);
+        assert!(!view.bench.is_empty());
+        assert_eq!(view.substitutions_left, 3);
+        assert_eq!(view.total_lines, 1, "só o apito inicial");
+        assert!(view.managed_side.is_some());
+        let managed_name = &session.pack.club(domain::ClubId::new(3)).name;
+        assert!(&view.home_name == managed_name || &view.away_name == managed_name);
+    }
+
+    #[test]
+    fn play_minutes_avanca_e_a_paginacao_do_relato_so_traz_o_novo() {
+        let mut session = managed(3);
+        session.dispatch(Command::StartMatch).unwrap();
+        session
+            .dispatch(Command::PlayMinutes { minutes: 30 })
+            .unwrap();
+        let first = live_view(&session, 0).unwrap();
+        assert_eq!(first.minute, 30);
+        assert_eq!(first.lines.len(), first.total_lines);
+
+        session
+            .dispatch(Command::PlayMinutes { minutes: 30 })
+            .unwrap();
+        let next = live_view(&session, first.total_lines).unwrap();
+        assert_eq!(next.minute, 60);
+        assert_eq!(next.lines.len(), next.total_lines - first.total_lines);
+        assert!(
+            live_view(&session, next.total_lines)
+                .unwrap()
+                .lines
+                .is_empty()
+        );
+
+        session
+            .dispatch(Command::PlayMinutes { minutes: 255 })
+            .unwrap();
+        let end = live_view(&session, 0).unwrap();
+        assert!(end.finished && end.minute == 90);
+        assert_eq!(
+            end.lines.last().unwrap().kind,
+            MatchLineKind::FullTime,
+            "termina com o apito final"
+        );
+    }
+
+    #[test]
+    fn advance_round_termina_a_partida_ao_vivo_e_conclui_a_rodada() {
+        let mut session = managed(3);
+        session.dispatch(Command::StartMatch).unwrap();
+        session
+            .dispatch(Command::PlayMinutes { minutes: 20 })
+            .unwrap();
+        let receipt = session.dispatch(Command::AdvanceRound).unwrap();
+        assert_eq!(receipt.matches_played, 8, "as outras partidas saem aqui");
+        assert!(live_view(&session, 0).is_none());
+        let last = last_match(&session).unwrap();
+        assert!(last.finished);
+        assert_eq!(progress(&session).next_matchday, 1);
+        assert_eq!(round_results(&session, None).unwrap().rows.len(), 8);
+    }
+
+    #[test]
+    fn ao_vivo_sem_intervencao_e_identico_ao_modo_instantaneo() {
+        let mut instant = managed(3);
+        let mut live = managed(3);
+        for _ in 0..14 {
+            instant.dispatch(Command::AdvanceRound).unwrap();
+
+            live.dispatch(Command::StartMatch).unwrap();
+            for chunk in [1u8, 44, 9, 20] {
+                live.dispatch(Command::PlayMinutes { minutes: chunk })
+                    .unwrap();
+            }
+            live.dispatch(Command::AdvanceRound).unwrap();
+            assert_eq!(last_match(&instant), last_match(&live));
+        }
+        assert_eq!(instant.budgets, live.budgets);
+        assert_eq!(
+            format!("{:?}", instant.history),
+            format!("{:?}", live.history)
+        );
+    }
+
+    #[test]
+    fn modo_instantaneo_tambem_gera_o_relatorio_da_partida() {
+        let mut session = managed(3);
+        assert!(last_match(&session).is_none());
+        session.dispatch(Command::AdvanceRound).unwrap();
+        let report = last_match(&session).unwrap();
+        assert!(report.finished);
+        assert_eq!(report.total_lines, report.lines.len());
+        assert_eq!(report.on_pitch.len(), 0, "só ao vivo");
+        assert!(
+            report
+                .players
+                .iter()
+                .all(|p| (30..=100).contains(&p.rating_x10))
+        );
+        assert!(report.players.iter().filter(|p| p.started).count() >= 22);
+        let goals: u32 = report.players.iter().map(|p| u32::from(p.goals)).sum();
+        assert_eq!(goals, report.home_goals + report.away_goals);
+
+        let observer = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert!(last_match(&observer).is_none());
+    }
+
+    #[test]
+    fn substituicao_ao_vivo_troca_banco_e_campo_e_recusas_nao_entram_no_log() {
+        let mut session = managed(3);
+        assert!(matches!(
+            session.dispatch(Command::Substitute {
+                out: domain::PlayerId::new(0),
+                incoming: domain::PlayerId::new(1)
+            }),
+            Err(AppError::NoLiveMatch)
+        ));
+        session.dispatch(Command::StartMatch).unwrap();
+        session
+            .dispatch(Command::PlayMinutes { minutes: 50 })
+            .unwrap();
+        let view = live_view(&session, 0).unwrap();
+        let out = view.on_pitch[5].clone();
+        let incoming = view
+            .bench
+            .iter()
+            .find(|b| b.natural_position == out.slot_position)
+            .unwrap()
+            .clone();
+        let log_before = session.to_save().command_log;
+
+        assert!(matches!(
+            session.dispatch(Command::Substitute {
+                out: incoming.player.id,
+                incoming: out.player.id
+            }),
+            Err(AppError::InvalidSubstitution(_))
+        ));
+        assert_eq!(session.to_save().command_log, log_before);
+
+        session
+            .dispatch(Command::Substitute {
+                out: out.player.id,
+                incoming: incoming.player.id,
+            })
+            .unwrap();
+        let after = live_view(&session, 0).unwrap();
+        assert_eq!(after.substitutions_left, 2);
+        assert!(
+            after
+                .on_pitch
+                .iter()
+                .any(|p| p.player.id == incoming.player.id)
+        );
+        assert!(
+            after
+                .bench
+                .iter()
+                .all(|p| p.player.id != incoming.player.id)
+        );
+        let sub_line = after
+            .lines
+            .iter()
+            .find(|l| l.kind == MatchLineKind::Substitution)
+            .unwrap();
+        assert_eq!(sub_line.minute, 50);
+        assert_eq!(sub_line.player.as_ref().unwrap().id, incoming.player.id);
+        assert_eq!(sub_line.other.as_ref().unwrap().id, out.player.id);
+    }
+
+    #[test]
+    fn durante_a_partida_ao_vivo_formacao_e_escalacao_travam_mas_instrucoes_valem() {
+        let mut session = managed(3);
+        session.dispatch(Command::StartMatch).unwrap();
+        assert!(matches!(
+            session.dispatch(Command::StartMatch),
+            Err(AppError::MatchInProgress)
+        ));
+        assert!(matches!(
+            session.dispatch(Command::SetFormation {
+                formation: Formation::F433
+            }),
+            Err(AppError::MatchInProgress)
+        ));
+        let lineup: Vec<_> = live_view(&session, 0)
+            .unwrap()
+            .on_pitch
+            .iter()
+            .map(|p| p.player.id)
+            .collect();
+        assert!(matches!(
+            session.dispatch(Command::SetLineup {
+                formation: Formation::F442,
+                starters: lineup
+            }),
+            Err(AppError::MatchInProgress)
+        ));
+        session
+            .dispatch(Command::SetInstructions {
+                mentality: Mentality::Attacking,
+                pressing: Pressing::Normal,
+            })
+            .unwrap();
+        let QueryResult::Lineup(Some(info)) = session.query(Query::Lineup) else {
+            panic!()
+        };
+        assert_eq!(info.mentality, Mentality::Attacking);
+    }
+
+    #[test]
+    fn start_match_exige_tecnico_e_play_minutes_exige_partida() {
+        let mut observer = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert!(matches!(
+            observer.dispatch(Command::StartMatch),
+            Err(AppError::NoClubTaken)
+        ));
+        let mut session = managed(3);
+        assert!(matches!(
+            session.dispatch(Command::PlayMinutes { minutes: 5 }),
+            Err(AppError::NoLiveMatch)
+        ));
+        let log = session.to_save().command_log;
+        let mut pos = 0;
+        assert!(matches!(
+            Command::decode(&log, &mut pos),
+            Ok(Command::TakeClub { .. })
+        ));
+        assert_eq!(pos, log.len(), "recusas não entram no log: só o TakeClub");
+    }
+
+    #[test]
+    fn advance_season_no_meio_de_uma_partida_ao_vivo_completa_tudo() {
+        let mut session = managed(3);
+        session.dispatch(Command::StartMatch).unwrap();
+        session
+            .dispatch(Command::PlayMinutes { minutes: 10 })
+            .unwrap();
+        let receipt = session.dispatch(Command::AdvanceSeason).unwrap();
+        assert!(receipt.season_completed);
+        assert_eq!(receipt.matches_played, 112);
+        assert!(live_view(&session, 0).is_none());
+        assert!(matches!(
+            session.query(Query::CurrentSeason),
+            QueryResult::CurrentSeason(1)
+        ));
+    }
+
+    #[test]
+    fn salvar_no_meio_da_partida_ao_vivo_reabre_no_mesmo_minuto_e_continua_igual() {
+        let mut original = managed(3);
+        original.dispatch(Command::AdvanceRound).unwrap();
+        original.dispatch(Command::StartMatch).unwrap();
+        original
+            .dispatch(Command::PlayMinutes { minutes: 37 })
+            .unwrap();
+        let view = live_view(&original, 0).unwrap();
+        let sub = (
+            view.on_pitch[2].player.id,
+            view.bench
+                .iter()
+                .find(|b| b.natural_position == view.on_pitch[2].slot_position)
+                .unwrap()
+                .player
+                .id,
+        );
+        original
+            .dispatch(Command::Substitute {
+                out: sub.0,
+                incoming: sub.1,
+            })
+            .unwrap();
+
+        let mut reloaded = GameSession::load(&example_pack_path(), &original.to_save()).unwrap();
+        assert_eq!(live_view(&reloaded, 0), live_view(&original, 0));
+
+        original.dispatch(Command::AdvanceSeason).unwrap();
+        reloaded.dispatch(Command::AdvanceSeason).unwrap();
+        assert_eq!(last_match(&original), last_match(&reloaded));
+        assert_eq!(original.budgets, reloaded.budgets);
     }
 
     fn first_player_ids(session: &GameSession, club: u32, n: usize) -> Vec<domain::PlayerId> {

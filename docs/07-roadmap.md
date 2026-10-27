@@ -466,7 +466,7 @@ completo e golden como rede de segurança):
 | F2 ✅ | Clube do usuário + perfil do técnico (RF-CA-01); o save v2 já veio na F1; teste cross-platform fica pra F9 | Critério MVP #4 |
 | F3 ✅ | Queries da UI: clubes, ficha do clube/finanças, elenco, jogador, calendário, resultados da rodada (a "última partida" narrada vem com a F5) | A UI só enxerga o que `Query` expõe |
 | F4 ✅ | Escalação/formação/instruções (RF-PA-01/02), penalidade fora de posição | Primeira decisão real |
-| F5 | Partida ao vivo em texto, substituições, estatísticas (RF-PA-05/06/07) | Precisa de F1 + F4 |
+| F5 ✅ | Partida ao vivo em texto, substituições, estatísticas (RF-PA-05/06/07) | Precisa de F1 + F4 |
 | F6 | Mercado jogável: janelas, ofertas, negociação, demanda (RF-TR-01..04) | Precisa de F1 + F2 |
 | F7 | Treino básico (RF-TC-01) + moral/fadiga por jogador (RF-JG-07) | MVP exige treino com efeito mensurável |
 | F8 | Caixa de entrada (RF-CA-07) + cliente `manage` na CLI | Valida o loop sem Flutter |
@@ -563,6 +563,27 @@ partida jogada ao vivo no lugar da simulação instantânea;
 resultado "ao vivo" igual ao que o motor daria sozinho produz **exatamente**
 a mesma temporada. Golden e calibrate seguem byte-idênticos; 20
 temporadas em escala MVP: 0,26 s / 9,9 MB.
+
+**F5b/F5c feitas (partida ao vivo jogável):** `world::LiveGame` atribui cada
+finalização e gol a um jogador (RNG próprio `world.match.attribution`: não
+pode mudar placar), com assistências, minutos, notas 3,0-10,0 e relato
+**estruturado** (`MatchLine`; a UI localiza as frases — o "modo texto
+comentado"). `app` ganhou `Command::{StartMatch, PlayMinutes, Substitute}`
+(+ `SetInstructions` vale ao vivo; formação/escalação travam durante o
+jogo), `Query::{LiveMatch { lines_from }, LastMatch}` com paginação do relato
+e `MatchView` (placar, finalizações, xG, jogadores com nota, onze em campo,
+banco, trocas restantes). Até 3 substituições, valendo do próximo minuto;
+o reserva rende conforme o encaixe na posição. O clube do técnico agora joga
+**sempre** via `LiveGame`: `AdvanceRound` direto é o mesmo jogo sem
+intervenção, então o modo instantâneo também gera relatório. Garantias
+testadas: ao vivo sem mexer em nada é idêntico, rodada a rodada, ao modo
+instantâneo (placar, orçamentos, histórico); salvar no meio da partida e
+reabrir reproduz o mesmo minuto e o mesmo desfecho (o log de comandos
+cobre `StartMatch`/`PlayMinutes`/`Substitute`). Estatísticas honestas:
+finalizações, gols, assistências, minutos, xG do próprio modelo —
+**posse, passes e desarmes não existem** no motor v0.5 e não foram
+inventados (RF-PA-07 completo pede zonas, M3). Sem cartões nem lesões
+durante o jogo (ficam em RF-JG-08/09 por temporada).
 
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04

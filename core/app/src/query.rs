@@ -53,6 +53,14 @@ pub enum Query {
     /// comando (já com lesões e suspensões resolvidas), mais formação e
     /// instruções. `None` sem clube sob comando.
     Lineup,
+    /// A partida ao vivo do clube sob comando, a partir da linha
+    /// `lines_from` do relato (a UI guarda `total_lines` da resposta anterior
+    /// e só busca o que é novo). `None` se não há partida ao vivo.
+    LiveMatch { lines_from: usize },
+    /// O relatório da última partida concluída do clube sob comando — vale
+    /// também para as jogadas em modo instantâneo (`AdvanceRound` direto).
+    /// `None` se ainda não jogou.
+    LastMatch,
 }
 
 /// Resposta a uma [`Query`]. Cada variante corresponde a exatamente uma
@@ -78,6 +86,90 @@ pub enum QueryResult {
     Fixtures(Option<FixtureList>),
     RoundResults(Option<RoundResults>),
     Lineup(Option<LineupInfo>),
+    LiveMatch(Option<MatchView>),
+    LastMatch(Option<MatchView>),
+}
+
+/// Referência a um jogador já com o nome resolvido.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlayerRef {
+    pub id: domain::PlayerId,
+    pub name: String,
+}
+
+/// Uma linha do relato da partida (a UI compõe a frase localizada).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchLineRow {
+    pub minute: u8,
+    pub kind: world::MatchLineKind,
+    pub side: Option<engine::Side>,
+    /// `Shot`: quem chutou. `Goal`: quem marcou. `Substitution`: quem entrou.
+    pub player: Option<PlayerRef>,
+    /// `Goal`: assistência. `Substitution`: quem saiu.
+    pub other: Option<PlayerRef>,
+    /// Placar depois deste lance.
+    pub home_goals: u32,
+    pub away_goals: u32,
+}
+
+/// Desempenho de um jogador na partida.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlayerMatchRow {
+    pub player: PlayerRef,
+    pub club: domain::ClubId,
+    pub side: engine::Side,
+    pub position: domain::Position,
+    pub started: bool,
+    pub minutes: u8,
+    pub shots: u8,
+    pub goals: u8,
+    pub assists: u8,
+    /// Nota 3,0-10,0 em décimos (`75` = 7,5).
+    pub rating_x10: u8,
+}
+
+/// Um jogador em campo ou no banco durante a partida ao vivo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PitchPlayer {
+    pub player: PlayerRef,
+    /// Posição do espaço que ocupa (no banco, igual à natural).
+    pub slot_position: domain::Position,
+    pub natural_position: domain::Position,
+    pub condition: u8,
+}
+
+/// Retrato de uma partida do clube sob comando — ao vivo
+/// ([`Query::LiveMatch`]) ou concluída ([`Query::LastMatch`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchView {
+    pub season_index: u32,
+    pub competition_name: String,
+    pub home: domain::ClubId,
+    pub home_name: String,
+    pub away: domain::ClubId,
+    pub away_name: String,
+    pub minute: u8,
+    pub finished: bool,
+    pub home_goals: u32,
+    pub away_goals: u32,
+    pub home_shots: u32,
+    pub away_shots: u32,
+    /// xG do próprio modelo, em milésimos de gol.
+    pub home_xg_milli: u32,
+    pub away_xg_milli: u32,
+    /// Qual lado o técnico humano comanda.
+    pub managed_side: Option<engine::Side>,
+    /// Linhas do relato a partir de `lines_from`.
+    pub lines: Vec<MatchLineRow>,
+    /// Total de linhas do relato até agora (próximo `lines_from`).
+    pub total_lines: usize,
+    pub players: Vec<PlayerMatchRow>,
+    /// Só ao vivo: o onze em campo do clube sob comando.
+    pub on_pitch: Vec<PitchPlayer>,
+    /// Só ao vivo: reservas que ainda podem entrar.
+    pub bench: Vec<PitchPlayer>,
+    /// Só ao vivo: substituições que ainda restam.
+    pub substitutions_left: u8,
 }
 
 /// Um espaço do onze (ver [`Query::Lineup`]).

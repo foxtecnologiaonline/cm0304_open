@@ -3,16 +3,13 @@
 //! futura ponte `flutter_rust_bridge` vai falar com o resto do núcleo — a UI
 //! nunca importa `world`/`rules`/`engine`/`pack` diretamente.
 //!
-//! O que existe hoje é a primeira fatia vertical real, não o contrato
-//! final: um comando ([`Command::AdvanceSeason`]) e três consultas
-//! ([`Query`]), o suficiente para uma UI carregar um pack, avançar
-//! temporadas e mostrar uma tabela de classificação. [`GameSession::save_to_path`]/
-//! [`GameSession::load_from_path`] (via `persist`) cobrem save/load por
-//! *replay* — ver o doc de `persist::save` para o porquê disso bastar hoje.
-//! Falta o stream de `events()` (chega junto de eventos de partida
-//! navegáveis, M2/M3); quando `Command` ganhar variantes com parâmetros
-//! (transferência, escalação...), o save por replay-de-contador deixa de
-//! bastar e precisa virar um log de comandos de verdade.
+//! O que existe: comandos de carreira (assumir um clube, escalar, instruir,
+//! jogar uma rodada, a temporada ou uma partida ao vivo minuto a minuto) e
+//! consultas (competições, tabelas, elenco, calendário, partida). Tudo é
+//! reproduzível: o save guarda o log de comandos e [`GameSession::load`]
+//! reconstrói a sessão repetindo-o (ver `persist::save`). Falta o stream de
+//! `events()` (notificações, caixa de entrada — F8) e a ponte Flutter, que
+//! não dá para construir nem verificar sem o SDK Dart.
 #![warn(clippy::all)]
 
 mod command;
@@ -23,12 +20,14 @@ mod slots;
 
 pub use ai::Formation;
 pub use command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
+pub use engine::Side;
 pub use error::AppError;
 pub use query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
-    FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchScore, PlayerDetail,
-    PlayerRow, Query, QueryResult, ResultRow, RoundResults, SeasonProgress, StandingsRow,
+    FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow, MatchScore,
+    MatchView, PitchPlayer, PlayerDetail, PlayerMatchRow, PlayerRef, PlayerRow, Query, QueryResult,
+    ResultRow, RoundResults, SeasonProgress, StandingsRow,
 };
 pub use session::{CommandReceipt, GameSession};
 pub use slots::{SAVE_SLOT_COUNT, autosave_path, slot_path};
-pub use world::{Mentality, Pressing};
+pub use world::{MatchLineKind, Mentality, Pressing};
