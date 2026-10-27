@@ -449,6 +449,48 @@ aqui e volta ao design** — é para isso que o marco existe.
 > UI — o próximo passo de maior risco continua sendo essa ponte, não mais
 > lógica de núcleo.
 
+#### Plano de fechamento do M2 (lado Rust)
+
+Diagnóstico: o núcleo é profundo em economia e raso em **agência do
+técnico** — `app` só tem `AdvanceSeason` e 4 consultas; não há clube do
+usuário, avanço por rodada, escalação, decisão de mercado, nem log de
+comandos no save (guarda só `seasons_advanced`); o motor v0 é estatístico,
+sem jogadores em campo. Parar de refinar economia e construir jogabilidade,
+nesta ordem (dependência e risco, cada fase = 1+ commits com pipeline
+completo e golden como rede de segurança):
+
+| Fase | Entrega | Por que nessa ordem |
+|---|---|---|
+| F0 | Medir em escala MVP (48 clubes, ~1.500 jogadores): tempo de temporada e RAM vs. critério MVP #2 e RNF-02/08; otimizar hotspots | Arquitetura falha cara se descoberta tarde (`00 §7`) |
+| F1 | Temporada resumível por rodada (`AdvanceRound`); `AdvanceSeason` vira loop; golden idêntico | Maior refator; tudo abaixo depende dele |
+| F2 | Clube do usuário + perfil do técnico (RF-CA-01) + save v2 com log de comandos + teste cross-platform | Critério MVP #4 |
+| F3 | Queries da UI: elenco, jogador, clube/finanças, calendário, última partida | A UI só enxerga o que `Query` expõe |
+| F4 | Escalação/formação/instruções (RF-PA-01/02), penalidade fora de posição | Primeira decisão real |
+| F5 | Partida ao vivo em texto, substituições, estatísticas (RF-PA-05/06/07) | Precisa de F1 + F4 |
+| F6 | Mercado jogável: janelas, ofertas, negociação, demanda (RF-TR-01..04) | Precisa de F1 + F2 |
+| F7 | Treino básico (RF-TC-01) + moral/fadiga por jogador (RF-JG-07) | MVP exige treino com efeito mensurável |
+| F8 | Caixa de entrada (RF-CA-07) + cliente `manage` na CLI | Valida o loop sem Flutter |
+| F9 | Gates automatizados dos critérios MVP 2-4, contrato `app` congelado pra ponte, linhas de corte | Fecha o marco |
+
+**F0 medida** (`packs/tools/gen_scale_pack.py`, saída não versionada;
+`managerfc-cli play --pack`, release, máquina de desenvolvimento): 48 clubes /
+1.440 jogadores, 1 temporada = 23 ms, 20 temporadas = 0,35 s com pico de
+9,9 MB de RSS; 64 clubes / 1.920 jogadores (pior caso, com copa — o
+validador exige copa em potência de 2 usando todos os clubes do país, então
+48 clubes ficam sem copa), 1 temporada = 44 ms, 20 = 0,68 s, 9,8 MB. Folga de
+~200x sobre os 5 s de desktop do critério MVP #2 e de ~60x sobre os 600 MB
+de RNF-08. Conclusão: nenhum gargalo a otimizar hoje; otimizar agora seria
+prematuro. O trabalho de "otimização" é **proteger essa folga** — gate
+automatizado de tempo/memória em F9 — porque F4-F7 vão encarecer cada
+partida (jogadores em campo, estatísticas, eventos narrados).
+
+Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
+em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04
+(familiaridade posicional) entra só como penalidade fora de posição;
+RF-MU-08 "atratividade/IA" e saldo negativo de RF-CL-03 ficam fora. Segue
+bloqueado neste ambiente, sem SDK: UI Flutter, ponte, builds Windows/Android
+e o critério MVP #1 (10 testadores).
+
 ### M3 — Alpha (14 semanas)
 
 * Motor v2: regime assistido, posições, **visão 2D**, bolas paradas, fadiga intra-jogo
