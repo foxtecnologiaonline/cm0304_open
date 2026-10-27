@@ -19,6 +19,6 @@ mod simulate;
 
 pub use event::{MatchEvent, Side, score, shots};
 pub use simulate::{
-    FinishingQuality, GoalkeepingQuality, MatchContext, Tactics, TeamMatchProfile, TeamStrength,
-    simulate, simulate_tactical,
+    FinishingQuality, GoalkeepingQuality, LiveMatch, MatchContext, Tactics, TeamMatchProfile,
+    TeamStrength, simulate, simulate_tactical,
 };

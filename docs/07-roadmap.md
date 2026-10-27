@@ -546,6 +546,24 @@ continua sempre em 4-4-2 neutro, por isso golden e calibrate seguem
 byte-idênticos. Limitação conhecida: o desgaste de fim de temporada usa o
 onze atual do técnico, não minutos por jogador (F7).
 
+**F5a feita (alicerce da partida ao vivo, sem comando novo ainda):**
+`engine::LiveMatch` joga a partida minuto a minuto com pontos de pausa
+(`step`, `step_minutes`, `set_team` — a troca vale do próximo minuto em
+diante) e é agora a **única** implementação: `simulate_tactical` é só este
+laço rodado até o fim, e sem intervenção a sequência de RNG e os eventos são
+idênticos aos de antes (testado em 300 partidas, em fatias irregulares). Ele
+também acumula placar, finalizações e **xG do próprio modelo** (soma da
+probabilidade de gol de cada finalização, em milésimos — não uma estimativa
+externa). `world::SeasonRun` ganhou `begin_matchday` (prepara perfis,
+táticas e titulares de todas as ligas sem jogar nada),
+`prepared_fixture_of(clube)` (a partida do clube pronta para o motor, com os
+dois onzes) e `commit_matchday(.., external)`, que aceita o resultado de uma
+partida jogada ao vivo no lugar da simulação instantânea;
+`play_matchday` = begin + commit sem resultado externo. Garantia testada: um
+resultado "ao vivo" igual ao que o motor daria sozinho produz **exatamente**
+a mesma temporada. Golden e calibrate seguem byte-idênticos; 20
+temporadas em escala MVP: 0,26 s / 9,9 MB.
+
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04
 (familiaridade posicional) entra só como penalidade fora de posição;

@@ -116,7 +116,8 @@ pub use quality::{
 };
 pub use reputation::generate_club_reputation;
 pub use season::{
-    CareerRound, FixtureEntry, MatchdayReport, SeasonResult, SeasonRun, run_season, run_seasons,
+    CareerRound, ExternalResult, FixtureEntry, MatchdayReport, PreparedFixture, PreparedSide,
+    SeasonResult, SeasonRun, run_season, run_seasons,
 };
 pub use setup::{
     ClubSetup, Mentality, Pressing, ResolvedXi, position_fit_permille, profile_for, resolve_xi,

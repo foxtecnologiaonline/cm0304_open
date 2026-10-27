@@ -17,7 +17,9 @@ use rand_core::{RngCore, SeedableRng};
 use rand_pcg::Pcg64;
 
 /// Gerador determinístico derivado de uma seed composta. Nunca compartilhado
-/// entre entidades ou subsistemas — ver módulo para o porquê.
+/// entre entidades ou subsistemas — ver módulo para o porquê. Deliberadamente
+/// sem `Clone`: copiar um gerador duplicaria um fluxo de números.
+#[derive(Debug)]
 pub struct DeterministicRng {
     inner: Pcg64,
 }

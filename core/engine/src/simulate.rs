@@ -253,61 +253,199 @@ pub fn simulate_tactical(
     away_tactics: Tactics,
     ctx: MatchContext,
 ) -> Vec<MatchEvent> {
+    let mut live = LiveMatch::new(home, away, home_tactics, away_tactics, ctx);
+    while !live.is_finished() {
+        live.step();
+    }
+    live.into_events()
+}
+
+/// Taxas por minuto de uma partida, derivadas dos dois perfis e das duas
+/// táticas — recalculadas quando algum deles muda no meio do jogo.
+#[derive(Debug, Clone, Copy)]
+struct Rates {
+    /// Probabilidade de finalização por minuto, em milésimos: `[mandante, visitante]`.
+    shot_per_minute: [u32; 2],
+    /// Probabilidade de a finalização virar gol, em milésimos.
+    conversion: [u32; 2],
+}
+
+fn rates(profiles: &[TeamMatchProfile; 2], tactics: &[Tactics; 2]) -> Rates {
+    let [home, away] = *profiles;
     let (mut lambda_home, mut lambda_away) = expected_shots(home.strength, away.strength);
-    if !home_tactics.is_neutral() || !away_tactics.is_neutral() {
+    if !tactics[0].is_neutral() || !tactics[1].is_neutral() {
         let scale = |lambda: Fixed, own: Tactics, other: Tactics| {
             let factor = Fixed::from_ratio(i64::from(own.shot_volume_permille), 1000)
                 * Fixed::from_ratio(i64::from(other.concession_permille), 1000);
             (lambda * factor).min(MAX_LAMBDA)
         };
-        lambda_home = scale(lambda_home, home_tactics, away_tactics);
-        lambda_away = scale(lambda_away, away_tactics, home_tactics);
+        lambda_home = scale(lambda_home, tactics[0], tactics[1]);
+        lambda_away = scale(lambda_away, tactics[1], tactics[0]);
     }
-    let per_minute_home_shot = per_minute_permille(lambda_home);
-    let per_minute_away_shot = per_minute_permille(lambda_away);
-    let home_conversion = conversion_permille(home.finishing, away.goalkeeping);
-    let away_conversion = conversion_permille(away.finishing, home.goalkeeping);
+    Rates {
+        shot_per_minute: [
+            per_minute_permille(lambda_home),
+            per_minute_permille(lambda_away),
+        ],
+        conversion: [
+            conversion_permille(home.finishing, away.goalkeeping),
+            conversion_permille(away.finishing, home.goalkeeping),
+        ],
+    }
+}
 
-    let mut rng = DeterministicRng::seeded(ctx.world_seed, "engine.v0.match", ctx.fixture, 0);
-    let mut events = Vec::with_capacity(8); // a maioria das partidas tem poucas finalizações convertidas
-    events.push(MatchEvent::KickOff);
+const fn side_index(side: Side) -> usize {
+    match side {
+        Side::Home => 0,
+        Side::Away => 1,
+    }
+}
 
-    let mut home_goals = 0u32;
-    let mut away_goals = 0u32;
-    for minute in 1..=MINUTES {
-        if rng.chance_per_mille(per_minute_home_shot) {
-            events.push(MatchEvent::Shot {
-                minute,
-                side: Side::Home,
-            });
-            if rng.chance_per_mille(home_conversion) {
-                home_goals += 1;
-                events.push(MatchEvent::Goal {
-                    minute,
-                    side: Side::Home,
-                });
+/// Uma partida jogada **minuto a minuto**: dá pontos de pausa para o
+/// técnico mexer em tática ou time no meio do jogo (RF-PA-06) sem perder o
+/// determinismo. Sem nenhuma intervenção, produz exatamente os mesmos
+/// eventos que [`simulate_tactical`] — que, aliás, é só este laço rodado até
+/// o fim (uma única fonte da verdade). A sequência de RNG por minuto é
+/// parte do contrato: mandante antes de visitante, finalização antes da
+/// conversão.
+///
+/// Trocar perfil/tática ([`LiveMatch::set_team`]) vale **do próximo minuto
+/// em diante**; o passado não muda.
+#[derive(Debug)]
+pub struct LiveMatch {
+    rng: DeterministicRng,
+    profiles: [TeamMatchProfile; 2],
+    tactics: [Tactics; 2],
+    rates: Rates,
+    /// Minutos já jogados (0 = antes do apito inicial).
+    minute: u8,
+    goals: [u32; 2],
+    shots: [u32; 2],
+    /// Soma, por lado, da probabilidade de gol de cada finalização, em
+    /// milésimos de gol — o xG do próprio modelo (não uma estimativa
+    /// externa): cada finalização vale `conversion` milésimos.
+    xg_milli: [u32; 2],
+    events: Vec<MatchEvent>,
+}
+
+impl LiveMatch {
+    #[must_use]
+    pub fn new(
+        home: TeamMatchProfile,
+        away: TeamMatchProfile,
+        home_tactics: Tactics,
+        away_tactics: Tactics,
+        ctx: MatchContext,
+    ) -> Self {
+        let profiles = [home, away];
+        let tactics = [home_tactics, away_tactics];
+        let mut events = Vec::with_capacity(8); // a maioria das partidas tem poucas finalizações convertidas
+        events.push(MatchEvent::KickOff);
+        Self {
+            rng: DeterministicRng::seeded(ctx.world_seed, "engine.v0.match", ctx.fixture, 0),
+            rates: rates(&profiles, &tactics),
+            profiles,
+            tactics,
+            minute: 0,
+            goals: [0, 0],
+            shots: [0, 0],
+            xg_milli: [0, 0],
+            events,
+        }
+    }
+
+    /// Minutos já jogados, `0..=90`.
+    #[must_use]
+    pub fn minute(&self) -> u8 {
+        self.minute
+    }
+
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.minute >= MINUTES
+    }
+
+    /// `(gols do mandante, gols do visitante)` até agora.
+    #[must_use]
+    pub fn score(&self) -> (u32, u32) {
+        (self.goals[0], self.goals[1])
+    }
+
+    /// `(finalizações do mandante, do visitante)` até agora.
+    #[must_use]
+    pub fn shots(&self) -> (u32, u32) {
+        (self.shots[0], self.shots[1])
+    }
+
+    /// xG acumulado `(mandante, visitante)`, em milésimos de gol.
+    #[must_use]
+    pub fn xg_milli(&self) -> (u32, u32) {
+        (self.xg_milli[0], self.xg_milli[1])
+    }
+
+    /// Todos os eventos até agora, na ordem (`KickOff` primeiro).
+    #[must_use]
+    pub fn events(&self) -> &[MatchEvent] {
+        &self.events
+    }
+
+    #[must_use]
+    pub fn into_events(self) -> Vec<MatchEvent> {
+        self.events
+    }
+
+    /// Troca o perfil e a tática de um lado, do próximo minuto em diante
+    /// (substituição, mudança de instruções). Recalcula as taxas dos dois
+    /// lados, já que `λ` depende da força relativa.
+    pub fn set_team(&mut self, side: Side, profile: TeamMatchProfile, tactics: Tactics) {
+        let i = side_index(side);
+        self.profiles[i] = profile;
+        self.tactics[i] = tactics;
+        self.rates = rates(&self.profiles, &self.tactics);
+    }
+
+    /// Joga o próximo minuto; devolve quantos eventos novos surgiram. No-op
+    /// (devolve 0) depois do apito final. No minuto 90 acrescenta `FullTime`.
+    pub fn step(&mut self) -> usize {
+        if self.is_finished() {
+            return 0;
+        }
+        let before = self.events.len();
+        self.minute += 1;
+        let minute = self.minute;
+        for side in [Side::Home, Side::Away] {
+            let i = side_index(side);
+            if self.rng.chance_per_mille(self.rates.shot_per_minute[i]) {
+                self.shots[i] += 1;
+                self.xg_milli[i] += self.rates.conversion[i];
+                self.events.push(MatchEvent::Shot { minute, side });
+                if self.rng.chance_per_mille(self.rates.conversion[i]) {
+                    self.goals[i] += 1;
+                    self.events.push(MatchEvent::Goal { minute, side });
+                }
             }
         }
-        if rng.chance_per_mille(per_minute_away_shot) {
-            events.push(MatchEvent::Shot {
-                minute,
-                side: Side::Away,
+        if minute == MINUTES {
+            self.events.push(MatchEvent::FullTime {
+                home_goals: self.goals[0],
+                away_goals: self.goals[1],
             });
-            if rng.chance_per_mille(away_conversion) {
-                away_goals += 1;
-                events.push(MatchEvent::Goal {
-                    minute,
-                    side: Side::Away,
-                });
-            }
         }
+        self.events.len() - before
     }
 
-    events.push(MatchEvent::FullTime {
-        home_goals,
-        away_goals,
-    });
-    events
+    /// Joga até `minutes` minutos (menos, se a partida acabar antes);
+    /// devolve quantos minutos foram de fato jogados.
+    pub fn step_minutes(&mut self, minutes: u8) -> u8 {
+        let start = self.minute;
+        for _ in 0..minutes {
+            if self.is_finished() {
+                break;
+            }
+            self.step();
+        }
+        self.minute - start
+    }
 }
 
 /// Calcula `(λ_home, λ_away)` — finalizações esperadas na partida inteira
@@ -376,6 +514,98 @@ mod tests {
 
     fn equal_profiles() -> (TeamMatchProfile, TeamMatchProfile) {
         (profile(100), profile(100))
+    }
+
+    #[test]
+    fn partida_ao_vivo_sem_intervencao_e_identica_a_simulate_completa() {
+        let (home, away) = (profile(130), profile(85));
+        let tactics = [Tactics::NEUTRAL, Tactics::new(1120, 1150)];
+        for fixture in 0..300 {
+            let whole = simulate_tactical(home, away, tactics[0], tactics[1], ctx(fixture));
+            let mut live = LiveMatch::new(home, away, tactics[0], tactics[1], ctx(fixture));
+            // Em fatias irregulares: o tamanho do passo não pode importar.
+            for chunk in [1u8, 7, 30, 2, 50, 10] {
+                live.step_minutes(chunk);
+            }
+            assert!(live.is_finished());
+            assert_eq!(live.events(), whole.as_slice(), "fixture {fixture}");
+        }
+    }
+
+    #[test]
+    fn partida_ao_vivo_acumula_placar_finalizacoes_e_xg_coerentes_com_os_eventos() {
+        let (home, away) = equal_profiles();
+        let mut live = LiveMatch::new(home, away, Tactics::NEUTRAL, Tactics::NEUTRAL, ctx(11));
+        assert_eq!(live.minute(), 0);
+        assert_eq!(live.events(), &[MatchEvent::KickOff]);
+        while !live.is_finished() {
+            live.step();
+        }
+        assert_eq!(live.minute(), 90);
+        assert_eq!(live.score(), score(live.events()));
+        assert_eq!(live.shots(), shots(live.events()));
+        // xG = Σ conversão por finalização; com qualidade neutra, 108‰ cada.
+        let (hs, as_) = live.shots();
+        assert_eq!(live.xg_milli(), (hs * 108, as_ * 108));
+        // Depois do apito final, nada muda.
+        assert_eq!(live.step(), 0);
+        assert_eq!(live.step_minutes(10), 0);
+        assert!(matches!(
+            live.events().last(),
+            Some(MatchEvent::FullTime { .. })
+        ));
+    }
+
+    #[test]
+    fn trocar_o_time_no_meio_so_afeta_os_minutos_seguintes() {
+        let (home, away) = equal_profiles();
+        for fixture in 0..100 {
+            let mut plain =
+                LiveMatch::new(home, away, Tactics::NEUTRAL, Tactics::NEUTRAL, ctx(fixture));
+            let mut changed =
+                LiveMatch::new(home, away, Tactics::NEUTRAL, Tactics::NEUTRAL, ctx(fixture));
+            plain.step_minutes(45);
+            changed.step_minutes(45);
+            assert_eq!(plain.events(), changed.events());
+            changed.set_team(Side::Home, profile(160), Tactics::new(1300, 1000));
+            plain.step_minutes(45);
+            changed.step_minutes(45);
+            // O primeiro tempo é idêntico, mesmo depois de a partida acabar.
+            let first_half = |m: &LiveMatch| {
+                m.events()
+                    .iter()
+                    .filter(|e| match e {
+                        MatchEvent::Shot { minute, .. } | MatchEvent::Goal { minute, .. } => {
+                            *minute <= 45
+                        }
+                        _ => true,
+                    })
+                    .count()
+            };
+            assert_eq!(first_half(&plain), first_half(&changed));
+        }
+    }
+
+    #[test]
+    fn reforcar_o_time_no_intervalo_gera_mais_finalizacoes_no_segundo_tempo() {
+        let (home, away) = equal_profiles();
+        let (mut base, mut boosted) = (0u32, 0u32);
+        for fixture in 0..1500 {
+            let mut a =
+                LiveMatch::new(home, away, Tactics::NEUTRAL, Tactics::NEUTRAL, ctx(fixture));
+            let mut b =
+                LiveMatch::new(home, away, Tactics::NEUTRAL, Tactics::NEUTRAL, ctx(fixture));
+            a.step_minutes(45);
+            b.step_minutes(45);
+            let (before_a, _) = a.shots();
+            let (before_b, _) = b.shots();
+            b.set_team(Side::Home, profile(200), Tactics::NEUTRAL);
+            a.step_minutes(45);
+            b.step_minutes(45);
+            base += a.shots().0 - before_a;
+            boosted += b.shots().0 - before_b;
+        }
+        assert!(boosted > base + base / 5, "{boosted} vs {base}");
     }
 
     #[test]
