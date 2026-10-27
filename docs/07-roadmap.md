@@ -467,7 +467,7 @@ completo e golden como rede de segurança):
 | F3 ✅ | Queries da UI: clubes, ficha do clube/finanças, elenco, jogador, calendário, resultados da rodada (a "última partida" narrada vem com a F5) | A UI só enxerga o que `Query` expõe |
 | F4 ✅ | Escalação/formação/instruções (RF-PA-01/02), penalidade fora de posição | Primeira decisão real |
 | F5 ✅ | Partida ao vivo em texto, substituições, estatísticas (RF-PA-05/06/07) | Precisa de F1 + F4 |
-| F6 | Mercado jogável: janelas, ofertas, negociação, demanda (RF-TR-01..04) | Precisa de F1 + F2 |
+| F6 ✅ | Mercado jogável: janelas, ofertas, negociação (RF-TR-01..04); demanda cortada | Precisa de F1 + F2 |
 | F7 | Treino básico (RF-TC-01) + moral/fadiga por jogador (RF-JG-07) | MVP exige treino com efeito mensurável |
 | F8 | Caixa de entrada (RF-CA-07) + cliente `manage` na CLI | Valida o loop sem Flutter |
 | F9 | Gates automatizados dos critérios MVP 2-4, contrato `app` congelado pra ponte, linhas de corte | Fecha o marco |
@@ -607,6 +607,19 @@ base, então folha, golden e calibrate seguem idênticos) e `pay_salaries`
 cobra o salário negociado. Fora do MVP, documentado: **fator de demanda** em
 `market_value` (RF-TR-02), pré-contratos, empréstimos, cláusulas e agente
 (RF-TR-06/07, M3).
+
+**F6b/F6c feitas (vender e buscar):** `world::generate_incoming_offer`
+sorteia, a cada rodada com a janela aberta, no máximo uma proposta da IA por
+um jogador do técnico (30% por rodada; vale 2 rodadas): vai atrás do melhor
+jogador que seria titular no comprador, que tem caixa e que o jogador
+aceitaria (mesma regra de ambição/reputação da IA); valor entre 90% e 120%
+do de mercado. `Command::RespondToOffer { offer, accept }` fecha a venda
+(janela aberta, comprador com caixa, elenco do técnico ≥ 14 com uma opção
+por linha) ou descarta a proposta; `Query::IncomingOffers` lista. Erros não
+mudam estado nem entram no log. `Query::Search { filter, offset, limit }`
+busca jogadores por posição, CA mínimo, idade máxima, clube excluído e valor
+máximo, do melhor pro pior, com página limitada a 50 linhas (mobile) e
+total. Tudo reproduzível por replay.
 
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04

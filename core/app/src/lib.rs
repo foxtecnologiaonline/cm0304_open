@@ -24,10 +24,12 @@ pub use engine::Side;
 pub use error::AppError;
 pub use query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
-    FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow, MatchScore,
-    MatchView, PitchPlayer, PlayerDetail, PlayerMatchRow, PlayerRef, PlayerRow, Query, QueryResult,
-    ResultRow, RoundResults, SeasonProgress, StandingsRow, TransferWindowInfo,
+    FixtureList, FixtureRow, IncomingOfferRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow,
+    MatchScore, MatchView, PitchPlayer, PlayerDetail, PlayerMatchRow, PlayerRef, PlayerRow, Query,
+    QueryResult, ResultRow, RoundResults, SearchPage, SeasonProgress, StandingsRow,
+    TransferWindowInfo,
 };
+pub use query::{MAX_SEARCH_PAGE, PlayerFilter};
 pub use session::{CommandReceipt, GameSession};
 pub use slots::{SAVE_SLOT_COUNT, autosave_path, slot_path};
 pub use world::{MatchLineKind, Mentality, OfferOutcome, Pressing, Refusal};

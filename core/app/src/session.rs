@@ -16,10 +16,12 @@ use crate::command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
 use crate::error::AppError;
 use crate::query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
-    FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow, MatchScore,
-    MatchView, PitchPlayer, PlayerDetail, PlayerMatchRow, PlayerRef, PlayerRow, Query, QueryResult,
-    ResultRow, RoundResults, SeasonProgress, StandingsRow, TransferWindowInfo,
+    FixtureList, FixtureRow, IncomingOfferRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow,
+    MatchScore, MatchView, PitchPlayer, PlayerDetail, PlayerMatchRow, PlayerRef, PlayerRow, Query,
+    QueryResult, ResultRow, RoundResults, SearchPage, SeasonProgress, StandingsRow,
+    TransferWindowInfo,
 };
+use crate::query::{MAX_SEARCH_PAGE, PlayerFilter};
 use engine::Side;
 
 /// Confirmação de que um [`Command`] foi processado, com o suficiente para
@@ -309,6 +311,12 @@ pub struct GameSession {
     live: Option<world::LiveGame>,
     /// Relatório da última partida concluída do clube sob comando.
     last_match: Option<world::MatchReport>,
+    /// Propostas da IA por jogadores do clube sob comando, ainda de pé.
+    incoming: Vec<world::IncomingOffer>,
+    next_offer_id: u32,
+    /// `(temporada, rodada)` para a qual já se sorteou proposta — no máximo
+    /// uma geração por rodada.
+    offers_generated_for: Option<(u32, u32)>,
     /// Comandos despachados com sucesso, codificados (`Command::encode`),
     /// na ordem — vira o `command_log` do save.
     command_log: Vec<u8>,
@@ -389,6 +397,9 @@ impl GameSession {
             last_run: None,
             live: None,
             last_match: None,
+            incoming: Vec::new(),
+            next_offer_id: 0,
+            offers_generated_for: None,
             command_log: Vec::new(),
             manager: None,
         })
@@ -482,6 +493,13 @@ impl GameSession {
             }
             Command::StartMatch => self.start_match()?,
             Command::BeginSeason => self.begin_season_command()?,
+            Command::RespondToOffer { offer, accept } => {
+                let outcome = self.respond_to_offer(*offer, *accept)?;
+                CommandReceipt {
+                    offer: outcome,
+                    ..self.idle_receipt()
+                }
+            }
             Command::MakeOffer {
                 player,
                 fee,
@@ -623,6 +641,7 @@ impl GameSession {
         }
         self.live = self.new_live_game(&active);
         self.season = Some(active);
+        self.refresh_offers();
         Ok(receipt)
     }
 
@@ -796,6 +815,7 @@ impl GameSession {
         receipt.season_index = active.run.season_index();
         receipt.matchdays_total = active.run.total_matchdays();
         self.season = Some(active);
+        self.refresh_offers();
         Ok(receipt)
     }
 
@@ -918,6 +938,159 @@ impl GameSession {
         Ok(())
     }
 
+    /// Expira as propostas vencidas e, com a janela aberta, sorteia a desta
+    /// rodada (no máximo uma por rodada — `offers_generated_for`).
+    fn refresh_offers(&mut self) {
+        let Some(club) = self.manager.as_ref().map(|m| m.club) else {
+            return;
+        };
+        let Some(active) = &self.season else {
+            self.incoming.clear();
+            return;
+        };
+        let next = active.run.next_matchday();
+        let season = active.run.season_index();
+        let open = self.window_info().open;
+        let roster = &self.roster;
+        self.incoming.retain(|o| {
+            open && next < o.expires_matchday && roster[o.player.as_usize()].club == club
+        });
+        if !open || self.offers_generated_for == Some((season, next)) {
+            return;
+        }
+        self.offers_generated_for = Some((season, next));
+        let pending: Vec<domain::PlayerId> = self.incoming.iter().map(|o| o.player).collect();
+        let world_view = world::OfferWorld {
+            roster: &self.roster,
+            contracts: &self.contracts,
+            budgets: &self.budgets,
+            club_reputation: &self.club_reputation,
+            ambition: &self.ambition,
+        };
+        if let Some((player, from, fee)) = world::generate_incoming_offer(
+            &world_view,
+            club,
+            &pending,
+            self.world_seed,
+            season,
+            next,
+        ) {
+            let id = self.next_offer_id;
+            self.next_offer_id += 1;
+            self.incoming.push(world::IncomingOffer {
+                id,
+                player,
+                from,
+                fee,
+                expires_matchday: next + world::OFFER_LIFETIME_MATCHDAYS,
+            });
+        }
+    }
+
+    /// Ver [`Command::RespondToOffer`].
+    fn respond_to_offer(
+        &mut self,
+        id: u32,
+        accept: bool,
+    ) -> Result<Option<world::OfferOutcome>, AppError> {
+        let club = self.manager.as_ref().ok_or(AppError::NoClubTaken)?.club;
+        if self.live.is_some() {
+            return Err(AppError::MatchInProgress);
+        }
+        let position = self
+            .incoming
+            .iter()
+            .position(|o| o.id == id)
+            .ok_or(AppError::UnknownOffer)?;
+        if !accept {
+            self.incoming.remove(position);
+            return Ok(None);
+        }
+        let offer = self.incoming[position];
+        if !self.window_info().open {
+            return Err(AppError::TransferWindowClosed);
+        }
+        let buyer = offer.from;
+        if self.budgets[buyer.as_usize()] < offer.fee {
+            return Err(AppError::OfferNoLongerValid);
+        }
+        if !world::seller_can_part(&self.roster, club, offer.player) {
+            return Err(AppError::SquadTooSmall);
+        }
+        let idx = offer.player.as_usize();
+        self.budgets[buyer.as_usize()] = self.budgets[buyer.as_usize()] - offer.fee;
+        self.budgets[club.as_usize()] = self.budgets[club.as_usize()] + offer.fee;
+        self.roster[idx].club = buyer;
+        self.contracts[idx] = world::fresh_contract(self.roster[idx].ability.current());
+        world::mark_transferred(&mut self.seasons_since_transfer, &[offer.player]);
+        self.incoming.retain(|o| o.player != offer.player);
+        Ok(Some(world::OfferOutcome::Accepted))
+    }
+
+    fn market_value_of(&self, idx: usize) -> domain::Money {
+        let state = &self.roster[idx];
+        ai::market_value(
+            state.ability.current(),
+            self.contracts[idx].seasons_remaining,
+            state.age_years.clamp(0, 255) as u8,
+            state.ability.potential(),
+            self.club_reputation[state.club.as_usize()],
+        )
+    }
+
+    fn search(&self, filter: &PlayerFilter, offset: u32, limit: u16) -> SearchPage {
+        let mut hits: Vec<usize> = (0..self.roster.len())
+            .filter(|&i| {
+                let p = &self.roster[i];
+                filter.position.is_none_or(|pos| p.position == pos)
+                    && p.ability.current() >= filter.min_ability
+                    && filter
+                        .max_age
+                        .is_none_or(|max| p.age_years <= i32::from(max))
+                    && filter.not_from_club != Some(p.club)
+                    && filter
+                        .max_value
+                        .is_none_or(|max| self.market_value_of(i) <= max)
+            })
+            .collect();
+        hits.sort_by(|&a, &b| {
+            self.roster[b]
+                .ability
+                .current()
+                .cmp(&self.roster[a].ability.current())
+                .then(a.cmp(&b))
+        });
+        let total = hits.len() as u32;
+        let rows = hits
+            .into_iter()
+            .skip(offset as usize)
+            .take(usize::from(limit.clamp(1, MAX_SEARCH_PAGE)))
+            .map(|i| self.player_row(i))
+            .collect();
+        SearchPage { total, rows }
+    }
+
+    fn incoming_offer_rows(&self) -> Vec<IncomingOfferRow> {
+        let next = self.season.as_ref().map_or(0, |a| a.run.next_matchday());
+        self.incoming
+            .iter()
+            .map(|o| {
+                let state = &self.roster[o.player.as_usize()];
+                IncomingOfferRow {
+                    id: o.id,
+                    player: self.player_ref(o.player),
+                    position: state.position,
+                    current_ability: state.ability.current(),
+                    from: o.from,
+                    from_name: self.pack.club(o.from).name.clone(),
+                    fee: o.fee,
+                    market_value: self.player_row(o.player.as_usize()).market_value,
+                    expires_in_matchdays: o.expires_matchday.saturating_sub(next),
+                }
+            })
+            .collect()
+    }
+
     /// Joga uma rodada; se a temporada ainda não começou, faz a
     /// pré-temporada antes, e se a rodada foi a última, o fechamento depois.
     fn advance_round(&mut self) -> CommandReceipt {
@@ -948,6 +1121,7 @@ impl GameSession {
         } else {
             self.season = Some(active);
         }
+        self.refresh_offers();
         receipt
     }
 
@@ -1159,6 +1333,12 @@ impl GameSession {
                     .map(|game| self.match_view(&game.report(), lines_from, Some(game))),
             ),
             Query::TransferWindow => QueryResult::TransferWindow(self.window_info()),
+            Query::IncomingOffers => QueryResult::IncomingOffers(self.incoming_offer_rows()),
+            Query::Search {
+                filter,
+                offset,
+                limit,
+            } => QueryResult::Search(self.search(&filter, offset, limit)),
             Query::LastMatch => QueryResult::LastMatch(
                 self.last_match
                     .as_ref()
@@ -3067,6 +3247,314 @@ mod tests {
         assert_eq!(reloaded.budgets, replayable.budgets);
         assert_eq!(reloaded.contracts, replayable.contracts);
         assert_eq!(reloaded.to_save(), replayable.to_save());
+    }
+
+    fn incoming(session: &GameSession) -> Vec<IncomingOfferRow> {
+        match session.query(Query::IncomingOffers) {
+            QueryResult::IncomingOffers(rows) => rows,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    /// Procura (por seed) uma sessão em que o clube 3 já tem proposta de pé
+    /// logo depois de abrir a temporada ou nas primeiras rodadas da janela.
+    fn session_with_incoming_offer() -> GameSession {
+        for seed in 0..60u64 {
+            let mut session = GameSession::new(&example_pack_path(), seed).unwrap();
+            take(&mut session, 3, "Zé Treinador").unwrap();
+            session.dispatch(Command::BeginSeason).unwrap();
+            for _ in 0..3 {
+                if !incoming(&session).is_empty() {
+                    return session;
+                }
+                session.dispatch(Command::AdvanceRound).unwrap();
+            }
+            if !incoming(&session).is_empty() {
+                return session;
+            }
+        }
+        panic!("nenhuma seed de 0..60 gerou proposta (30% por rodada)");
+    }
+
+    #[test]
+    fn sessao_observadora_nunca_recebe_proposta() {
+        let mut session = GameSession::new(&example_pack_path(), 1).unwrap();
+        session.dispatch(Command::BeginSeason).unwrap();
+        for _ in 0..14 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+            assert!(incoming(&session).is_empty());
+        }
+    }
+
+    #[test]
+    fn proposta_da_ia_traz_jogador_do_tecnico_comprador_valor_e_validade() {
+        let session = session_with_incoming_offer();
+        let offers = incoming(&session);
+        let o = &offers[0];
+        assert_eq!(
+            session.roster[o.player.id.as_usize()].club,
+            domain::ClubId::new(3)
+        );
+        assert_ne!(o.from, domain::ClubId::new(3));
+        assert_eq!(o.from_name, session.pack.club(o.from).name);
+        assert!(o.fee.cents() > 0 && o.market_value.cents() > 0);
+        assert!((1..=2).contains(&o.expires_in_matchdays));
+        let ratio = o.fee.cents() * 1000 / o.market_value.cents();
+        assert!(
+            (850..=1250).contains(&ratio),
+            "valor entre 90% e 120% (±arredondamento): {ratio}"
+        );
+    }
+
+    #[test]
+    fn aceitar_proposta_vende_o_jogador_e_move_o_dinheiro() {
+        let mut session = session_with_incoming_offer();
+        let o = incoming(&session).remove(0);
+        let (mine, theirs) = (session.budgets[3], session.budgets[o.from.as_usize()]);
+        let squad_before = squad_of(&session, 3).len();
+
+        let receipt = session
+            .dispatch(Command::RespondToOffer {
+                offer: o.id,
+                accept: true,
+            })
+            .unwrap();
+        assert_eq!(receipt.offer, Some(world::OfferOutcome::Accepted));
+        assert_eq!(session.roster[o.player.id.as_usize()].club, o.from);
+        assert_eq!(session.budgets[3], mine + o.fee);
+        assert_eq!(session.budgets[o.from.as_usize()], theirs - o.fee);
+        assert_eq!(squad_of(&session, 3).len(), squad_before - 1);
+        assert!(
+            incoming(&session)
+                .iter()
+                .all(|x| x.player.id != o.player.id)
+        );
+        assert_eq!(session.seasons_since_transfer[o.player.id.as_usize()], 0);
+        // A proposta foi consumida.
+        assert!(matches!(
+            session.dispatch(Command::RespondToOffer {
+                offer: o.id,
+                accept: true
+            }),
+            Err(AppError::UnknownOffer)
+        ));
+    }
+
+    #[test]
+    fn recusar_proposta_so_a_descarta() {
+        let mut session = session_with_incoming_offer();
+        let o = incoming(&session).remove(0);
+        let (budgets, roster) = (session.budgets.clone(), session.roster.clone());
+        let receipt = session
+            .dispatch(Command::RespondToOffer {
+                offer: o.id,
+                accept: false,
+            })
+            .unwrap();
+        assert_eq!(receipt.offer, None);
+        assert!(incoming(&session).iter().all(|x| x.id != o.id));
+        assert_eq!(session.budgets, budgets);
+        assert_eq!(session.roster, roster);
+    }
+
+    #[test]
+    fn aceitar_recusa_se_deixa_o_elenco_no_minimo_ou_o_comprador_sem_caixa() {
+        let mut session = session_with_incoming_offer();
+        let o = incoming(&session).remove(0);
+        let log = session.to_save().command_log;
+
+        // Comprador sem caixa.
+        let cash = session.budgets[o.from.as_usize()];
+        session.budgets[o.from.as_usize()] = domain::Money::ZERO;
+        assert!(matches!(
+            session.dispatch(Command::RespondToOffer {
+                offer: o.id,
+                accept: true
+            }),
+            Err(AppError::OfferNoLongerValid)
+        ));
+        session.budgets[o.from.as_usize()] = cash;
+
+        // Elenco no limite: leva jogadores (de outras linhas) para outro clube.
+        let target_position = session.roster[o.player.id.as_usize()].position;
+        let mut count = squad_of(&session, 3).len();
+        for i in 0..session.roster.len() {
+            if count <= 14 {
+                break;
+            }
+            let p = &mut session.roster[i];
+            if p.club == domain::ClubId::new(3)
+                && p.position != target_position
+                && p.player != o.player.id
+            {
+                p.club = domain::ClubId::new(15);
+                count -= 1;
+            }
+        }
+        assert!(matches!(
+            session.dispatch(Command::RespondToOffer {
+                offer: o.id,
+                accept: true
+            }),
+            Err(AppError::SquadTooSmall)
+        ));
+        assert_eq!(
+            session.to_save().command_log,
+            log,
+            "erros não entram no log"
+        );
+        assert!(
+            incoming(&session).iter().any(|x| x.id == o.id),
+            "a proposta segue de pé"
+        );
+    }
+
+    #[test]
+    fn proposta_expira_depois_de_duas_rodadas_e_nao_sobrevive_a_janela_fechada() {
+        let mut session = session_with_incoming_offer();
+        let id = incoming(&session)[0].id;
+        // Joga até a janela de verão fechar: toda proposta some.
+        for _ in 0..4 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+        }
+        assert!(!window(&session).open);
+        assert!(incoming(&session).iter().all(|o| o.id != id));
+        assert!(incoming(&session).is_empty());
+    }
+
+    #[test]
+    fn propostas_aceitas_sobrevivem_ao_save_e_load() {
+        let mut session = session_with_incoming_offer();
+        let o = incoming(&session).remove(0);
+        session
+            .dispatch(Command::RespondToOffer {
+                offer: o.id,
+                accept: true,
+            })
+            .unwrap();
+        session.dispatch(Command::AdvanceSeason).unwrap();
+        let reloaded = GameSession::load(&example_pack_path(), &session.to_save()).unwrap();
+        assert_eq!(reloaded.budgets, session.budgets);
+        assert_eq!(reloaded.roster, session.roster);
+        assert_eq!(reloaded.to_save(), session.to_save());
+    }
+
+    fn search(session: &GameSession, filter: PlayerFilter, offset: u32, limit: u16) -> SearchPage {
+        match session.query(Query::Search {
+            filter,
+            offset,
+            limit,
+        }) {
+            QueryResult::Search(page) => page,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn busca_ordena_do_melhor_pro_pior_e_pagina_sem_repetir_nem_perder() {
+        let session = GameSession::new(&example_pack_path(), 42).unwrap();
+        let all = search(&session, PlayerFilter::default(), 0, 1000);
+        assert_eq!(all.total, 256);
+        assert_eq!(all.rows.len(), 50, "página limitada a MAX_SEARCH_PAGE");
+        assert!(
+            all.rows
+                .windows(2)
+                .all(|w| w[0].current_ability >= w[1].current_ability)
+        );
+
+        let mut seen = Vec::new();
+        for page in 0..6 {
+            let p = search(&session, PlayerFilter::default(), page * 50, 50);
+            assert_eq!(p.total, 256);
+            seen.extend(p.rows.iter().map(|r| r.id));
+        }
+        assert_eq!(seen.len(), 256);
+        let mut unique = seen.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), 256, "nenhum repetido entre páginas");
+        assert!(
+            search(&session, PlayerFilter::default(), 300, 10)
+                .rows
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn busca_filtra_por_posicao_habilidade_idade_clube_e_valor() {
+        let session = GameSession::new(&example_pack_path(), 42).unwrap();
+        let gks = search(
+            &session,
+            PlayerFilter {
+                position: Some(domain::Position::Goalkeeper),
+                ..PlayerFilter::default()
+            },
+            0,
+            50,
+        );
+        assert_eq!(gks.total, 32, "2 goleiros por clube x 16");
+        assert!(
+            gks.rows
+                .iter()
+                .all(|r| r.position == domain::Position::Goalkeeper)
+        );
+
+        let good = search(
+            &session,
+            PlayerFilter {
+                min_ability: 140,
+                ..PlayerFilter::default()
+            },
+            0,
+            50,
+        );
+        assert!(good.rows.iter().all(|r| r.current_ability >= 140));
+        assert!(good.total < 256);
+
+        let young = search(
+            &session,
+            PlayerFilter {
+                max_age: Some(21),
+                ..PlayerFilter::default()
+            },
+            0,
+            50,
+        );
+        assert!(young.rows.iter().all(|r| r.age <= 21));
+
+        let others = search(
+            &session,
+            PlayerFilter {
+                not_from_club: Some(domain::ClubId::new(3)),
+                ..PlayerFilter::default()
+            },
+            0,
+            50,
+        );
+        assert_eq!(others.total, 256 - 16);
+        assert!(others.rows.iter().all(|r| r.club != domain::ClubId::new(3)));
+
+        let budget = domain::Money::from_cents(50_000_000);
+        let cheap = search(
+            &session,
+            PlayerFilter {
+                max_value: Some(budget),
+                ..PlayerFilter::default()
+            },
+            0,
+            50,
+        );
+        assert!(cheap.rows.iter().all(|r| r.market_value <= budget));
+        assert!(cheap.total < 256);
+    }
+
+    #[test]
+    fn busca_com_limite_zero_devolve_ao_menos_uma_linha() {
+        let session = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert_eq!(
+            search(&session, PlayerFilter::default(), 0, 0).rows.len(),
+            1
+        );
     }
 
     fn first_player_ids(session: &GameSession, club: u32, n: usize) -> Vec<domain::PlayerId> {

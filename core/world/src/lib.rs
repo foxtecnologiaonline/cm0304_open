@@ -90,6 +90,7 @@ mod live;
 mod market;
 mod morale;
 mod negotiation;
+mod offers;
 mod progression;
 mod quality;
 mod reputation;
@@ -104,7 +105,8 @@ pub use adaptation::{
 pub use condition::{FULL_CONDITION, apply_season_fatigue};
 pub use consistency::generate_consistency;
 pub use contract::{
-    BASE_WAGE_PERMILLE, ContractState, advance_contracts, generate_initial_contracts,
+    BASE_WAGE_PERMILLE, ContractState, advance_contracts, fresh_contract,
+    generate_initial_contracts,
 };
 pub use cup::{CupMatch, CupResult, cup_participants, generate_big_game_mentality, run_cup};
 pub use discipline::generate_dirtiness;
@@ -123,6 +125,7 @@ pub use negotiation::{
     OfferOutcome, Refusal, asking_fee, evaluate_club, renewal_ask_permille, seller_can_part,
     wage_ask_permille,
 };
+pub use offers::{IncomingOffer, OFFER_LIFETIME_MATCHDAYS, OfferWorld, generate_incoming_offer};
 pub use progression::{PlayerState, advance_season, generate_professionalism, initial_roster};
 pub use quality::{
     generate_match_profiles, generate_match_profiles_from_roster, starters_from_roster_all_clubs,

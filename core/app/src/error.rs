@@ -63,6 +63,14 @@ pub enum AppError {
     InvalidOffer(&'static str),
     /// `Command::BeginSeason` com a temporada já começada.
     SeasonAlreadyBegun,
+    /// `Command::RespondToOffer` com uma proposta que não existe (já
+    /// respondida ou expirada).
+    UnknownOffer,
+    /// A proposta existe, mas o comprador já não tem o dinheiro.
+    OfferNoLongerValid,
+    /// Aceitar deixaria o seu elenco abaixo do mínimo (14 jogadores e uma
+    /// opção por linha).
+    SquadTooSmall,
 }
 
 impl fmt::Display for AppError {
@@ -90,6 +98,14 @@ impl fmt::Display for AppError {
             AppError::TransferWindowClosed => write!(f, "a janela de transferências está fechada"),
             AppError::InvalidOffer(reason) => write!(f, "proposta inválida: {reason}"),
             AppError::SeasonAlreadyBegun => write!(f, "a temporada já começou"),
+            AppError::UnknownOffer => write!(f, "essa proposta não existe mais"),
+            AppError::OfferNoLongerValid => write!(f, "o comprador já não tem o dinheiro"),
+            AppError::SquadTooSmall => {
+                write!(
+                    f,
+                    "vender deixaria o elenco abaixo do mínimo (14 jogadores)"
+                )
+            }
             AppError::NoClubTaken => write!(f, "nenhum clube sob seu comando ainda"),
             AppError::InvalidLineup(reason) => write!(f, "escalação inválida: {reason}"),
             AppError::UnknownClub(club) => write!(f, "o pack não tem o clube {club}"),
@@ -128,7 +144,10 @@ impl std::error::Error for AppError {
             | AppError::InvalidSubstitution(_)
             | AppError::TransferWindowClosed
             | AppError::InvalidOffer(_)
-            | AppError::SeasonAlreadyBegun => None,
+            | AppError::SeasonAlreadyBegun
+            | AppError::UnknownOffer
+            | AppError::OfferNoLongerValid
+            | AppError::SquadTooSmall => None,
         }
     }
 }

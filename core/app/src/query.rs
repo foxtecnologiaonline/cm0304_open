@@ -63,6 +63,33 @@ pub enum Query {
     LastMatch,
     /// Se a janela de transferências está aberta e em quantas rodadas muda.
     TransferWindow,
+    /// Propostas da IA por jogadores do clube sob comando, ainda de pé.
+    IncomingOffers,
+    /// Busca de jogadores (mercado), do melhor pro pior CA, paginada.
+    Search {
+        filter: PlayerFilter,
+        offset: u32,
+        /// Tamanho da página, limitado a [`MAX_SEARCH_PAGE`] (mobile: a
+        /// lista nunca devolve centenas de linhas de uma vez).
+        limit: u16,
+    },
+}
+
+/// Maior página que [`Query::Search`] devolve.
+pub const MAX_SEARCH_PAGE: u16 = 50;
+
+/// Critérios de [`Query::Search`] — o subconjunto de RF-SC-03 (`docs/01
+/// §2.7`) que o MVP precisa para achar um reforço; filtros mais ricos e
+/// listas salvas são M3.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PlayerFilter {
+    pub position: Option<domain::Position>,
+    pub min_ability: u8,
+    pub max_age: Option<u8>,
+    /// Exclui o elenco deste clube (tipicamente o do próprio técnico).
+    pub not_from_club: Option<domain::ClubId>,
+    /// Só jogadores com valor de mercado até isto.
+    pub max_value: Option<domain::Money>,
 }
 
 /// Resposta a uma [`Query`]. Cada variante corresponde a exatamente uma
@@ -91,6 +118,32 @@ pub enum QueryResult {
     LiveMatch(Option<MatchView>),
     LastMatch(Option<MatchView>),
     TransferWindow(TransferWindowInfo),
+    IncomingOffers(Vec<IncomingOfferRow>),
+    Search(SearchPage),
+}
+
+/// Uma página de resultados de [`Query::Search`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchPage {
+    /// Total de jogadores que casam com o filtro (todas as páginas).
+    pub total: u32,
+    pub rows: Vec<PlayerRow>,
+}
+
+/// Uma proposta da IA por um jogador seu (ver [`Query::IncomingOffers`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncomingOfferRow {
+    /// Identificador para `Command::RespondToOffer`.
+    pub id: u32,
+    pub player: PlayerRef,
+    pub position: domain::Position,
+    pub current_ability: u8,
+    pub from: domain::ClubId,
+    pub from_name: String,
+    pub fee: domain::Money,
+    pub market_value: domain::Money,
+    /// Rodadas até a proposta expirar.
+    pub expires_in_matchdays: u32,
 }
 
 /// Estado da janela de transferências (ver [`Query::TransferWindow`]).

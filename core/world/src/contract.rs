@@ -57,7 +57,8 @@ pub const BASE_WAGE_PERMILLE: u16 = 1000;
 /// Contrato novo de duração máxima, travado em `signed_ability` — o que
 /// toda transferência assina (ver o doc do módulo) e o que uma renovação
 /// automática usa de template.
-pub(crate) fn fresh_contract(signed_ability: u8) -> ContractState {
+#[must_use]
+pub fn fresh_contract(signed_ability: u8) -> ContractState {
     ContractState {
         seasons_remaining: MAX_SEASONS,
         signed_ability,
