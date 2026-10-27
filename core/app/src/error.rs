@@ -55,6 +55,14 @@ pub enum AppError {
     NoLiveMatch,
     /// Substituição recusada (motivo em português, mostrável direto na UI).
     InvalidSubstitution(&'static str),
+    /// Compra fora de uma janela de transferência (RF-TR-01).
+    TransferWindowClosed,
+    /// Proposta mal formada (jogador inexistente ou do próprio clube,
+    /// salário ou duração fora da faixa) — nunca uma recusa de negociação,
+    /// que é um [`world::OfferOutcome`] normal.
+    InvalidOffer(&'static str),
+    /// `Command::BeginSeason` com a temporada já começada.
+    SeasonAlreadyBegun,
 }
 
 impl fmt::Display for AppError {
@@ -79,6 +87,9 @@ impl fmt::Display for AppError {
             AppError::MatchInProgress => write!(f, "há uma partida ao vivo em andamento"),
             AppError::NoLiveMatch => write!(f, "nenhuma partida ao vivo em andamento"),
             AppError::InvalidSubstitution(reason) => write!(f, "substituição inválida: {reason}"),
+            AppError::TransferWindowClosed => write!(f, "a janela de transferências está fechada"),
+            AppError::InvalidOffer(reason) => write!(f, "proposta inválida: {reason}"),
+            AppError::SeasonAlreadyBegun => write!(f, "a temporada já começou"),
             AppError::NoClubTaken => write!(f, "nenhum clube sob seu comando ainda"),
             AppError::InvalidLineup(reason) => write!(f, "escalação inválida: {reason}"),
             AppError::UnknownClub(club) => write!(f, "o pack não tem o clube {club}"),
@@ -114,7 +125,10 @@ impl std::error::Error for AppError {
             | AppError::InvalidLineup(_)
             | AppError::MatchInProgress
             | AppError::NoLiveMatch
-            | AppError::InvalidSubstitution(_) => None,
+            | AppError::InvalidSubstitution(_)
+            | AppError::TransferWindowClosed
+            | AppError::InvalidOffer(_)
+            | AppError::SeasonAlreadyBegun => None,
         }
     }
 }

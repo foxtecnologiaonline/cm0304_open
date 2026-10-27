@@ -88,6 +88,7 @@ pub fn run_market_day(
     ambition: &[u8],
     club_reputation: &[u8],
     budgets: &mut [Money],
+    protected: Option<domain::ClubId>,
 ) -> Vec<ai::Transfer> {
     let mut players: Vec<ai::MarketPlayer> = roster
         .iter()
@@ -114,7 +115,8 @@ pub fn run_market_day(
         )
         .collect();
 
-    let transfers = ai::run_market_day(&mut players, budgets, club_reputation);
+    let transfers =
+        ai::run_market_day_protecting(&mut players, budgets, club_reputation, protected);
 
     for (state, updated) in roster.iter_mut().zip(players.iter()) {
         state.club = updated.club;
@@ -223,6 +225,7 @@ mod tests {
             &ambition,
             &club_reputation,
             &mut budgets,
+            None,
         );
 
         assert_eq!(transfers.len(), 1);
@@ -251,6 +254,7 @@ mod tests {
         contracts[2] = crate::contract::ContractState {
             seasons_remaining: 1,
             signed_ability: 1,
+            wage_permille: 1000,
         };
         let loyalty = vec![0u8; roster.len()];
         let ambition = vec![0u8; roster.len()];
@@ -264,6 +268,7 @@ mod tests {
             &ambition,
             &club_reputation,
             &mut budgets,
+            None,
         );
         assert_eq!(transfers.len(), 1);
 
@@ -293,6 +298,7 @@ mod tests {
             &ambition,
             &club_reputation,
             &mut budgets,
+            None,
         );
 
         assert!(transfers.is_empty());
@@ -322,6 +328,7 @@ mod tests {
             &ambition,
             &club_reputation,
             &mut budgets,
+            None,
         );
 
         assert!(transfers.is_empty());

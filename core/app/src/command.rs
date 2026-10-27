@@ -8,7 +8,7 @@
 //! formato do arquivo (`persist`) não muda.
 
 use ai::Formation;
-use domain::{ClubId, NationId, PlayerId};
+use domain::{ClubId, Money, NationId, PlayerId};
 use world::{Mentality, Pressing};
 
 use crate::error::AppError;
@@ -84,6 +84,31 @@ pub enum Command {
     /// Substitui `out` (em campo) por `incoming` (no banco) na partida ao
     /// vivo — até 3 por partida, valendo do próximo minuto.
     Substitute { out: PlayerId, incoming: PlayerId },
+    /// Faz a pré-temporada (dívida, folha, mercado da IA — sem mexer no
+    /// clube sob comando —, lesões, calendário) sem jogar rodada nenhuma,
+    /// abrindo a janela de verão para o técnico negociar **antes** da
+    /// primeira rodada. `AdvanceRound`/`StartMatch` fazem isto sozinhos se
+    /// ainda não foi feito. Erro se a temporada já começou.
+    BeginSeason,
+    /// Proposta de compra de um jogador de outro clube, só com a janela
+    /// aberta: `fee` ao clube vendedor e, ao jogador, `wage_permille` (em
+    /// milésimos do salário-base do CA dele; `1000` = base) por `seasons`
+    /// temporadas. Responde com um [`world::OfferOutcome`] em
+    /// `CommandReceipt::offer` — recusa e contraproposta não são erro, e o
+    /// técnico ajusta e tenta de novo.
+    MakeOffer {
+        player: PlayerId,
+        fee: Money,
+        wage_permille: u16,
+        seasons: u8,
+    },
+    /// Renova o contrato de um jogador do próprio clube, a qualquer
+    /// momento (resposta em `CommandReceipt::offer`).
+    RenewContract {
+        player: PlayerId,
+        wage_permille: u16,
+        seasons: u8,
+    },
 }
 
 const TAG_ADVANCE_SEASON: u8 = 1;
@@ -95,6 +120,9 @@ const TAG_SET_INSTRUCTIONS: u8 = 6;
 const TAG_START_MATCH: u8 = 7;
 const TAG_PLAY_MINUTES: u8 = 8;
 const TAG_SUBSTITUTE: u8 = 9;
+const TAG_BEGIN_SEASON: u8 = 10;
+const TAG_MAKE_OFFER: u8 = 11;
+const TAG_RENEW_CONTRACT: u8 = 12;
 
 impl Command {
     /// Acrescenta a codificação deste comando ao log.
@@ -147,6 +175,29 @@ impl Command {
                 out.push(TAG_SUBSTITUTE);
                 out.extend_from_slice(&leaving.index().to_le_bytes());
                 out.extend_from_slice(&incoming.index().to_le_bytes());
+            }
+            Command::BeginSeason => out.push(TAG_BEGIN_SEASON),
+            Command::MakeOffer {
+                player,
+                fee,
+                wage_permille,
+                seasons,
+            } => {
+                out.push(TAG_MAKE_OFFER);
+                out.extend_from_slice(&player.index().to_le_bytes());
+                out.extend_from_slice(&fee.cents().to_le_bytes());
+                out.extend_from_slice(&wage_permille.to_le_bytes());
+                out.push(*seasons);
+            }
+            Command::RenewContract {
+                player,
+                wage_permille,
+                seasons,
+            } => {
+                out.push(TAG_RENEW_CONTRACT);
+                out.extend_from_slice(&player.index().to_le_bytes());
+                out.extend_from_slice(&wage_permille.to_le_bytes());
+                out.push(*seasons);
             }
         }
     }
@@ -220,6 +271,29 @@ impl Command {
                     incoming: PlayerId::new(incoming),
                 }
             }
+            TAG_BEGIN_SEASON => Command::BeginSeason,
+            TAG_MAKE_OFFER => {
+                let player = u32::from_le_bytes(take(4)?.try_into().map_err(|_| bad())?);
+                let fee = i64::from_le_bytes(take(8)?.try_into().map_err(|_| bad())?);
+                let wage = u16::from_le_bytes(take(2)?.try_into().map_err(|_| bad())?);
+                let seasons = take(1)?[0];
+                Command::MakeOffer {
+                    player: PlayerId::new(player),
+                    fee: Money::from_cents(fee),
+                    wage_permille: wage,
+                    seasons,
+                }
+            }
+            TAG_RENEW_CONTRACT => {
+                let player = u32::from_le_bytes(take(4)?.try_into().map_err(|_| bad())?);
+                let wage = u16::from_le_bytes(take(2)?.try_into().map_err(|_| bad())?);
+                let seasons = take(1)?[0];
+                Command::RenewContract {
+                    player: PlayerId::new(player),
+                    wage_permille: wage,
+                    seasons,
+                }
+            }
             _ => return Err(bad()),
         };
         *pos = cursor;
@@ -280,6 +354,18 @@ mod tests {
                 out: PlayerId::new(3),
                 incoming: PlayerId::new(77),
             },
+            Command::BeginSeason,
+            Command::MakeOffer {
+                player: PlayerId::new(5),
+                fee: Money::from_cents(123_456_789),
+                wage_permille: 1337,
+                seasons: 3,
+            },
+            Command::RenewContract {
+                player: PlayerId::new(6),
+                wage_permille: 900,
+                seasons: 2,
+            },
             Command::AdvanceRound,
             Command::AdvanceSeason,
             Command::AdvanceRound,
@@ -306,6 +392,24 @@ mod tests {
             4
         );
         assert_eq!(tag_of(set_lineup()), 5);
+        assert_eq!(tag_of(Command::BeginSeason), 10);
+        assert_eq!(
+            tag_of(Command::MakeOffer {
+                player: PlayerId::new(1),
+                fee: Money::ZERO,
+                wage_permille: 1000,
+                seasons: 1
+            }),
+            11
+        );
+        assert_eq!(
+            tag_of(Command::RenewContract {
+                player: PlayerId::new(1),
+                wage_permille: 1000,
+                seasons: 1
+            }),
+            12
+        );
         assert_eq!(tag_of(Command::StartMatch), 7);
         assert_eq!(tag_of(Command::PlayMinutes { minutes: 1 }), 8);
         assert_eq!(

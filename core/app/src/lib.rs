@@ -26,8 +26,8 @@ pub use query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
     FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow, MatchScore,
     MatchView, PitchPlayer, PlayerDetail, PlayerMatchRow, PlayerRef, PlayerRow, Query, QueryResult,
-    ResultRow, RoundResults, SeasonProgress, StandingsRow,
+    ResultRow, RoundResults, SeasonProgress, StandingsRow, TransferWindowInfo,
 };
 pub use session::{CommandReceipt, GameSession};
 pub use slots::{SAVE_SLOT_COUNT, autosave_path, slot_path};
-pub use world::{MatchLineKind, Mentality, Pressing};
+pub use world::{MatchLineKind, Mentality, OfferOutcome, Pressing, Refusal};

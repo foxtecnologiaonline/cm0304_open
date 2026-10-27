@@ -44,7 +44,15 @@ pub struct ContractState {
     /// automática ou transferência) — `crate::finance::pay_salaries`
     /// calcula o salário a partir deste valor, não do CA corrente.
     pub signed_ability: u8,
+    /// Salário negociado, em milésimos do salário-base do CA travado:
+    /// `1000` = o salário-base (contrato inicial, renovação automática e o
+    /// que a IA assina); uma negociação do técnico humano
+    /// (`crate::negotiation`) pode fixar outro valor.
+    pub wage_permille: u16,
 }
+
+/// Salário-base de um contrato (sem negociação).
+pub const BASE_WAGE_PERMILLE: u16 = 1000;
 
 /// Contrato novo de duração máxima, travado em `signed_ability` — o que
 /// toda transferência assina (ver o doc do módulo) e o que uma renovação
@@ -53,6 +61,7 @@ pub(crate) fn fresh_contract(signed_ability: u8) -> ContractState {
     ContractState {
         seasons_remaining: MAX_SEASONS,
         signed_ability,
+        wage_permille: BASE_WAGE_PERMILLE,
     }
 }
 
@@ -75,6 +84,7 @@ pub fn generate_initial_contracts(pack: &LoadedPack, world_seed: u64) -> Vec<Con
             ContractState {
                 seasons_remaining: roll_duration(&mut rng),
                 signed_ability: p.ability.current(),
+                wage_permille: BASE_WAGE_PERMILLE,
             }
         })
         .collect()
@@ -107,6 +117,7 @@ pub fn advance_contracts(
             );
             contract.seasons_remaining = roll_duration(&mut rng);
             contract.signed_ability = roster[idx].ability.current();
+            contract.wage_permille = BASE_WAGE_PERMILLE;
             renewed += 1;
         }
     }
@@ -206,6 +217,8 @@ mod tests {
         let mut contracts = vec![ContractState {
             seasons_remaining: 3,
             signed_ability: 100,
+
+            wage_permille: 1000,
         }];
         let renewed = advance_contracts(&mut contracts, &roster, 1, 0);
         assert_eq!(contracts[0].seasons_remaining, 2);
@@ -221,6 +234,8 @@ mod tests {
         let mut contracts = vec![ContractState {
             seasons_remaining: 1,
             signed_ability: 100, // salário antigo, travado no CA de antes
+
+            wage_permille: 1000,
         }];
         let renewed = advance_contracts(&mut contracts, &roster, 1, 0);
         assert_eq!(renewed, 1);
@@ -239,6 +254,8 @@ mod tests {
         let mut a = vec![ContractState {
             seasons_remaining: 1,
             signed_ability: 100,
+
+            wage_permille: 1000,
         }];
         let mut b = a.clone();
         advance_contracts(&mut a, &roster, 42, 3);
@@ -283,7 +300,11 @@ mod proptests {
             let pack = LoadedPack { reference_year: 2026, nations: vec![nation], competitions: vec![], clubs: vec![club], players: vec![player] };
             let roster = crate::progression::initial_roster(&pack);
 
-            let mut contracts = vec![ContractState { seasons_remaining: 1, signed_ability: ca }];
+            let mut contracts = vec![ContractState {
+                seasons_remaining: 1,
+                signed_ability: ca,
+                wage_permille: 1000,
+            }];
             advance_contracts(&mut contracts, &roster, world_seed, season_index);
             prop_assert!(contracts[0].seasons_remaining >= MIN_SEASONS);
             prop_assert!(contracts[0].seasons_remaining <= MAX_SEASONS);

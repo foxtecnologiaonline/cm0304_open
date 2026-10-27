@@ -61,6 +61,8 @@ pub enum Query {
     /// também para as jogadas em modo instantâneo (`AdvanceRound` direto).
     /// `None` se ainda não jogou.
     LastMatch,
+    /// Se a janela de transferências está aberta e em quantas rodadas muda.
+    TransferWindow,
 }
 
 /// Resposta a uma [`Query`]. Cada variante corresponde a exatamente uma
@@ -88,6 +90,16 @@ pub enum QueryResult {
     Lineup(Option<LineupInfo>),
     LiveMatch(Option<MatchView>),
     LastMatch(Option<MatchView>),
+    TransferWindow(TransferWindowInfo),
+}
+
+/// Estado da janela de transferências (ver [`Query::TransferWindow`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransferWindowInfo {
+    pub open: bool,
+    /// Rodadas até a janela fechar (se aberta) ou abrir (se fechada); `None`
+    /// se não há mais janela nesta temporada ou a temporada não começou.
+    pub matchdays_until_change: Option<u32>,
 }
 
 /// Referência a um jogador já com o nome resolvido.
@@ -248,7 +260,11 @@ pub struct PlayerRow {
     /// Cumpre suspensão na próxima rodada.
     pub suspended: bool,
     pub contract_seasons_remaining: u8,
+    /// Salário de uma temporada pelo contrato de hoje (já com o ajuste
+    /// negociado).
     pub salary_per_season: domain::Money,
+    /// Ajuste negociado do salário, em milésimos (`1000` = salário-base).
+    pub wage_permille: u16,
     /// Quanto o mercado paga hoje (`ai::market_value`).
     pub market_value: domain::Money,
 }

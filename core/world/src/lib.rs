@@ -89,6 +89,7 @@ mod injuries;
 mod live;
 mod market;
 mod morale;
+mod negotiation;
 mod progression;
 mod quality;
 mod reputation;
@@ -102,12 +103,14 @@ pub use adaptation::{
 };
 pub use condition::{FULL_CONDITION, apply_season_fatigue};
 pub use consistency::generate_consistency;
-pub use contract::{ContractState, advance_contracts, generate_initial_contracts};
+pub use contract::{
+    BASE_WAGE_PERMILLE, ContractState, advance_contracts, generate_initial_contracts,
+};
 pub use cup::{CupMatch, CupResult, cup_participants, generate_big_game_mentality, run_cup};
 pub use discipline::generate_dirtiness;
 pub use finance::{
-    distribute_prize_money, distribute_tv_revenue, generate_budgets, generate_stadium_capacities,
-    pay_salaries, pay_sponsorship, repay_debt, salary_per_season,
+    contract_salary, distribute_prize_money, distribute_tv_revenue, generate_budgets,
+    generate_stadium_capacities, pay_salaries, pay_sponsorship, repay_debt, salary_per_season,
 };
 pub use injuries::{generate_injury_proneness, roll_injuries};
 pub use live::{
@@ -115,6 +118,11 @@ pub use live::{
     SubstitutionError,
 };
 pub use market::{generate_ambition, generate_loyalty, run_market_day};
+pub use negotiation::{
+    ClubVerdict, MAX_CONTRACT_SEASONS, MAX_WAGE_PERMILLE, MIN_CONTRACT_SEASONS, MIN_WAGE_PERMILLE,
+    OfferOutcome, Refusal, asking_fee, evaluate_club, renewal_ask_permille, seller_can_part,
+    wage_ask_permille,
+};
 pub use progression::{PlayerState, advance_season, generate_professionalism, initial_roster};
 pub use quality::{
     generate_match_profiles, generate_match_profiles_from_roster, starters_from_roster_all_clubs,

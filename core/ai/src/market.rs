@@ -202,7 +202,7 @@ pub fn market_value(
 /// mais dinheiro", é um limiar fixo — abaixo dele, aceita sempre que o
 /// preço bate, igual a antes desta fatia. Não calibrado, só a direção
 /// certa.
-const LOYALTY_REFUSAL_THRESHOLD: u8 = 80;
+pub const LOYALTY_REFUSAL_THRESHOLD: u8 = 80;
 
 /// Ambição a partir da qual um jogador recusa ir pra um clube de
 /// reputação menor que a do seu clube atual em [`run_market_day`] — fatia
@@ -210,14 +210,15 @@ const LOYALTY_REFUSAL_THRESHOLD: u8 = 80;
 /// muito ambicioso não aceita um passo atrás de carreira, mesmo com preço
 /// e lealdade batendo. Abaixo do limiar, aceita qualquer destino, igual a
 /// antes desta fatia. Não calibrado, só a direção certa.
-const AMBITION_REFUSAL_THRESHOLD: u8 = 70;
+pub const AMBITION_REFUSAL_THRESHOLD: u8 = 70;
 
 /// `true` se um jogador com `ambition` aceita se mudar de um clube de
 /// reputação `seller_reputation` para um de reputação `buyer_reputation`
 /// — só recusa quando é muito ambicioso **e** o destino é de reputação
 /// estritamente menor; em qualquer outro caso (pouco ambicioso, ou
 /// destino igual/melhor), aceita.
-fn accepts_destination(ambition: u8, seller_reputation: u8, buyer_reputation: u8) -> bool {
+#[must_use]
+pub fn accepts_destination(ambition: u8, seller_reputation: u8, buyer_reputation: u8) -> bool {
     ambition < AMBITION_REFUSAL_THRESHOLD || buyer_reputation >= seller_reputation
 }
 
@@ -261,10 +262,11 @@ fn weakest_starter(squad: &[PlayerRating]) -> Option<PlayerRating> {
 /// (`world::generate_club_reputation`, mesmo índice denso de `budgets`) —
 /// só usada pela recusa de ambição, em nada mais.
 #[must_use]
-pub fn run_market_day(
+pub fn run_market_day_protecting(
     players: &mut [MarketPlayer],
     budgets: &mut [Money],
     club_reputation: &[u8],
+    protected: Option<ClubId>,
 ) -> Vec<Transfer> {
     // Quem titulariza pelo próprio clube, calculado uma vez antes de
     // qualquer transferência: só se vende gente do banco, e vender um
@@ -285,9 +287,22 @@ pub fn run_market_day(
         }
     }
 
+    // O clube protegido (o do técnico humano) não vende nem compra por conta
+    // própria: quem decide é o usuário.
+    if let Some(club) = protected {
+        for (idx, player) in players.iter().enumerate() {
+            if player.club == club {
+                sellable[idx] = false;
+            }
+        }
+    }
+
     let mut transfers = Vec::new();
     for buyer_index in 0..budgets.len() {
         let buyer = ClubId::new(buyer_index as u32);
+        if protected == Some(buyer) {
+            continue;
+        }
         let buyer_squad: Vec<PlayerRating> = players
             .iter()
             .filter(|p| p.club == buyer)
@@ -357,6 +372,16 @@ pub fn run_market_day(
         });
     }
     transfers
+}
+
+/// [`run_market_day_protecting`] sem clube protegido — o mercado da IA para
+/// todos os clubes.
+pub fn run_market_day(
+    players: &mut [MarketPlayer],
+    budgets: &mut [Money],
+    club_reputation: &[u8],
+) -> Vec<Transfer> {
+    run_market_day_protecting(players, budgets, club_reputation, None)
 }
 
 fn to_rating(p: &MarketPlayer) -> PlayerRating {

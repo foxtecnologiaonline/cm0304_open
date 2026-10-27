@@ -77,6 +77,16 @@ pub fn salary_per_season(ability: u8) -> Money {
     Money::from_cents(i64::from(ability) * CENTS_PER_CA_PER_SEASON)
 }
 
+/// Salário de uma temporada de um contrato: o salário-base do CA travado
+/// ([`salary_per_season`]) vezes o `wage_permille` negociado (`1000` = sem
+/// ajuste, o caso de todo contrato que não passou por uma negociação do
+/// técnico humano).
+#[must_use]
+pub fn contract_salary(contract: &ContractState) -> Money {
+    let base = salary_per_season(contract.signed_ability);
+    Money::from_cents(base.cents() * i64::from(contract.wage_permille) / 1000)
+}
+
 /// Debita a folha salarial da temporada: todo jogador do `roster` —
 /// titular ou reserva, saudável, lesionado ou suspenso, o clube paga o
 /// elenco inteiro — desconta `salary_per_season(CA travado no contrato)`
@@ -102,7 +112,7 @@ pub fn pay_salaries(
 ) -> Money {
     let mut total_paid = Money::ZERO;
     for (player, contract) in roster.iter().zip(contracts) {
-        let salary = salary_per_season(contract.signed_ability);
+        let salary = contract_salary(contract);
         let idx = player.club.as_usize();
         let paid = budgets[idx].min(salary);
         let shortfall = salary - paid; // `Money::sub` já satura em zero
@@ -426,6 +436,7 @@ mod tests {
         ContractState {
             seasons_remaining: 3,
             signed_ability: ca,
+            wage_permille: 1000,
         }
     }
 
@@ -745,6 +756,47 @@ mod tests {
         let mut budgets: Vec<Money> = vec![];
         let total_paid = distribute_tv_revenue(&[], &[], &mut budgets);
         assert_eq!(total_paid, Money::ZERO);
+    }
+
+    #[test]
+    fn salario_negociado_escala_o_salario_base_do_contrato() {
+        let base = contract(100);
+        assert_eq!(contract_salary(&base), salary_per_season(100));
+        let double = ContractState {
+            wage_permille: 2000,
+            ..base
+        };
+        assert_eq!(
+            contract_salary(&double).cents(),
+            2 * salary_per_season(100).cents()
+        );
+        let discount = ContractState {
+            wage_permille: 850,
+            ..base
+        };
+        assert!(contract_salary(&discount) < salary_per_season(100));
+    }
+
+    #[test]
+    fn pay_salaries_cobra_o_salario_negociado() {
+        let roster = vec![crate::progression::PlayerState {
+            player: domain::PlayerId::new(0),
+            club: ClubId::new(0),
+            position: domain::Position::Forward,
+            age_years: 25,
+            ability: domain::Ability::new(100, 100),
+            injured: false,
+            condition: 100,
+        }];
+        let contracts = vec![ContractState {
+            wage_permille: 1500,
+            ..contract(100)
+        }];
+        let mut budgets = vec![Money::from_cents(1_000_000_000)];
+        let mut debt = vec![Money::ZERO];
+        let paid = pay_salaries(&roster, &contracts, &mut budgets, &mut debt);
+        assert_eq!(paid, contract_salary(&contracts[0]));
+        assert_eq!(paid.cents(), salary_per_season(100).cents() * 3 / 2);
     }
 
     #[test]

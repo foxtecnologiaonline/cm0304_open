@@ -20,4 +20,7 @@ mod market;
 pub use lineup::{
     FORMATION, Formation, PlayerRating, select_starting_eleven, select_starting_eleven_for,
 };
-pub use market::{MarketPlayer, Transfer, market_value, run_market_day};
+pub use market::{
+    AMBITION_REFUSAL_THRESHOLD, LOYALTY_REFUSAL_THRESHOLD, MarketPlayer, Transfer,
+    accepts_destination, market_value, run_market_day, run_market_day_protecting,
+};

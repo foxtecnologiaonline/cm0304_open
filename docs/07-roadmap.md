@@ -585,6 +585,29 @@ finalizações, gols, assistências, minutos, xG do próprio modelo —
 inventados (RF-PA-07 completo pede zonas, M3). Sem cartões nem lesões
 durante o jogo (ficam em RF-JG-08/09 por temporada).
 
+**F6a feita (compra, renovação e janelas):** o clube do técnico **sai do
+mercado automático** (`ai::run_market_day_protecting`: nem compra nem vende
+sozinho; sem técnico, comportamento idêntico). `Command::BeginSeason` faz a
+pré-temporada sem jogar rodada, abrindo a janela *antes* de a IA fechar
+negócios sem o usuário; janelas (RF-TR-01): verão (rodadas 0-3) e inverno (2
+rodadas a partir da metade da temporada), `Query::TransferWindow`.
+`Command::MakeOffer { player, fee, wage_permille, seasons }` conduz a
+negociação em **duas conversas**, sem RNG (mesma proposta, mesma resposta —
+por isso reproduzível por replay): o **clube vendedor** pede valor de
+mercado + 10% e responde aceita / pede mais (≥70% do pedido) / se ofende
+(<70%) / recusa (jogador intocável por lealdade alta; elenco mínimo de 14 e
+1 GK/4 DF/4 MF/2 FW depois da venda); depois checa o caixa; o **jogador**
+recusa clube de reputação menor se for ambicioso (a mesma regra da IA) ou
+pede um salário (em milésimos do salário-base) que sobe com a distância de
+reputação e a ambição. Recusa e contraproposta **não são erro**:
+`CommandReceipt::offer` devolve um `OfferOutcome` e o técnico ajusta e tenta
+de novo. `Command::RenewContract` renova a qualquer momento (pedido entre 850
+e 1150‰, leal pede menos). `ContractState` ganhou `wage_permille` (1000 =
+base, então folha, golden e calibrate seguem idênticos) e `pay_salaries`
+cobra o salário negociado. Fora do MVP, documentado: **fator de demanda** em
+`market_value` (RF-TR-02), pré-contratos, empréstimos, cláusulas e agente
+(RF-TR-06/07, M3).
+
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04
 (familiaridade posicional) entra só como penalidade fora de posição;

@@ -18,7 +18,7 @@ use crate::query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
     FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchLineRow, MatchScore,
     MatchView, PitchPlayer, PlayerDetail, PlayerMatchRow, PlayerRef, PlayerRow, Query, QueryResult,
-    ResultRow, RoundResults, SeasonProgress, StandingsRow,
+    ResultRow, RoundResults, SeasonProgress, StandingsRow, TransferWindowInfo,
 };
 use engine::Side;
 
@@ -106,7 +106,16 @@ pub struct CommandReceipt {
     /// suspensão, jogador vendido) — `world::resolve_xi`. `Query::Lineup`
     /// diz quem, antes da rodada.
     pub lineup_adjustments: usize,
+    /// Resposta a `Command::MakeOffer`/`Command::RenewContract`; `None` nos
+    /// demais comandos.
+    pub offer: Option<world::OfferOutcome>,
 }
+
+/// A janela de verão fecha antes desta rodada (0-based): rodadas 0 a 3.
+const SUMMER_WINDOW_MATCHDAYS: u32 = 4;
+/// A janela de inverno abre na metade da temporada e dura esta quantidade
+/// de rodadas.
+const WINTER_WINDOW_MATCHDAYS: u32 = 2;
 
 impl CommandReceipt {
     /// Soma o recibo de um comando posterior da mesma temporada: totais
@@ -131,6 +140,7 @@ impl CommandReceipt {
         self.debt_repaid = self.debt_repaid + later.debt_repaid;
         self.sponsorship_paid = self.sponsorship_paid + later.sponsorship_paid;
         self.lineup_adjustments += later.lineup_adjustments;
+        self.offer = later.offer.or(self.offer);
     }
 }
 
@@ -471,6 +481,30 @@ impl GameSession {
                 self.idle_receipt()
             }
             Command::StartMatch => self.start_match()?,
+            Command::BeginSeason => self.begin_season_command()?,
+            Command::MakeOffer {
+                player,
+                fee,
+                wage_permille,
+                seasons,
+            } => {
+                let outcome = self.make_offer(*player, *fee, *wage_permille, *seasons)?;
+                CommandReceipt {
+                    offer: Some(outcome),
+                    ..self.idle_receipt()
+                }
+            }
+            Command::RenewContract {
+                player,
+                wage_permille,
+                seasons,
+            } => {
+                let outcome = self.renew_contract(*player, *wage_permille, *seasons)?;
+                CommandReceipt {
+                    offer: Some(outcome),
+                    ..self.idle_receipt()
+                }
+            }
             Command::PlayMinutes { minutes } => {
                 self.play_minutes(*minutes)?;
                 self.idle_receipt()
@@ -723,6 +757,167 @@ impl GameSession {
         }
     }
 
+    /// Janelas de transferência (RF-TR-01): a de verão vai da pré-temporada
+    /// até a rodada `SUMMER_WINDOW_MATCHDAYS`; a de inverno abre no meio da
+    /// temporada e dura `WINTER_WINDOW_MATCHDAYS` rodadas. Fora de uma
+    /// temporada em andamento não há janela.
+    fn window_info(&self) -> TransferWindowInfo {
+        let Some(active) = &self.season else {
+            return TransferWindowInfo {
+                open: false,
+                matchdays_until_change: None,
+            };
+        };
+        let next = active.run.next_matchday();
+        let winter_start = active.run.total_matchdays() / 2;
+        let winter_end = winter_start + WINTER_WINDOW_MATCHDAYS;
+        let (open, until) = if next < SUMMER_WINDOW_MATCHDAYS {
+            (true, Some(SUMMER_WINDOW_MATCHDAYS - next))
+        } else if (winter_start..winter_end).contains(&next) {
+            (true, Some(winter_end - next))
+        } else if next < winter_start {
+            (false, Some(winter_start - next))
+        } else {
+            (false, None)
+        };
+        TransferWindowInfo {
+            open,
+            matchdays_until_change: until,
+        }
+    }
+
+    /// Ver [`Command::BeginSeason`].
+    fn begin_season_command(&mut self) -> Result<CommandReceipt, AppError> {
+        if self.season.is_some() {
+            return Err(AppError::SeasonAlreadyBegun);
+        }
+        let mut receipt = CommandReceipt::default();
+        let active = self.begin_season(&mut receipt);
+        receipt.season_index = active.run.season_index();
+        receipt.matchdays_total = active.run.total_matchdays();
+        self.season = Some(active);
+        Ok(receipt)
+    }
+
+    /// Ver [`Command::MakeOffer`].
+    fn make_offer(
+        &mut self,
+        player: domain::PlayerId,
+        fee: domain::Money,
+        wage_permille: u16,
+        seasons: u8,
+    ) -> Result<world::OfferOutcome, AppError> {
+        use world::{ClubVerdict, OfferOutcome, Refusal};
+        let buyer = self.manager.as_ref().ok_or(AppError::NoClubTaken)?.club;
+        if self.live.is_some() {
+            return Err(AppError::MatchInProgress);
+        }
+        if !self.window_info().open {
+            return Err(AppError::TransferWindowClosed);
+        }
+        self.validate_terms(wage_permille, seasons)?;
+        let idx = player.as_usize();
+        let state = *self
+            .roster
+            .get(idx)
+            .ok_or(AppError::InvalidOffer("jogador inexistente"))?;
+        if state.club == buyer {
+            return Err(AppError::InvalidOffer("o jogador já é do seu clube"));
+        }
+        let seller = state.club;
+
+        // 1. O clube vendedor.
+        if self.loyalty[idx] >= ai::LOYALTY_REFUSAL_THRESHOLD {
+            return Ok(OfferOutcome::ClubRefuses(Refusal::NotForSale));
+        }
+        if !world::seller_can_part(&self.roster, seller, player) {
+            return Ok(OfferOutcome::ClubRefuses(Refusal::SquadLimits));
+        }
+        let value = ai::market_value(
+            state.ability.current(),
+            self.contracts[idx].seasons_remaining,
+            state.age_years.clamp(0, 255) as u8,
+            state.ability.potential(),
+            self.club_reputation[seller.as_usize()],
+        );
+        match world::evaluate_club(fee, value) {
+            ClubVerdict::Refuse(reason) => return Ok(OfferOutcome::ClubRefuses(reason)),
+            ClubVerdict::Counter(asking) => return Ok(OfferOutcome::ClubWantsMore { asking }),
+            ClubVerdict::Accept => {}
+        }
+        if self.budgets[buyer.as_usize()] < fee {
+            return Ok(OfferOutcome::CannotAfford);
+        }
+
+        // 2. O jogador.
+        let seller_rep = self.club_reputation[seller.as_usize()];
+        let buyer_rep = self.club_reputation[buyer.as_usize()];
+        if !ai::accepts_destination(self.ambition[idx], seller_rep, buyer_rep) {
+            return Ok(OfferOutcome::PlayerRefuses(Refusal::WantsBiggerClub));
+        }
+        let ask = world::wage_ask_permille(self.ambition[idx], seller_rep, buyer_rep);
+        if wage_permille < ask {
+            return Ok(OfferOutcome::PlayerWantsMore {
+                asking_wage_permille: ask,
+            });
+        }
+
+        // 3. Fechado: o dinheiro muda de mãos, o jogador troca de clube e
+        // assina o contrato negociado, e volta a sofrer o malus de
+        // adaptação (`world::adaptation`).
+        self.budgets[buyer.as_usize()] = self.budgets[buyer.as_usize()] - fee;
+        self.budgets[seller.as_usize()] = self.budgets[seller.as_usize()] + fee;
+        self.roster[idx].club = buyer;
+        self.contracts[idx] = world::ContractState {
+            seasons_remaining: seasons,
+            signed_ability: state.ability.current(),
+            wage_permille,
+        };
+        world::mark_transferred(&mut self.seasons_since_transfer, &[player]);
+        Ok(OfferOutcome::Accepted)
+    }
+
+    /// Ver [`Command::RenewContract`].
+    fn renew_contract(
+        &mut self,
+        player: domain::PlayerId,
+        wage_permille: u16,
+        seasons: u8,
+    ) -> Result<world::OfferOutcome, AppError> {
+        let club = self.manager.as_ref().ok_or(AppError::NoClubTaken)?.club;
+        self.validate_terms(wage_permille, seasons)?;
+        let idx = player.as_usize();
+        let state = *self
+            .roster
+            .get(idx)
+            .ok_or(AppError::InvalidOffer("jogador inexistente"))?;
+        if state.club != club {
+            return Err(AppError::InvalidOffer("o jogador não é do seu clube"));
+        }
+        let ask = world::renewal_ask_permille(self.ambition[idx], self.loyalty[idx]);
+        if wage_permille < ask {
+            return Ok(world::OfferOutcome::PlayerWantsMore {
+                asking_wage_permille: ask,
+            });
+        }
+        self.contracts[idx] = world::ContractState {
+            seasons_remaining: seasons,
+            signed_ability: state.ability.current(),
+            wage_permille,
+        };
+        Ok(world::OfferOutcome::Accepted)
+    }
+
+    fn validate_terms(&self, wage_permille: u16, seasons: u8) -> Result<(), AppError> {
+        if !(world::MIN_CONTRACT_SEASONS..=world::MAX_CONTRACT_SEASONS).contains(&seasons) {
+            return Err(AppError::InvalidOffer("contrato de 1 a 5 temporadas"));
+        }
+        if !(world::MIN_WAGE_PERMILLE..=world::MAX_WAGE_PERMILLE).contains(&wage_permille) {
+            return Err(AppError::InvalidOffer("salário fora da faixa aceita"));
+        }
+        Ok(())
+    }
+
     /// Joga uma rodada; se a temporada ainda não começou, faz a
     /// pré-temporada antes, e se a rodada foi a última, o fechamento depois.
     fn advance_round(&mut self) -> CommandReceipt {
@@ -798,6 +993,7 @@ impl GameSession {
             &self.ambition,
             &self.club_reputation,
             &mut self.budgets,
+            self.manager.as_ref().map(|m| m.club),
         );
         receipt.transfers = transfers.len();
         // Quem acabou de ser transferido volta a sofrer o malus de
@@ -962,6 +1158,7 @@ impl GameSession {
                     .as_ref()
                     .map(|game| self.match_view(&game.report(), lines_from, Some(game))),
             ),
+            Query::TransferWindow => QueryResult::TransferWindow(self.window_info()),
             Query::LastMatch => QueryResult::LastMatch(
                 self.last_match
                     .as_ref()
@@ -1126,7 +1323,7 @@ impl GameSession {
         for (state, contract) in self.roster.iter().zip(&self.contracts) {
             if state.club == club {
                 squad_size += 1;
-                payroll = payroll + world::salary_per_season(contract.signed_ability);
+                payroll = payroll + world::contract_salary(contract);
             }
         }
         Some(ClubDetail {
@@ -1162,7 +1359,8 @@ impl GameSession {
                 .as_ref()
                 .is_some_and(|a| a.run.is_suspended(state.player)),
             contract_seasons_remaining: contract.seasons_remaining,
-            salary_per_season: world::salary_per_season(contract.signed_ability),
+            salary_per_season: world::contract_salary(contract),
+            wage_permille: contract.wage_permille,
             market_value: ai::market_value(
                 state.ability.current(),
                 contract.seasons_remaining,
@@ -2145,26 +2343,36 @@ mod tests {
     }
 
     #[test]
-    fn take_club_sobrevive_ao_save_e_load_e_nao_muda_a_simulacao() {
-        let mut observer = GameSession::new(&example_pack_path(), 21).unwrap();
+    fn clube_do_tecnico_sai_do_mercado_automatico_e_o_resto_do_mundo_continua() {
+        // Com técnico, a IA não compra nem vende pelo clube dele: o elenco
+        // do clube só muda por decisão do usuário (que não houve aqui).
         let mut managed = GameSession::new(&example_pack_path(), 21).unwrap();
         take(&mut managed, 2, "Zé Treinador").unwrap();
-        for _ in 0..2 {
-            observer.dispatch(Command::AdvanceSeason).unwrap();
-            managed.dispatch(Command::AdvanceSeason).unwrap();
+        let before: Vec<_> = squad_of(&managed, 2).iter().map(|p| p.id).collect();
+        let mut transfers_elsewhere = 0;
+        for _ in 0..5 {
+            transfers_elsewhere += managed.dispatch(Command::AdvanceSeason).unwrap().transfers;
         }
-        // Nada consome o clube assumido ainda: o mundo é idêntico.
-        assert_eq!(observer.budgets, managed.budgets);
-        for comp in observer.pack.competitions.iter().map(|c| c.id) {
-            assert_eq!(
-                observer.query(Query::Standings { competition: comp }),
-                managed.query(Query::Standings { competition: comp })
-            );
-        }
+        let mut after: Vec<_> = squad_of(&managed, 2).iter().map(|p| p.id).collect();
+        let mut before_sorted = before;
+        before_sorted.sort();
+        after.sort();
+        assert_eq!(before_sorted, after, "elenco do técnico intacto");
+        assert!(
+            transfers_elsewhere > 0,
+            "a IA segue negociando entre os demais"
+        );
+    }
 
+    #[test]
+    fn take_club_sobrevive_ao_save_e_load() {
+        let mut managed = GameSession::new(&example_pack_path(), 21).unwrap();
+        take(&mut managed, 2, "Zé Treinador").unwrap();
+        managed.dispatch(Command::AdvanceSeason).unwrap();
         let reloaded = GameSession::load(&example_pack_path(), &managed.to_save()).unwrap();
         assert_eq!(manager(&reloaded), manager(&managed));
         assert_eq!(reloaded.to_save(), managed.to_save());
+        assert_eq!(reloaded.budgets, managed.budgets);
     }
 
     fn live_view(session: &GameSession, lines_from: usize) -> Option<MatchView> {
@@ -2473,6 +2681,392 @@ mod tests {
         reloaded.dispatch(Command::AdvanceSeason).unwrap();
         assert_eq!(last_match(&original), last_match(&reloaded));
         assert_eq!(original.budgets, reloaded.budgets);
+    }
+
+    fn window(session: &GameSession) -> TransferWindowInfo {
+        match session.query(Query::TransferWindow) {
+            QueryResult::TransferWindow(w) => w,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    /// Sessão com técnico no clube 3, janela de verão aberta e caixa
+    /// farto — o cenário base das negociações.
+    fn market_ready() -> GameSession {
+        let mut session = managed(3);
+        session.dispatch(Command::BeginSeason).unwrap();
+        session.budgets[3] = domain::Money::from_cents(1_000_000_000_000);
+        session
+    }
+
+    /// Um jogador comprável (de outro clube, nada de intocável).
+    fn buyable(session: &GameSession) -> domain::PlayerId {
+        (0..session.roster.len())
+            .find(|&i| {
+                let p = &session.roster[i];
+                p.club != domain::ClubId::new(3)
+                    && session.loyalty[i] < ai::LOYALTY_REFUSAL_THRESHOLD
+                    && world::seller_can_part(&session.roster, p.club, p.player)
+                    && session.ambition[i] < ai::AMBITION_REFUSAL_THRESHOLD
+            })
+            .map(|i| domain::PlayerId::new(i as u32))
+            .expect("pack de exemplo tem jogador comprável")
+    }
+
+    fn offer(
+        session: &mut GameSession,
+        player: domain::PlayerId,
+        fee: i64,
+        wage: u16,
+    ) -> Result<world::OfferOutcome, AppError> {
+        let receipt = session.dispatch(Command::MakeOffer {
+            player,
+            fee: domain::Money::from_cents(fee),
+            wage_permille: wage,
+            seasons: 3,
+        })?;
+        Ok(receipt.offer.expect("MakeOffer sempre responde"))
+    }
+
+    #[test]
+    fn janela_so_abre_com_a_temporada_e_fecha_e_reabre_ao_longo_dela() {
+        let mut session = managed(3);
+        assert_eq!(
+            window(&session),
+            TransferWindowInfo {
+                open: false,
+                matchdays_until_change: None
+            }
+        );
+        let p = buyable(&session);
+        assert!(matches!(
+            offer(&mut session, p, 1, 1000),
+            Err(AppError::TransferWindowClosed)
+        ));
+
+        let receipt = session.dispatch(Command::BeginSeason).unwrap();
+        assert!(
+            receipt.payroll_paid.cents() > 0,
+            "pré-temporada no BeginSeason"
+        );
+        assert_eq!(receipt.matches_played, 0);
+        assert!(matches!(
+            session.dispatch(Command::BeginSeason),
+            Err(AppError::SeasonAlreadyBegun)
+        ));
+        assert!(window(&session).open);
+        assert_eq!(window(&session).matchdays_until_change, Some(4));
+
+        for _ in 0..4 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+        }
+        assert_eq!(
+            window(&session),
+            TransferWindowInfo {
+                open: false,
+                matchdays_until_change: Some(3)
+            },
+            "fechada; abre de novo no meio da temporada (rodada 7)"
+        );
+        for _ in 0..3 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+        }
+        assert_eq!(
+            window(&session),
+            TransferWindowInfo {
+                open: true,
+                matchdays_until_change: Some(2)
+            }
+        );
+        for _ in 0..2 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+        }
+        assert_eq!(
+            window(&session),
+            TransferWindowInfo {
+                open: false,
+                matchdays_until_change: None
+            }
+        );
+    }
+
+    #[test]
+    fn begin_season_nao_repete_a_pre_temporada_na_primeira_rodada() {
+        let mut session = managed(3);
+        session.dispatch(Command::BeginSeason).unwrap();
+        let first = session.dispatch(Command::AdvanceRound).unwrap();
+        assert_eq!(first.payroll_paid, domain::Money::ZERO);
+        assert_eq!(first.matches_played, 8);
+    }
+
+    #[test]
+    fn negociacao_em_etapas_ofensa_contraproposta_salario_e_fechado() {
+        use world::{OfferOutcome as O, Refusal};
+        let mut session = market_ready();
+        let p = buyable(&session);
+        let seller = session.roster[p.as_usize()].club;
+        let squad_before = squad_of(&session, seller.index()).len();
+        let (buyer_budget, seller_budget) =
+            (session.budgets[3], session.budgets[seller.as_usize()]);
+
+        assert_eq!(
+            offer(&mut session, p, 1, 3000).unwrap(),
+            O::ClubRefuses(Refusal::InsultingOffer)
+        );
+        let state = session.roster[p.as_usize()];
+        let value = ai::market_value(
+            state.ability.current(),
+            session.contracts[p.as_usize()].seasons_remaining,
+            state.age_years as u8,
+            state.ability.potential(),
+            session.club_reputation[seller.as_usize()],
+        );
+        let eighty_percent = world::asking_fee(value).cents() * 80 / 100;
+        let O::ClubWantsMore { asking } = offer(&mut session, p, eighty_percent, 3000).unwrap()
+        else {
+            panic!("fee intermediária deveria gerar contraproposta")
+        };
+        assert_eq!(asking, world::asking_fee(value));
+        // Fee aceita, mas salário baixo: o jogador pede mais.
+        let O::PlayerWantsMore {
+            asking_wage_permille,
+        } = offer(&mut session, p, asking.cents(), 500).unwrap()
+        else {
+            panic!("salário baixo deveria gerar pedido do jogador")
+        };
+        assert!(asking_wage_permille >= 1000);
+        assert_eq!(
+            session.roster[p.as_usize()].club,
+            seller,
+            "nada mudou ainda"
+        );
+        assert_eq!(session.budgets[3], buyer_budget);
+
+        let outcome = offer(&mut session, p, asking.cents(), asking_wage_permille).unwrap();
+        assert_eq!(outcome, O::Accepted);
+        assert_eq!(session.roster[p.as_usize()].club, domain::ClubId::new(3));
+        assert_eq!(session.budgets[3], buyer_budget - asking);
+        assert_eq!(session.budgets[seller.as_usize()], seller_budget + asking);
+        let contract = session.contracts[p.as_usize()];
+        assert_eq!(contract.seasons_remaining, 3);
+        assert_eq!(contract.wage_permille, asking_wage_permille);
+        assert_eq!(squad_of(&session, seller.index()).len(), squad_before - 1);
+        assert_eq!(
+            session.seasons_since_transfer[p.as_usize()],
+            0,
+            "adaptação recomeça"
+        );
+
+        let QueryResult::Player(Some(detail)) = session.query(Query::Player { player: p }) else {
+            panic!()
+        };
+        assert_eq!(detail.row.club, domain::ClubId::new(3));
+        assert_eq!(detail.row.wage_permille, asking_wage_permille);
+        assert!(detail.row.salary_per_season.cents() > 0);
+
+        // Comprar o mesmo jogador de novo é inválido: já é seu.
+        assert!(matches!(
+            offer(&mut session, p, asking.cents(), 3000),
+            Err(AppError::InvalidOffer(_))
+        ));
+    }
+
+    #[test]
+    fn salario_negociado_pesa_na_folha_da_proxima_pre_temporada() {
+        let mut session = market_ready();
+        let p = buyable(&session);
+        let accepted = world::OfferOutcome::Accepted;
+        let QueryResult::Club(Some(before)) = session.query(Query::Club {
+            club: domain::ClubId::new(3),
+        }) else {
+            panic!()
+        };
+        // Paga bem acima do pedido nos dois lados para fechar de primeira.
+        let outcome = offer(&mut session, p, 500_000_000_000, 3000).unwrap();
+        assert_eq!(outcome, accepted);
+        let QueryResult::Club(Some(after)) = session.query(Query::Club {
+            club: domain::ClubId::new(3),
+        }) else {
+            panic!()
+        };
+        assert_eq!(after.squad_size, before.squad_size + 1);
+        let base = world::salary_per_season(session.contracts[p.as_usize()].signed_ability);
+        assert_eq!(
+            after.payroll_per_season.cents() - before.payroll_per_season.cents(),
+            base.cents() * 3,
+            "salário 3000‰ = 3x o base"
+        );
+    }
+
+    #[test]
+    fn recusas_do_clube_e_do_jogador_e_falta_de_caixa_nao_mudam_nada() {
+        use world::{OfferOutcome as O, Refusal};
+        let mut session = market_ready();
+        let p = buyable(&session);
+        let idx = p.as_usize();
+        let seller = session.roster[idx].club;
+        let snapshot = |s: &GameSession| (s.budgets.clone(), s.roster.clone());
+
+        let state = snapshot(&session);
+        session.loyalty[idx] = 100;
+        assert_eq!(
+            offer(&mut session, p, 500_000_000_000, 3000).unwrap(),
+            O::ClubRefuses(Refusal::NotForSale)
+        );
+        session.loyalty[idx] = 0;
+
+        session.budgets[3] = domain::Money::from_cents(10);
+        assert_eq!(
+            offer(&mut session, p, 500_000_000_000, 3000).unwrap(),
+            O::CannotAfford
+        );
+        session.budgets[3] = domain::Money::from_cents(1_000_000_000_000);
+
+        session.ambition[idx] = 100;
+        session.club_reputation[3] = 5;
+        session.club_reputation[seller.as_usize()] = 95;
+        assert_eq!(
+            offer(&mut session, p, 500_000_000_000, 3000).unwrap(),
+            O::PlayerRefuses(Refusal::WantsBiggerClub)
+        );
+        // Só os ajustes manuais do teste mudaram; nenhuma recusa mexeu em caixa/elenco.
+        let after = snapshot(&session);
+        assert_eq!(after.1, state.1);
+        assert_eq!(after.0[seller.as_usize()], state.0[seller.as_usize()]);
+    }
+
+    #[test]
+    fn vendedor_com_elenco_no_limite_recusa_vender() {
+        use world::{OfferOutcome as O, Refusal};
+        let mut session = market_ready();
+        let p = buyable(&session);
+        let seller = session.roster[p.as_usize()].club;
+        // Tira jogadores do vendedor até ficar com 14: não pode mais vender.
+        let mut sellers_players: Vec<usize> = (0..session.roster.len())
+            .filter(|&i| session.roster[i].club == seller && i != p.as_usize())
+            .collect();
+        sellers_players.sort_by_key(|&i| std::cmp::Reverse(i));
+        let mut count = squad_of(&session, seller.index()).len();
+        for i in sellers_players {
+            if count <= 14 {
+                break;
+            }
+            // devolve para um terceiro clube, preservando o mínimo por linha
+            let other = domain::ClubId::new(if seller.index() == 15 { 14 } else { 15 });
+            if session.roster[i].position != session.roster[p.as_usize()].position {
+                session.roster[i].club = other;
+                count -= 1;
+            }
+        }
+        assert!(count <= 14, "montagem do cenário");
+        assert_eq!(
+            offer(&mut session, p, 500_000_000_000, 3000).unwrap(),
+            O::ClubRefuses(Refusal::SquadLimits)
+        );
+    }
+
+    #[test]
+    fn propostas_mal_formadas_sao_erro_tipado_e_nao_entram_no_log() {
+        let mut session = market_ready();
+        let p = buyable(&session);
+        let log = session.to_save().command_log;
+        let own = squad_of(&session, 3)[0].id;
+        for (player, wage, seasons) in [
+            (own, 1000u16, 3u8),
+            (domain::PlayerId::new(99_999), 1000, 3),
+            (p, 1000, 0),
+            (p, 1000, 6),
+            (p, 100, 3),
+            (p, 9000, 3),
+        ] {
+            let result = session.dispatch(Command::MakeOffer {
+                player,
+                fee: domain::Money::from_cents(1),
+                wage_permille: wage,
+                seasons,
+            });
+            assert!(
+                matches!(result, Err(AppError::InvalidOffer(_))),
+                "{player} {wage} {seasons}"
+            );
+        }
+        assert_eq!(session.to_save().command_log, log);
+    }
+
+    #[test]
+    fn nao_da_para_negociar_compra_durante_uma_partida_ao_vivo() {
+        let mut session = market_ready();
+        let p = buyable(&session);
+        session.dispatch(Command::StartMatch).unwrap();
+        assert!(matches!(
+            offer(&mut session, p, 1, 1000),
+            Err(AppError::MatchInProgress)
+        ));
+    }
+
+    #[test]
+    fn renovacao_exige_o_salario_pedido_e_vale_a_qualquer_momento() {
+        use world::OfferOutcome as O;
+        let mut session = managed(3);
+        let own = squad_of(&session, 3)[2].id;
+        let renew = |s: &mut GameSession, wage, seasons| {
+            s.dispatch(Command::RenewContract {
+                player: own,
+                wage_permille: wage,
+                seasons,
+            })
+            .map(|r| r.offer.unwrap())
+        };
+        let O::PlayerWantsMore {
+            asking_wage_permille,
+        } = renew(&mut session, 500, 4).unwrap()
+        else {
+            panic!("salário mínimo deveria ser pouco")
+        };
+        assert!((850..=1150).contains(&asking_wage_permille));
+        assert_eq!(
+            renew(&mut session, asking_wage_permille, 4).unwrap(),
+            O::Accepted
+        );
+        let contract = session.contracts[own.as_usize()];
+        assert_eq!(contract.seasons_remaining, 4);
+        assert_eq!(contract.wage_permille, asking_wage_permille);
+        assert_eq!(
+            contract.signed_ability,
+            session.roster[own.as_usize()].ability.current()
+        );
+
+        let stranger = squad_of(&session, 4)[0].id;
+        assert!(matches!(
+            session.dispatch(Command::RenewContract {
+                player: stranger,
+                wage_permille: 1000,
+                seasons: 2
+            }),
+            Err(AppError::InvalidOffer(_))
+        ));
+    }
+
+    #[test]
+    fn negociacoes_sobrevivem_ao_save_e_load() {
+        // O replay só tem comandos: sem ajustar o caixa direto, a oferta usa
+        // o orçamento real do clube.
+        let mut replayable = managed(3);
+        replayable.dispatch(Command::BeginSeason).unwrap();
+        let target = buyable(&replayable);
+        let fee = replayable.budgets[3].cents();
+        let _ = replayable.dispatch(Command::MakeOffer {
+            player: target,
+            fee: domain::Money::from_cents(fee),
+            wage_permille: 3000,
+            seasons: 5,
+        });
+        replayable.dispatch(Command::AdvanceSeason).unwrap();
+
+        let reloaded = GameSession::load(&example_pack_path(), &replayable.to_save()).unwrap();
+        assert_eq!(reloaded.budgets, replayable.budgets);
+        assert_eq!(reloaded.contracts, replayable.contracts);
+        assert_eq!(reloaded.to_save(), replayable.to_save());
     }
 
     fn first_player_ids(session: &GameSession, club: u32, n: usize) -> Vec<domain::PlayerId> {
