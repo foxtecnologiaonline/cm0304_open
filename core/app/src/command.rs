@@ -7,7 +7,9 @@
 //! existentes dependem disso. Comando novo = tag nova + payload novo; o
 //! formato do arquivo (`persist`) não muda.
 
-use domain::{ClubId, NationId};
+use ai::Formation;
+use domain::{ClubId, NationId, PlayerId};
+use world::{Mentality, Pressing};
 
 use crate::error::AppError;
 
@@ -49,11 +51,34 @@ pub enum Command {
     /// carreira. Sem `TakeClub` a sessão é só observadora (modo headless:
     /// `calibrate`, `play`, golden master).
     TakeClub { club: ClubId, coach: CoachProfile },
+    /// Muda a formação mantendo a escalação **automática** (o melhor onze
+    /// disponível a cada rodada) — descarta uma escalação manual anterior.
+    /// Exige um clube sob comando.
+    SetFormation { formation: Formation },
+    /// Escalação manual: os 11 titulares na ordem dos espaços da formação
+    /// (goleiro, defensores, meio-campistas, atacantes). Todos do clube,
+    /// distintos, sem lesão nem suspensão na próxima rodada; jogar fora da
+    /// posição natural é permitido, mas rende menos
+    /// (`world::position_fit_permille`). Se alguém ficar indisponível
+    /// depois, o melhor substituto entra sozinho na rodada.
+    SetLineup {
+        formation: Formation,
+        starters: Vec<PlayerId>,
+    },
+    /// Mentalidade e pressão do time (RF-PA-02, subconjunto — ver
+    /// `world::setup`). Valem até serem trocadas.
+    SetInstructions {
+        mentality: Mentality,
+        pressing: Pressing,
+    },
 }
 
 const TAG_ADVANCE_SEASON: u8 = 1;
 const TAG_ADVANCE_ROUND: u8 = 2;
 const TAG_TAKE_CLUB: u8 = 3;
+const TAG_SET_FORMATION: u8 = 4;
+const TAG_SET_LINEUP: u8 = 5;
+const TAG_SET_INSTRUCTIONS: u8 = 6;
 
 impl Command {
     /// Acrescenta a codificação deste comando ao log.
@@ -70,6 +95,29 @@ impl Command {
                 // `dispatch` já validou `name.len() <= MAX_COACH_NAME_BYTES`.
                 out.push(name.len() as u8);
                 out.extend_from_slice(name);
+            }
+            Command::SetFormation { formation } => {
+                out.push(TAG_SET_FORMATION);
+                out.push(formation.code());
+            }
+            Command::SetLineup {
+                formation,
+                starters,
+            } => {
+                out.push(TAG_SET_LINEUP);
+                out.push(formation.code());
+                // `dispatch` já validou `starters.len() == 11`.
+                for id in starters {
+                    out.extend_from_slice(&id.index().to_le_bytes());
+                }
+            }
+            Command::SetInstructions {
+                mentality,
+                pressing,
+            } => {
+                out.push(TAG_SET_INSTRUCTIONS);
+                out.push(mentality.code());
+                out.push(pressing.code());
             }
         }
     }
@@ -112,6 +160,25 @@ impl Command {
                     },
                 }
             }
+            TAG_SET_FORMATION => Command::SetFormation {
+                formation: Formation::from_code(take(1)?[0]).ok_or_else(bad)?,
+            },
+            TAG_SET_LINEUP => {
+                let formation = Formation::from_code(take(1)?[0]).ok_or_else(bad)?;
+                let mut starters = Vec::with_capacity(11);
+                for _ in 0..11 {
+                    let id = u32::from_le_bytes(take(4)?.try_into().map_err(|_| bad())?);
+                    starters.push(PlayerId::new(id));
+                }
+                Command::SetLineup {
+                    formation,
+                    starters,
+                }
+            }
+            TAG_SET_INSTRUCTIONS => Command::SetInstructions {
+                mentality: Mentality::from_code(take(1)?[0]).ok_or_else(bad)?,
+                pressing: Pressing::from_code(take(1)?[0]).ok_or_else(bad)?,
+            },
             _ => return Err(bad()),
         };
         *pos = cursor;
@@ -147,9 +214,24 @@ mod tests {
         assert_eq!(decoded, commands);
     }
 
+    fn set_lineup() -> Command {
+        Command::SetLineup {
+            formation: Formation::F433,
+            starters: (0..11).map(|i| PlayerId::new(i * 3)).collect(),
+        }
+    }
+
     #[test]
     fn todo_comando_faz_round_trip_no_log() {
         round_trip(&[
+            Command::SetFormation {
+                formation: Formation::F532,
+            },
+            set_lineup(),
+            Command::SetInstructions {
+                mentality: Mentality::Attacking,
+                pressing: Pressing::High,
+            },
             take_club(),
             Command::AdvanceRound,
             Command::AdvanceSeason,
@@ -164,9 +246,26 @@ mod tests {
         Command::AdvanceSeason.encode(&mut log);
         Command::AdvanceRound.encode(&mut log);
         assert_eq!(log, vec![1, 2]);
-        let mut log = Vec::new();
-        take_club().encode(&mut log);
-        assert_eq!(log[0], 3);
+        let tag_of = |c: Command| {
+            let mut log = Vec::new();
+            c.encode(&mut log);
+            log[0]
+        };
+        assert_eq!(tag_of(take_club()), 3);
+        assert_eq!(
+            tag_of(Command::SetFormation {
+                formation: Formation::F442
+            }),
+            4
+        );
+        assert_eq!(tag_of(set_lineup()), 5);
+        assert_eq!(
+            tag_of(Command::SetInstructions {
+                mentality: Mentality::Balanced,
+                pressing: Pressing::Normal
+            }),
+            6
+        );
     }
 
     #[test]
@@ -179,17 +278,29 @@ mod tests {
                 tag: 99
             })
         ));
-        let mut full = Vec::new();
-        take_club().encode(&mut full);
-        for cut in 1..full.len() {
+        for command in [take_club(), set_lineup()] {
+            let mut full = Vec::new();
+            command.encode(&mut full);
+            for cut in 1..full.len() {
+                let mut pos = 0;
+                assert!(
+                    matches!(
+                        Command::decode(&full[..cut], &mut pos),
+                        Err(AppError::InvalidCommandLog { .. })
+                    ),
+                    "corte em {cut} deveria falhar"
+                );
+            }
+        }
+        // Códigos de enum desconhecidos também são erro tipado.
+        for bad in [[4u8, 99], [6, 9], [6, 0]] {
             let mut pos = 0;
-            assert!(
-                matches!(
-                    Command::decode(&full[..cut], &mut pos),
-                    Err(AppError::InvalidCommandLog { .. })
-                ),
-                "corte em {cut} deveria falhar"
-            );
+            let result = Command::decode(&bad, &mut pos);
+            if bad == [6, 0] {
+                assert!(result.is_err(), "falta o byte de pressão");
+            } else {
+                assert!(matches!(result, Err(AppError::InvalidCommandLog { .. })));
+            }
         }
     }
 }

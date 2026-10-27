@@ -42,6 +42,11 @@ pub enum AppError {
     /// [`crate::Command::TakeClub`] depois da primeira rodada da carreira:
     /// trocar de clube no meio do jogo é demissão/convite (RF-CA-03, M3).
     CareerAlreadyStarted,
+    /// Comando de técnico (escalação, instruções) sem nenhum clube sob
+    /// comando — falta `Command::TakeClub`.
+    NoClubTaken,
+    /// Escalação recusada (motivo em português, mostrável direto na UI).
+    InvalidLineup(&'static str),
 }
 
 impl fmt::Display for AppError {
@@ -63,6 +68,8 @@ impl fmt::Display for AppError {
                 "save é do pack '{save_pack_id}' v{save_pack_version}, mas foi carregado com \
                  '{loaded_pack_id}' v{loaded_pack_version}"
             ),
+            AppError::NoClubTaken => write!(f, "nenhum clube sob seu comando ainda"),
+            AppError::InvalidLineup(reason) => write!(f, "escalação inválida: {reason}"),
             AppError::UnknownClub(club) => write!(f, "o pack não tem o clube {club}"),
             AppError::InvalidCoach(reason) => write!(f, "perfil de técnico inválido: {reason}"),
             AppError::ClubAlreadyTaken => write!(f, "já há um clube sob seu comando"),
@@ -91,7 +98,9 @@ impl std::error::Error for AppError {
             | AppError::UnknownClub(_)
             | AppError::InvalidCoach(_)
             | AppError::ClubAlreadyTaken
-            | AppError::CareerAlreadyStarted => None,
+            | AppError::CareerAlreadyStarted
+            | AppError::NoClubTaken
+            | AppError::InvalidLineup(_) => None,
         }
     }
 }

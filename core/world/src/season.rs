@@ -83,6 +83,10 @@ pub struct CareerRound<'a> {
     /// leitura durante o loop por rodada), mesmo índice denso do roster
     /// inteiro.
     pub seasons_since_transfer: &'a [u8],
+    /// Escalação e instruções do técnico humano (`crate::setup`) — vazio
+    /// numa sessão só observadora, uma entrada quando há um clube sob
+    /// comando. Clube sem entrada aqui segue o caminho da IA.
+    pub setups: &'a [crate::setup::ClubSetup],
 }
 
 /// Resultado de simular uma temporada inteira, competição por competição.
@@ -374,7 +378,14 @@ fn simulate_round_robin_static(
     for fixture in fixtures {
         let home = profiles[fixture.home.as_usize()];
         let away = profiles[fixture.away.as_usize()];
-        let (score, shots) = simulate_fixture(home, away, world_seed, season_index, &fixture);
+        let (score, shots) = simulate_fixture(
+            home,
+            away,
+            (engine::Tactics::NEUTRAL, engine::Tactics::NEUTRAL),
+            world_seed,
+            season_index,
+            &fixture,
+        );
         outcome.record_match(fixture, score, shots);
     }
     outcome
@@ -396,6 +407,10 @@ pub struct MatchdayReport {
     pub match_day_revenue: Money,
     /// Placar de cada partida desta rodada, competição por competição.
     pub results: Vec<(CompetitionId, Fixture, Score)>,
+    /// Titulares escalados pelo técnico humano que não puderam jogar nesta
+    /// rodada, com quem entrou no lugar: `(saiu, entrou)`
+    /// (`crate::setup::resolve_xi`).
+    pub lineup_adjustments: Vec<(PlayerId, PlayerId)>,
 }
 
 /// Estado de uma liga no meio da temporada (ver [`SeasonRun`]).
@@ -680,18 +695,39 @@ fn play_league_round(
 
     let mut round_profiles: HashMap<ClubId, engine::TeamMatchProfile> =
         HashMap::with_capacity(playing_clubs.len());
+    let mut round_tactics: HashMap<ClubId, engine::Tactics> = HashMap::new();
     let mut starters_by_club: Vec<(ClubId, Vec<PlayerId>)> =
         Vec::with_capacity(playing_clubs.len());
     for &club in &playing_clubs {
-        let profile = crate::quality::profile_from_roster_excluding_or_synthetic(
-            pack,
-            career.roster,
-            club,
-            suspended,
-            world_seed,
-        );
-        let starters =
-            crate::quality::starters_from_roster_excluding(career.roster, club, suspended);
+        // Clube com técnico humano: onze e táticas vêm do `ClubSetup`
+        // (`crate::setup`); todos os outros seguem o caminho da IA.
+        let (profile, starters) = match career.setups.iter().find(|s| s.club == club) {
+            Some(setup) => {
+                let xi = crate::setup::resolve_xi(career.roster, setup, suspended);
+                report
+                    .lineup_adjustments
+                    .extend(xi.adjustments.iter().copied());
+                let (profile, tactics) = crate::setup::profile_for(pack, career.roster, &xi, setup)
+                    .unwrap_or_else(|| {
+                        (
+                            crate::quality::synthetic_profile(club, world_seed),
+                            engine::Tactics::NEUTRAL,
+                        )
+                    });
+                round_tactics.insert(club, tactics);
+                (profile, xi.players())
+            }
+            None => (
+                crate::quality::profile_from_roster_excluding_or_synthetic(
+                    pack,
+                    career.roster,
+                    club,
+                    suspended,
+                    world_seed,
+                ),
+                crate::quality::starters_from_roster_excluding(career.roster, club, suspended),
+            ),
+        };
         // Moral (RF-JG-07, `crate::morale`): saldo de vitórias/derrotas
         // nas últimas partidas de liga já disputadas nesta temporada
         // (`outcome.results`, só o que já foi simulado até aqui — a
@@ -726,7 +762,15 @@ fn play_league_round(
     for &fixture in fixtures {
         let home = round_profiles[&fixture.home];
         let away = round_profiles[&fixture.away];
-        let (score, shots) = simulate_fixture(home, away, world_seed, season_index, &fixture);
+        let tactics_of = |club: ClubId| {
+            round_tactics
+                .get(&club)
+                .copied()
+                .unwrap_or(engine::Tactics::NEUTRAL)
+        };
+        let tactics = (tactics_of(fixture.home), tactics_of(fixture.away));
+        let (score, shots) =
+            simulate_fixture(home, away, tactics, world_seed, season_index, &fixture);
 
         let revenue = crate::finance::match_day_revenue(
             fixture.home,
@@ -763,6 +807,7 @@ fn play_league_round(
 fn simulate_fixture(
     home_profile: engine::TeamMatchProfile,
     away_profile: engine::TeamMatchProfile,
+    tactics: (engine::Tactics, engine::Tactics),
     world_seed: u64,
     season_index: u32,
     fixture: &Fixture,
@@ -771,7 +816,7 @@ fn simulate_fixture(
         world_seed,
         fixture: fixture_key(season_index, fixture),
     };
-    let events = engine::simulate(home_profile, away_profile, ctx);
+    let events = engine::simulate_tactical(home_profile, away_profile, tactics.0, tactics.1, ctx);
     let (home_goals, away_goals) = engine::score(&events);
     let shots = engine::shots(&events);
     (
@@ -935,6 +980,7 @@ mod tests {
             consistency: &consistency,
             adaptation: &adaptation,
             seasons_since_transfer: &seasons_since_transfer,
+            setups: &[],
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -981,6 +1027,7 @@ mod tests {
                 consistency: &consistency,
                 adaptation: &adaptation,
                 seasons_since_transfer: &seasons_since_transfer,
+                setups: &[],
             }),
             42,
             0,
@@ -997,6 +1044,7 @@ mod tests {
             consistency: &consistency,
             adaptation: &adaptation,
             seasons_since_transfer: &seasons_since_transfer,
+            setups: &[],
         };
         let mut run = SeasonRun::start(&p, &membership, 0);
         assert_eq!(run.total_matchdays(), 14, "8 clubes, 2 turnos = 14 rodadas");
@@ -1047,12 +1095,101 @@ mod tests {
             consistency: &consistency,
             adaptation: &adaptation,
             seasons_since_transfer: &seasons_since_transfer,
+            setups: &[],
         };
         let mut run = SeasonRun::start(&p, &membership, 0);
         for _ in 0..rounds {
             let _ = run.play_matchday(&p, &mut career, 42);
         }
         (run, p)
+    }
+
+    /// Temporada de carreira inteira (seed 42) com `setups` e o `roster`
+    /// dado; devolve o resultado, os relatórios das rodadas e os orçamentos.
+    fn season_with(
+        setups: &[crate::setup::ClubSetup],
+        roster: &[PlayerState],
+    ) -> (SeasonResult, Vec<MatchdayReport>, Vec<Money>) {
+        let p = example_pack();
+        let profiles = crate::quality::generate_match_profiles(&p, 42);
+        let membership = initial_membership(&p);
+        let mut budgets = vec![Money::ZERO; p.clubs.len()];
+        let capacities = example_capacities(&p);
+        let reputation = example_reputation(&p);
+        let dirtiness = example_dirtiness(&p);
+        let big_game_mentality = example_big_game_mentality(&p);
+        let consistency = example_consistency(&p);
+        let adaptation = example_adaptation(&p);
+        let seasons_since_transfer = example_seasons_since_transfer(&p);
+        let mut career = CareerRound {
+            roster,
+            budgets: &mut budgets,
+            stadium_capacities: &capacities,
+            club_reputation: &reputation,
+            dirtiness: &dirtiness,
+            big_game_mentality: &big_game_mentality,
+            consistency: &consistency,
+            adaptation: &adaptation,
+            seasons_since_transfer: &seasons_since_transfer,
+            setups,
+        };
+        let mut run = SeasonRun::start(&p, &membership, 0);
+        let mut reports = Vec::new();
+        while !run.is_finished() {
+            reports.push(run.play_matchday(&p, &mut career, 42));
+        }
+        let result = run.finish(&p, &profiles, Some(&career), 42);
+        (result, reports, budgets)
+    }
+
+    #[test]
+    fn setup_padrao_do_tecnico_nao_muda_nada_na_temporada() {
+        let p = example_pack();
+        let roster = crate::progression::initial_roster(&p);
+        let club = p.clubs[0].id;
+        let none = season_with(&[], &roster);
+        let default = season_with(&[crate::setup::ClubSetup::new(club)], &roster);
+        assert_eq!(none.0, default.0);
+        assert_eq!(none.2, default.2);
+        assert!(default.1.iter().all(|r| r.lineup_adjustments.is_empty()));
+    }
+
+    #[test]
+    fn mentalidade_ofensiva_do_clube_do_usuario_muda_de_verdade_a_temporada() {
+        let p = example_pack();
+        let roster = crate::progression::initial_roster(&p);
+        let club = p.clubs[0].id;
+        let mut attacking = crate::setup::ClubSetup::new(club);
+        attacking.mentality = crate::setup::Mentality::Attacking;
+        attacking.formation = ai::Formation::F433;
+        let base = season_with(&[], &roster).0;
+        let tuned = season_with(&[attacking], &roster).0;
+        assert_ne!(base, tuned, "tática não pode ser decorativa");
+        assert!(
+            tuned.total_shots > base.total_shots,
+            "ataque total cria e cede mais finalizações: {} vs {}",
+            tuned.total_shots,
+            base.total_shots
+        );
+        assert_eq!(base.matches_played, tuned.matches_played);
+    }
+
+    #[test]
+    fn titular_manual_lesionado_e_substituido_e_a_troca_e_reportada() {
+        let p = example_pack();
+        let mut roster = crate::progression::initial_roster(&p);
+        let club = p.clubs[0].id;
+        let mut setup = crate::setup::ClubSetup::new(club);
+        let xi = crate::setup::resolve_xi(&roster, &setup, &HashSet::new());
+        setup.starters = Some(xi.players());
+        let hurt = xi.slots[4].1;
+        roster[hurt.as_usize()].injured = true;
+
+        let (_, reports, _) = season_with(&[setup], &roster);
+        for report in &reports {
+            assert_eq!(report.lineup_adjustments.len(), 1, "uma troca por rodada");
+            assert_eq!(report.lineup_adjustments[0].0, hurt);
+        }
     }
 
     #[test]
@@ -1139,6 +1276,7 @@ mod tests {
             consistency: &consistency,
             adaptation: &adaptation,
             seasons_since_transfer: &seasons_since_transfer,
+            setups: &[],
         };
         let mut run = SeasonRun::start(&p, &membership, 0);
         while !run.is_finished() {
@@ -1175,6 +1313,7 @@ mod tests {
             consistency: &consistency,
             adaptation: &adaptation,
             seasons_since_transfer: &seasons_since_transfer,
+            setups: &[],
         };
         let a = run_season(&p, &membership, &profiles, Some(career_a), 7, 0);
 
@@ -1189,6 +1328,7 @@ mod tests {
             consistency: &consistency,
             adaptation: &adaptation,
             seasons_since_transfer: &seasons_since_transfer,
+            setups: &[],
         };
         let b = run_season(&p, &membership, &profiles, Some(career_b), 7, 0);
         assert_eq!(a, b);
@@ -1228,6 +1368,7 @@ mod tests {
                     consistency: &consistency,
                     adaptation: &adaptation,
                     seasons_since_transfer: &seasons_since_transfer,
+                    setups: &[],
                 };
                 run_season(&p, &membership, &profiles, Some(career), 1, season_index).suspensions
             })
@@ -1267,6 +1408,7 @@ mod tests {
             consistency: &consistency,
             adaptation: &adaptation,
             seasons_since_transfer: &seasons_since_transfer,
+            setups: &[],
         };
         let result = run_season(&p, &membership, &profiles, Some(career), 42, 0);
 
@@ -1311,6 +1453,7 @@ mod tests {
             consistency: &consistency,
             adaptation: &adaptation,
             seasons_since_transfer: &seasons_since_transfer,
+            setups: &[],
         };
         let high = run_season(&p, &membership, &profiles, Some(career_high), 42, 0);
 
@@ -1326,6 +1469,7 @@ mod tests {
             consistency: &consistency,
             adaptation: &adaptation,
             seasons_since_transfer: &seasons_since_transfer,
+            setups: &[],
         };
         let low = run_season(&p, &membership, &profiles, Some(career_low), 42, 0);
 

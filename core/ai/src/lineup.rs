@@ -25,16 +25,106 @@ pub struct PlayerRating {
     pub current_ability: u8,
 }
 
-/// Formação fixa e simplificada: 1 GK, 4 DF, 4 MF, 2 FW = 11. Não é uma
-/// escolha tática (isso pede o motor v1 entender zonas, `docs/04 §2.2`) —
-/// é só uma distribuição plausível de posições pra "quem joga" fazer
-/// sentido sem uma única linha de configuração ainda.
+/// Formação fixa e simplificada: 1 GK, 4 DF, 4 MF, 2 FW = 11. É a que a IA
+/// de clube usa sempre ([`Formation::F442`]); o técnico humano escolhe
+/// entre as de [`Formation::ALL`].
 pub const FORMATION: [(Position, usize); 4] = [
     (Position::Goalkeeper, 1),
     (Position::Defender, 4),
     (Position::Midfielder, 4),
     (Position::Forward, 2),
 ];
+
+/// Formações disponíveis ao técnico (RF-PA-01, `docs/01 §2.5`): quantos
+/// defensores, meio-campistas e atacantes jogam à frente do goleiro. Só a
+/// distribuição por linha — o motor v0.5 não tem zonas nem posições finas
+/// (lateral, volante, ponta: `docs/04 §2.2`, M3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Formation {
+    F442,
+    F433,
+    F352,
+    F451,
+    F532,
+}
+
+impl Formation {
+    pub const ALL: [Formation; 5] = [
+        Formation::F442,
+        Formation::F433,
+        Formation::F352,
+        Formation::F451,
+        Formation::F532,
+    ];
+
+    /// `(defensores, meio-campistas, atacantes)`; a soma é sempre 10.
+    #[must_use]
+    pub const fn lines(self) -> (usize, usize, usize) {
+        match self {
+            Formation::F442 => (4, 4, 2),
+            Formation::F433 => (4, 3, 3),
+            Formation::F352 => (3, 5, 2),
+            Formation::F451 => (4, 5, 1),
+            Formation::F532 => (5, 3, 2),
+        }
+    }
+
+    /// Posição de cada um dos 11 espaços, na ordem de escalação: goleiro,
+    /// defensores, meio-campistas, atacantes.
+    #[must_use]
+    pub fn slots(self) -> [Position; 11] {
+        let (d, m, _f) = self.lines();
+        let mut slots = [Position::Forward; 11];
+        slots[0] = Position::Goalkeeper;
+        for (i, slot) in slots.iter_mut().enumerate().skip(1) {
+            *slot = if i <= d {
+                Position::Defender
+            } else if i <= d + m {
+                Position::Midfielder
+            } else {
+                Position::Forward
+            };
+        }
+        slots
+    }
+
+    /// Nome de exibição/chave de localização, ex.: `"4-4-2"`.
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Formation::F442 => "4-4-2",
+            Formation::F433 => "4-3-3",
+            Formation::F352 => "3-5-2",
+            Formation::F451 => "4-5-1",
+            Formation::F532 => "5-3-2",
+        }
+    }
+
+    /// Código estável de 1 byte (log de comandos do save): **nunca
+    /// renumerar**.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Formation::F442 => 0,
+            Formation::F433 => 1,
+            Formation::F352 => 2,
+            Formation::F451 => 3,
+            Formation::F532 => 4,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Formation::F442),
+            1 => Some(Formation::F433),
+            2 => Some(Formation::F352),
+            3 => Some(Formation::F451),
+            4 => Some(Formation::F532),
+            _ => None,
+        }
+    }
+}
 
 /// Seleciona os titulares de `squad`: para cada posição de [`FORMATION`],
 /// os jogadores daquela posição com maior `current_ability`, até o número
@@ -46,8 +136,24 @@ pub const FORMATION: [(Position, usize); 4] = [
 /// elenco vazio devolve uma lista vazia.
 #[must_use]
 pub fn select_starting_eleven(squad: &[PlayerRating]) -> Vec<PlayerId> {
+    select_starting_eleven_for(squad, Formation::F442)
+}
+
+/// [`select_starting_eleven`] para uma [`Formation`] qualquer: os titulares
+/// saem na ordem dos espaços da formação (goleiro, defensores,
+/// meio-campistas, atacantes), cada linha do melhor pro pior. Com
+/// [`Formation::F442`] é exatamente [`select_starting_eleven`].
+#[must_use]
+pub fn select_starting_eleven_for(squad: &[PlayerRating], formation: Formation) -> Vec<PlayerId> {
+    let (d, m, f) = formation.lines();
+    let lines = [
+        (Position::Goalkeeper, 1),
+        (Position::Defender, d),
+        (Position::Midfielder, m),
+        (Position::Forward, f),
+    ];
     let mut selected = Vec::with_capacity(11);
-    for &(position, slots) in &FORMATION {
+    for &(position, slots) in &lines {
         let mut candidates: Vec<&PlayerRating> =
             squad.iter().filter(|p| p.position == position).collect();
         candidates.sort_by(|a, b| {
@@ -70,6 +176,60 @@ mod tests {
             position,
             current_ability: ca,
         }
+    }
+
+    #[test]
+    fn toda_formacao_soma_onze_e_tem_um_goleiro() {
+        for formation in Formation::ALL {
+            let (d, m, f) = formation.lines();
+            assert_eq!(1 + d + m + f, 11, "{}", formation.key());
+            let slots = formation.slots();
+            assert_eq!(slots[0], Position::Goalkeeper);
+            let count = |p| slots.iter().filter(|&&s| s == p).count();
+            assert_eq!(count(Position::Goalkeeper), 1);
+            assert_eq!(count(Position::Defender), d);
+            assert_eq!(count(Position::Midfielder), m);
+            assert_eq!(count(Position::Forward), f);
+        }
+    }
+
+    #[test]
+    fn codigo_de_formacao_faz_round_trip_e_rejeita_desconhecido() {
+        for formation in Formation::ALL {
+            assert_eq!(Formation::from_code(formation.code()), Some(formation));
+        }
+        assert_eq!(Formation::from_code(99), None);
+    }
+
+    #[test]
+    fn f442_e_identico_a_selecao_padrao() {
+        let mut squad = vec![rating(0, Position::Goalkeeper, 100)];
+        squad.extend((1..=6).map(|i| rating(i, Position::Defender, 60 + i as u8)));
+        squad.extend((7..=12).map(|i| rating(i, Position::Midfielder, 60 + i as u8)));
+        squad.extend((13..=16).map(|i| rating(i, Position::Forward, 60 + i as u8)));
+        assert_eq!(
+            select_starting_eleven_for(&squad, Formation::F442),
+            select_starting_eleven(&squad)
+        );
+    }
+
+    #[test]
+    fn formacao_433_escala_tres_atacantes_e_tres_meias() {
+        let mut squad = vec![rating(0, Position::Goalkeeper, 100)];
+        squad.extend((1..=6).map(|i| rating(i, Position::Defender, 80)));
+        squad.extend((7..=12).map(|i| rating(i, Position::Midfielder, 80)));
+        squad.extend((13..=17).map(|i| rating(i, Position::Forward, 80)));
+        let starters = select_starting_eleven_for(&squad, Formation::F433);
+        assert_eq!(starters.len(), 11);
+        let count = |p: Position| {
+            starters
+                .iter()
+                .filter(|id| squad[id.as_usize()].position == p)
+                .count()
+        };
+        assert_eq!(count(Position::Defender), 4);
+        assert_eq!(count(Position::Midfielder), 3);
+        assert_eq!(count(Position::Forward), 3);
     }
 
     #[test]

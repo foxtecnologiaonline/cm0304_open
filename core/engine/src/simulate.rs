@@ -162,6 +162,54 @@ pub struct TeamMatchProfile {
     pub goalkeeping: GoalkeepingQuality,
 }
 
+/// Moduladores táticos de um time (RF-PA-02, `docs/01 §2.5`) — o único
+/// ponto por onde formação, mentalidade e pressão chegam ao motor v0.5, que
+/// ainda não tem zonas nem jogadores em campo (`docs/04 §7`): tática vira
+/// **taxa de finalização**, não posicionamento. Valores em milésimos;
+/// [`Tactics::NEUTRAL`] (1000/1000) não muda nada — `simulate` usa
+/// exatamente esse valor, então o caminho sem tática continua byte a byte o
+/// de antes.
+///
+/// Cada lado tem duas alavancas, e o par é o que cria o dilema tático:
+/// o que o time **cria** (`shot_volume_permille`, multiplica as
+/// finalizações do próprio time) e o que ele **cede**
+/// (`concession_permille`, multiplica as finalizações do adversário).
+/// Atacar mais tende a subir os dois; defender mais, a baixar os dois.
+/// Nenhum valor é calibrado ainda (`docs/04 §4`): pontos de partida
+/// plausíveis, a ajustar quando houver dado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tactics {
+    pub shot_volume_permille: u32,
+    pub concession_permille: u32,
+}
+
+impl Tactics {
+    /// Sem tática: as taxas saem exatamente da força relativa dos times.
+    pub const NEUTRAL: Tactics = Tactics {
+        shot_volume_permille: 1000,
+        concession_permille: 1000,
+    };
+
+    /// Piso e teto de cada alavanca — nenhuma combinação de instruções
+    /// zera as finalizações de um lado nem as multiplica por mais que ~2.
+    const MIN_PERMILLE: u32 = 500;
+    const MAX_PERMILLE: u32 = 2000;
+
+    /// Constrói limitando cada alavanca a `MIN_PERMILLE..=MAX_PERMILLE`.
+    #[must_use]
+    pub fn new(shot_volume_permille: u32, concession_permille: u32) -> Self {
+        Self {
+            shot_volume_permille: shot_volume_permille
+                .clamp(Self::MIN_PERMILLE, Self::MAX_PERMILLE),
+            concession_permille: concession_permille.clamp(Self::MIN_PERMILLE, Self::MAX_PERMILLE),
+        }
+    }
+
+    fn is_neutral(self) -> bool {
+        self == Self::NEUTRAL
+    }
+}
+
 /// O que identifica *esta* partida para fins de derivação de RNG
 /// (`docs/02 §5`): mundo + partida, nada mais. `fixture` deveria ser
 /// `domain::FixtureId` assim que `world` existir para atribuí-lo; por ora
@@ -189,7 +237,32 @@ pub fn simulate(
     away: TeamMatchProfile,
     ctx: MatchContext,
 ) -> Vec<MatchEvent> {
-    let (lambda_home, lambda_away) = expected_shots(home.strength, away.strength);
+    simulate_tactical(home, away, Tactics::NEUTRAL, Tactics::NEUTRAL, ctx)
+}
+
+/// [`simulate`] com [`Tactics`] de cada lado. Com as duas neutras é
+/// exatamente [`simulate`] (mesma sequência de RNG, mesmos eventos).
+/// As finalizações esperadas de cada lado saem de
+/// `λ × volume_próprio × concessão_do_adversário`, ainda limitadas por
+/// `MAX_LAMBDA`; a conversão em gol não muda (é qualidade, não tática).
+#[must_use]
+pub fn simulate_tactical(
+    home: TeamMatchProfile,
+    away: TeamMatchProfile,
+    home_tactics: Tactics,
+    away_tactics: Tactics,
+    ctx: MatchContext,
+) -> Vec<MatchEvent> {
+    let (mut lambda_home, mut lambda_away) = expected_shots(home.strength, away.strength);
+    if !home_tactics.is_neutral() || !away_tactics.is_neutral() {
+        let scale = |lambda: Fixed, own: Tactics, other: Tactics| {
+            let factor = Fixed::from_ratio(i64::from(own.shot_volume_permille), 1000)
+                * Fixed::from_ratio(i64::from(other.concession_permille), 1000);
+            (lambda * factor).min(MAX_LAMBDA)
+        };
+        lambda_home = scale(lambda_home, home_tactics, away_tactics);
+        lambda_away = scale(lambda_away, away_tactics, home_tactics);
+    }
     let per_minute_home_shot = per_minute_permille(lambda_home);
     let per_minute_away_shot = per_minute_permille(lambda_away);
     let home_conversion = conversion_permille(home.finishing, away.goalkeeping);
@@ -303,6 +376,76 @@ mod tests {
 
     fn equal_profiles() -> (TeamMatchProfile, TeamMatchProfile) {
         (profile(100), profile(100))
+    }
+
+    #[test]
+    fn tatica_neutra_e_identica_a_simulate_sem_tatica() {
+        let (home, away) = (profile(120), profile(90));
+        for fixture in 0..200 {
+            assert_eq!(
+                simulate_tactical(home, away, Tactics::NEUTRAL, Tactics::NEUTRAL, ctx(fixture)),
+                simulate(home, away, ctx(fixture))
+            );
+        }
+    }
+
+    /// Média de (finalizações próprias, finalizações do adversário,
+    /// saldo de gols) do mandante em `n` partidas entre perfis iguais.
+    fn averages(home_tactics: Tactics, away_tactics: Tactics, n: u64) -> (f64, f64, f64) {
+        let (home, away) = equal_profiles();
+        let (mut own, mut conceded, mut diff) = (0u64, 0u64, 0i64);
+        for fixture in 0..n {
+            let events = simulate_tactical(home, away, home_tactics, away_tactics, ctx(fixture));
+            let (hs, as_) = shots(&events);
+            let (hg, ag) = score(&events);
+            own += u64::from(hs);
+            conceded += u64::from(as_);
+            diff += i64::from(hg) - i64::from(ag);
+        }
+        (
+            own as f64 / n as f64,
+            conceded as f64 / n as f64,
+            diff as f64 / n as f64,
+        )
+    }
+
+    #[test]
+    fn volume_proprio_maior_gera_mais_finalizacoes_proprias_e_nao_mexe_nas_do_adversario() {
+        let (base_own, base_conceded, _) = averages(Tactics::NEUTRAL, Tactics::NEUTRAL, 3000);
+        let (own, conceded, _) = averages(Tactics::new(1300, 1000), Tactics::NEUTRAL, 3000);
+        assert!(own > base_own * 1.15, "{own} vs {base_own}");
+        assert!((conceded - base_conceded).abs() < base_conceded * 0.06);
+    }
+
+    #[test]
+    fn concessao_maior_do_proprio_time_gera_mais_finalizacoes_do_adversario() {
+        let (_, base_conceded, _) = averages(Tactics::NEUTRAL, Tactics::NEUTRAL, 3000);
+        let (_, conceded, _) = averages(Tactics::new(1000, 1300), Tactics::NEUTRAL, 3000);
+        assert!(
+            conceded > base_conceded * 1.15,
+            "{conceded} vs {base_conceded}"
+        );
+    }
+
+    #[test]
+    fn tatica_e_determinista_para_a_mesma_entrada() {
+        let (home, away) = equal_profiles();
+        let t = Tactics::new(1120, 1150);
+        assert_eq!(
+            simulate_tactical(home, away, t, Tactics::NEUTRAL, ctx(7)),
+            simulate_tactical(home, away, t, Tactics::NEUTRAL, ctx(7))
+        );
+    }
+
+    #[test]
+    fn alavancas_sao_limitadas_a_faixa_segura() {
+        let t = Tactics::new(0, 100_000);
+        assert_eq!(t.shot_volume_permille, 500);
+        assert_eq!(t.concession_permille, 2000);
+        // Mesmo no extremo, o λ continua sob MAX_LAMBDA e a partida roda.
+        let (home, away) = equal_profiles();
+        let events = simulate_tactical(home, away, t, t, ctx(1));
+        assert!(matches!(events.last(), Some(MatchEvent::FullTime { .. })));
     }
 
     #[test]

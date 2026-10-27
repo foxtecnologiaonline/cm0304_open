@@ -49,6 +49,10 @@ pub enum Query {
     /// (ou da última concluída). `matchday: None` = a última jogada.
     /// `None` se nada foi jogado ainda ou a rodada não foi jogada.
     RoundResults { matchday: Option<u32> },
+    /// O onze que entraria em campo na **próxima** rodada para o clube sob
+    /// comando (já com lesões e suspensões resolvidas), mais formação e
+    /// instruções. `None` sem clube sob comando.
+    Lineup,
 }
 
 /// Resposta a uma [`Query`]. Cada variante corresponde a exatamente uma
@@ -73,6 +77,38 @@ pub enum QueryResult {
     Player(Option<PlayerDetail>),
     Fixtures(Option<FixtureList>),
     RoundResults(Option<RoundResults>),
+    Lineup(Option<LineupInfo>),
+}
+
+/// Um espaço do onze (ver [`Query::Lineup`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineupSlot {
+    /// Posição do espaço na formação.
+    pub slot_position: domain::Position,
+    pub player: domain::PlayerId,
+    pub name: String,
+    /// Posição natural do jogador; diferente de `slot_position` = fora de
+    /// posição.
+    pub natural_position: domain::Position,
+    pub condition: u8,
+    /// Quanto da habilidade o jogador aproveita neste espaço, em milésimos
+    /// (1000 = posição natural; ver `world::position_fit_permille`).
+    pub fit_permille: u32,
+}
+
+/// Escalação e instruções do clube sob comando (ver [`Query::Lineup`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineupInfo {
+    pub formation: ai::Formation,
+    /// `true` se o técnico escolheu os titulares; `false` = o melhor onze
+    /// disponível a cada rodada.
+    pub manual: bool,
+    pub mentality: world::Mentality,
+    pub pressing: world::Pressing,
+    pub slots: Vec<LineupSlot>,
+    /// `(escalado que não pode jogar, quem entra no lugar)` na próxima
+    /// rodada.
+    pub adjustments: Vec<(domain::PlayerId, domain::PlayerId)>,
 }
 
 /// Um clube numa lista (ver [`Query::Clubs`]).

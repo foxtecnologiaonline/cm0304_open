@@ -465,7 +465,7 @@ completo e golden como rede de segurança):
 | F1 ✅ | Temporada resumível por rodada (`AdvanceRound`); `AdvanceSeason` vira loop; golden idêntico; save v2 com log de comandos | Maior refator; tudo abaixo depende dele |
 | F2 ✅ | Clube do usuário + perfil do técnico (RF-CA-01); o save v2 já veio na F1; teste cross-platform fica pra F9 | Critério MVP #4 |
 | F3 ✅ | Queries da UI: clubes, ficha do clube/finanças, elenco, jogador, calendário, resultados da rodada (a "última partida" narrada vem com a F5) | A UI só enxerga o que `Query` expõe |
-| F4 | Escalação/formação/instruções (RF-PA-01/02), penalidade fora de posição | Primeira decisão real |
+| F4 ✅ | Escalação/formação/instruções (RF-PA-01/02), penalidade fora de posição | Primeira decisão real |
 | F5 | Partida ao vivo em texto, substituições, estatísticas (RF-PA-05/06/07) | Precisa de F1 + F4 |
 | F6 | Mercado jogável: janelas, ofertas, negociação, demanda (RF-TR-01..04) | Precisa de F1 + F2 |
 | F7 | Treino básico (RF-TC-01) + moral/fadiga por jogador (RF-JG-07) | MVP exige treino com efeito mensurável |
@@ -521,6 +521,30 @@ texto traduzido). Calendário e resultados saem de `world::SeasonRun`
 partida); `SeasonRun::finish` deixou de consumir a execução e a sessão
 guarda só a **última** temporada concluída (memória constante, ~25 KB na
 escala MVP) pra consulta entre temporadas.
+
+**F4 feita:** primeira decisão do técnico que altera a simulação.
+`Command::{SetFormation, SetLineup, SetInstructions}` + `Query::Lineup`.
+Cinco formações (`ai::Formation`: 4-4-2, 4-3-3, 3-5-2, 4-5-1, 5-3-2);
+escalação manual validada (11 distintos, do clube, sem lesão nem suspensão)
+com **substituição automática** quando um titular fica indisponível na
+rodada (a troca é contada em `CommandReceipt::lineup_adjustments`);
+jogar fora de posição rende 85% (linha vizinha), 70% (pulando uma linha) ou
+50% (goleiro envolvido) — a versão enxuta de RF-JG-04. O motor continua
+estatístico, então tática vira **taxa de finalização**
+(`engine::Tactics`: o que o time cria × o que cede; `simulate` = neutro,
+byte a byte): formação (mais atacantes criam e cedem mais), mentalidade
+(ataque ajuda favorito, defesa ajuda azarão) e pressão alta, que **depende
+da resistência média do XI e inverte para elenco sem fôlego** — sem isso
+seria opção dominante, já que fadiga dentro da temporada só existe em F7.
+Subconjunto honesto de RF-PA-02: 2 das 6 instruções (largura, linha
+defensiva e marcação pedem zonas, M3). Nada calibrado. Garantias
+testadas: setup padrão é **idêntico** ao caminho da IA em todos os clubes
+(assumir um clube não muda nada até decidir algo); tática não é decorativa
+(mais finalizações com ataque total, mundo diferente após 3 temporadas);
+o replay do save reproduz comandos de escalação no meio da temporada. A IA
+continua sempre em 4-4-2 neutro, por isso golden e calibrate seguem
+byte-idênticos. Limitação conhecida: o desgaste de fim de temporada usa o
+onze atual do técnico, não minutos por jogador (F7).
 
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04

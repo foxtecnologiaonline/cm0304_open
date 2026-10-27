@@ -21,12 +21,14 @@ mod query;
 mod session;
 mod slots;
 
+pub use ai::Formation;
 pub use command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
 pub use error::AppError;
 pub use query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
-    FixtureList, FixtureRow, ManagerInfo, MatchScore, PlayerDetail, PlayerRow, Query, QueryResult,
-    ResultRow, RoundResults, SeasonProgress, StandingsRow,
+    FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchScore, PlayerDetail,
+    PlayerRow, Query, QueryResult, ResultRow, RoundResults, SeasonProgress, StandingsRow,
 };
 pub use session::{CommandReceipt, GameSession};
 pub use slots::{SAVE_SLOT_COUNT, autosave_path, slot_path};
+pub use world::{Mentality, Pressing};

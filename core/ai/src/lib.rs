@@ -17,5 +17,7 @@
 mod lineup;
 mod market;
 
-pub use lineup::{FORMATION, PlayerRating, select_starting_eleven};
+pub use lineup::{
+    FORMATION, Formation, PlayerRating, select_starting_eleven, select_starting_eleven_for,
+};
 pub use market::{MarketPlayer, Transfer, market_value, run_market_day};

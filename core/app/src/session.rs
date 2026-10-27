@@ -16,8 +16,8 @@ use crate::command::{CoachProfile, Command, MAX_COACH_NAME_BYTES};
 use crate::error::AppError;
 use crate::query::{
     AttributeValue, ClubDetail, ClubRow, CompetitionKind, CompetitionSummary, CupChampionRow,
-    FixtureList, FixtureRow, ManagerInfo, MatchScore, PlayerDetail, PlayerRow, Query, QueryResult,
-    ResultRow, RoundResults, SeasonProgress, StandingsRow,
+    FixtureList, FixtureRow, LineupInfo, LineupSlot, ManagerInfo, MatchScore, PlayerDetail,
+    PlayerRow, Query, QueryResult, ResultRow, RoundResults, SeasonProgress, StandingsRow,
 };
 
 /// Confirmação de que um [`Command`] foi processado, com o suficiente para
@@ -99,6 +99,11 @@ pub struct CommandReceipt {
     /// valor absoluto por clube escalado pela reputação, não um pool
     /// dividido entre clubes (ver `tv_revenue_paid`, acima).
     pub sponsorship_paid: domain::Money,
+    /// Quantos titulares escolhidos pelo técnico não puderam jogar nesta
+    /// rodada e foram trocados pelo melhor substituto (lesão nova,
+    /// suspensão, jogador vendido) — `world::resolve_xi`. `Query::Lineup`
+    /// diz quem, antes da rodada.
+    pub lineup_adjustments: usize,
 }
 
 impl CommandReceipt {
@@ -123,6 +128,7 @@ impl CommandReceipt {
         self.tv_revenue_paid = self.tv_revenue_paid + later.tv_revenue_paid;
         self.debt_repaid = self.debt_repaid + later.debt_repaid;
         self.sponsorship_paid = self.sponsorship_paid + later.sponsorship_paid;
+        self.lineup_adjustments += later.lineup_adjustments;
     }
 }
 
@@ -151,6 +157,10 @@ macro_rules! career_round {
             consistency: &$s.consistency,
             adaptation: &$s.adaptation,
             seasons_since_transfer: &$s.seasons_since_transfer,
+            setups: $s
+                .manager
+                .as_ref()
+                .map_or(&[][..], |m| std::slice::from_ref(&m.setup)),
         }
     };
 }
@@ -296,6 +306,9 @@ pub struct GameSession {
 struct Manager {
     club: domain::ClubId,
     coach: CoachProfile,
+    /// Escalação e instruções (começa no padrão, indistinguível da IA —
+    /// `world::ClubSetup::new`).
+    setup: world::ClubSetup,
 }
 
 impl GameSession {
@@ -429,14 +442,37 @@ impl GameSession {
             }
             Command::TakeClub { club, coach } => {
                 self.take_club(*club, coach.clone())?;
-                CommandReceipt {
-                    season_index: self.history.len() as u32,
-                    ..CommandReceipt::default()
-                }
+                self.idle_receipt()
+            }
+            Command::SetFormation { formation } => {
+                self.set_formation(*formation)?;
+                self.idle_receipt()
+            }
+            Command::SetLineup {
+                formation,
+                starters,
+            } => {
+                self.set_lineup(*formation, starters)?;
+                self.idle_receipt()
+            }
+            Command::SetInstructions {
+                mentality,
+                pressing,
+            } => {
+                self.set_instructions(*mentality, *pressing)?;
+                self.idle_receipt()
             }
         };
         command.encode(&mut self.command_log);
         Ok(receipt)
+    }
+
+    /// Recibo de um comando que não joga nada (técnico, escalação, ...).
+    fn idle_receipt(&self) -> CommandReceipt {
+        CommandReceipt {
+            season_index: self.history.len() as u32,
+            ..CommandReceipt::default()
+        }
     }
 
     /// Valida e registra o técnico e seu clube (ver [`Command::TakeClub`]).
@@ -462,7 +498,11 @@ impl GameSession {
         if coach.reputation > 100 {
             return Err(AppError::InvalidCoach("reputação acima de 100"));
         }
-        self.manager = Some(Manager { club, coach });
+        self.manager = Some(Manager {
+            club,
+            coach,
+            setup: world::ClubSetup::new(club),
+        });
         Ok(())
     }
 
@@ -486,6 +526,7 @@ impl GameSession {
         receipt.matchday = report.matchday;
         receipt.matches_played = report.matches_played;
         receipt.suspensions = report.suspensions;
+        receipt.lineup_adjustments = report.lineup_adjustments.len();
         receipt.match_day_revenue = report.match_day_revenue;
 
         if active.run.is_finished() {
@@ -585,8 +626,18 @@ impl GameSession {
 
     /// Fechamento depois da última rodada.
     fn end_season(&mut self, active: ActiveSeason, receipt: &mut CommandReceipt) {
-        let ActiveSeason { run, starters } = active;
+        let ActiveSeason { run, mut starters } = active;
         let season_index = run.season_index();
+        // Para o desgaste e a evolução do fim da temporada, o clube do
+        // técnico conta o onze que ele de fato escalou (na formação e
+        // escalação atuais), não o onze automático da pré-temporada.
+        // Aproximação: sem contar minutos por jogador ao longo da
+        // temporada (fadiga acumulada de verdade é RF-JG-07, F7).
+        if let Some(manager) = &self.manager {
+            starters.retain(|id| self.roster[id.as_usize()].club != manager.club);
+            let xi = world::resolve_xi(&self.roster, &manager.setup, &HashSet::new());
+            starters.extend(xi.players());
+        }
         let result = {
             let career = career_round!(self);
             run.finish(&self.pack, &self.profiles, Some(&career), self.world_seed)
@@ -687,7 +738,112 @@ impl GameSession {
             Query::RoundResults { matchday } => {
                 QueryResult::RoundResults(self.round_results(matchday))
             }
+            Query::Lineup => QueryResult::Lineup(self.lineup_info()),
         }
+    }
+
+    /// Exige um clube sob comando.
+    fn manager_mut(&mut self) -> Result<&mut Manager, AppError> {
+        self.manager.as_mut().ok_or(AppError::NoClubTaken)
+    }
+
+    fn set_formation(&mut self, formation: ai::Formation) -> Result<(), AppError> {
+        let setup = &mut self.manager_mut()?.setup;
+        setup.formation = formation;
+        setup.starters = None;
+        Ok(())
+    }
+
+    fn set_instructions(
+        &mut self,
+        mentality: world::Mentality,
+        pressing: world::Pressing,
+    ) -> Result<(), AppError> {
+        let setup = &mut self.manager_mut()?.setup;
+        setup.mentality = mentality;
+        setup.pressing = pressing;
+        Ok(())
+    }
+
+    /// Valida e registra uma escalação manual (ver [`Command::SetLineup`]).
+    fn set_lineup(
+        &mut self,
+        formation: ai::Formation,
+        starters: &[domain::PlayerId],
+    ) -> Result<(), AppError> {
+        let club = self.manager.as_ref().ok_or(AppError::NoClubTaken)?.club;
+        if starters.len() != 11 {
+            return Err(AppError::InvalidLineup(
+                "a escalação precisa de exatamente 11 jogadores",
+            ));
+        }
+        let mut seen = HashSet::with_capacity(11);
+        for &id in starters {
+            if !seen.insert(id) {
+                return Err(AppError::InvalidLineup("jogador repetido na escalação"));
+            }
+            let Some(state) = self.roster.get(id.as_usize()) else {
+                return Err(AppError::InvalidLineup("jogador inexistente"));
+            };
+            if state.club != club {
+                return Err(AppError::InvalidLineup("jogador de outro clube"));
+            }
+            if state.injured {
+                return Err(AppError::InvalidLineup("jogador lesionado"));
+            }
+            if self.season.as_ref().is_some_and(|a| a.run.is_suspended(id)) {
+                return Err(AppError::InvalidLineup(
+                    "jogador suspenso na próxima rodada",
+                ));
+            }
+        }
+        let setup = &mut self.manager_mut()?.setup;
+        setup.formation = formation;
+        setup.starters = Some(starters.to_vec());
+        Ok(())
+    }
+
+    /// Quem está suspenso na próxima rodada, entre os jogadores de `club`.
+    fn suspended_of(&self, club: domain::ClubId) -> HashSet<domain::PlayerId> {
+        match &self.season {
+            Some(active) => self
+                .roster
+                .iter()
+                .filter(|p| p.club == club && active.run.is_suspended(p.player))
+                .map(|p| p.player)
+                .collect(),
+            None => HashSet::new(),
+        }
+    }
+
+    fn lineup_info(&self) -> Option<LineupInfo> {
+        let manager = self.manager.as_ref()?;
+        let setup = &manager.setup;
+        let xi = world::resolve_xi(&self.roster, setup, &self.suspended_of(manager.club));
+        let slots = xi
+            .slots
+            .iter()
+            .map(|&(slot_position, player)| {
+                let state = &self.roster[player.as_usize()];
+                let resolved = &self.pack.players[player.as_usize()];
+                LineupSlot {
+                    slot_position,
+                    player,
+                    name: format!("{} {}", resolved.first_name, resolved.last_name),
+                    natural_position: state.position,
+                    condition: state.condition,
+                    fit_permille: world::position_fit_permille(state.position, slot_position),
+                }
+            })
+            .collect();
+        Some(LineupInfo {
+            formation: setup.formation,
+            manual: setup.starters.is_some(),
+            mentality: setup.mentality,
+            pressing: setup.pressing,
+            slots,
+            adjustments: xi.adjustments,
+        })
     }
 
     /// A temporada a consultar: a em andamento ou, entre temporadas, a
@@ -958,7 +1114,9 @@ impl GameSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ai::Formation;
     use std::path::PathBuf;
+    use world::{Mentality, Pressing};
 
     fn example_pack_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/core/example-two-tier")
@@ -1760,6 +1918,275 @@ mod tests {
         let reloaded = GameSession::load(&example_pack_path(), &managed.to_save()).unwrap();
         assert_eq!(manager(&reloaded), manager(&managed));
         assert_eq!(reloaded.to_save(), managed.to_save());
+    }
+
+    fn first_player_ids(session: &GameSession, club: u32, n: usize) -> Vec<domain::PlayerId> {
+        squad_of(session, club)
+            .iter()
+            .take(n)
+            .map(|p| p.id)
+            .collect()
+    }
+
+    /// Onze válido para 4-4-2 do clube: o melhor onze automático.
+    fn valid_lineup(session: &GameSession, club: u32) -> Vec<domain::PlayerId> {
+        let QueryResult::Lineup(Some(info)) = session.query(Query::Lineup) else {
+            panic!("sem escalação")
+        };
+        assert_eq!(info.slots.len(), 11);
+        let _ = club;
+        info.slots.iter().map(|s| s.player).collect()
+    }
+
+    fn managed(club: u32) -> GameSession {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        take(&mut session, club, "Zé Treinador").unwrap();
+        session
+    }
+
+    #[test]
+    fn comandos_de_tecnico_exigem_um_clube_sob_comando() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert!(matches!(
+            session.dispatch(Command::SetFormation {
+                formation: Formation::F433
+            }),
+            Err(AppError::NoClubTaken)
+        ));
+        assert!(matches!(
+            session.dispatch(Command::SetInstructions {
+                mentality: Mentality::Attacking,
+                pressing: Pressing::High
+            }),
+            Err(AppError::NoClubTaken)
+        ));
+        assert!(matches!(
+            session.dispatch(Command::SetLineup {
+                formation: Formation::F442,
+                starters: Vec::new()
+            }),
+            Err(AppError::NoClubTaken)
+        ));
+        assert!(matches!(
+            session.query(Query::Lineup),
+            QueryResult::Lineup(None)
+        ));
+        assert!(session.to_save().command_log.is_empty());
+    }
+
+    #[test]
+    fn query_lineup_padrao_e_o_melhor_onze_automatico_em_4_4_2() {
+        let session = managed(3);
+        let QueryResult::Lineup(Some(info)) = session.query(Query::Lineup) else {
+            panic!("sem escalação")
+        };
+        assert_eq!(info.formation, Formation::F442);
+        assert!(!info.manual);
+        assert_eq!(info.mentality, Mentality::Balanced);
+        assert_eq!(info.pressing, Pressing::Normal);
+        assert_eq!(info.slots.len(), 11);
+        assert!(info.adjustments.is_empty());
+        assert!(
+            info.slots
+                .iter()
+                .all(|s| s.slot_position == s.natural_position && s.fit_permille == 1000)
+        );
+        // 1 goleiro, 4 defensores, 4 meias, 2 atacantes.
+        let count = |p| info.slots.iter().filter(|s| s.slot_position == p).count();
+        assert_eq!(count(domain::Position::Goalkeeper), 1);
+        assert_eq!(count(domain::Position::Defender), 4);
+        assert_eq!(count(domain::Position::Midfielder), 4);
+        assert_eq!(count(domain::Position::Forward), 2);
+    }
+
+    #[test]
+    fn set_lineup_recusa_escalacoes_invalidas_com_motivo_e_sem_tocar_o_log() {
+        let mut session = managed(3);
+        let good = valid_lineup(&session, 3);
+        let log_before = session.to_save().command_log;
+        let lineup = |starters: Vec<domain::PlayerId>| Command::SetLineup {
+            formation: Formation::F442,
+            starters,
+        };
+
+        let too_few = good[..10].to_vec();
+        assert!(matches!(
+            session.dispatch(lineup(too_few)),
+            Err(AppError::InvalidLineup(m)) if m.contains("11")
+        ));
+
+        let mut repeated = good.clone();
+        repeated[10] = repeated[0];
+        assert!(matches!(
+            session.dispatch(lineup(repeated)),
+            Err(AppError::InvalidLineup(m)) if m.contains("repetido")
+        ));
+
+        let mut foreign = good.clone();
+        foreign[10] = first_player_ids(&session, 4, 1)[0];
+        assert!(matches!(
+            session.dispatch(lineup(foreign)),
+            Err(AppError::InvalidLineup(m)) if m.contains("outro clube")
+        ));
+
+        let mut ghost = good.clone();
+        ghost[10] = domain::PlayerId::new(99_999);
+        assert!(matches!(
+            session.dispatch(lineup(ghost)),
+            Err(AppError::InvalidLineup(m)) if m.contains("inexistente")
+        ));
+
+        session.roster[good[2].as_usize()].injured = true;
+        assert!(matches!(
+            session.dispatch(lineup(good.clone())),
+            Err(AppError::InvalidLineup(m)) if m.contains("lesionado")
+        ));
+
+        assert_eq!(
+            session.to_save().command_log,
+            log_before,
+            "recusas não entram no log"
+        );
+    }
+
+    #[test]
+    fn set_lineup_valido_vira_escalacao_manual_e_set_formation_volta_ao_automatico() {
+        let mut session = managed(3);
+        let mut lineup = valid_lineup(&session, 3);
+        lineup.swap(1, 2); // dois defensores trocam de lugar: ainda válido
+        session
+            .dispatch(Command::SetLineup {
+                formation: Formation::F442,
+                starters: lineup.clone(),
+            })
+            .unwrap();
+        let QueryResult::Lineup(Some(info)) = session.query(Query::Lineup) else {
+            panic!()
+        };
+        assert!(info.manual);
+        assert_eq!(
+            info.slots.iter().map(|s| s.player).collect::<Vec<_>>(),
+            lineup
+        );
+
+        session
+            .dispatch(Command::SetFormation {
+                formation: Formation::F433,
+            })
+            .unwrap();
+        let QueryResult::Lineup(Some(info)) = session.query(Query::Lineup) else {
+            panic!()
+        };
+        assert!(!info.manual, "SetFormation descarta a escalação manual");
+        assert_eq!(info.formation, Formation::F433);
+        let forwards = info
+            .slots
+            .iter()
+            .filter(|s| s.slot_position == domain::Position::Forward)
+            .count();
+        assert_eq!(forwards, 3);
+    }
+
+    #[test]
+    fn jogador_fora_de_posicao_aparece_com_encaixe_menor_na_query() {
+        let mut session = managed(3);
+        let mut lineup = valid_lineup(&session, 3);
+        lineup.swap(1, 5); // um defensor vai pro meio e um meia pra defesa
+        session
+            .dispatch(Command::SetLineup {
+                formation: Formation::F442,
+                starters: lineup,
+            })
+            .unwrap();
+        let QueryResult::Lineup(Some(info)) = session.query(Query::Lineup) else {
+            panic!()
+        };
+        let displaced: Vec<_> = info
+            .slots
+            .iter()
+            .filter(|s| s.fit_permille < 1000)
+            .collect();
+        assert_eq!(displaced.len(), 2);
+        assert!(displaced.iter().all(|s| s.fit_permille == 850));
+    }
+
+    #[test]
+    fn titular_que_fica_indisponivel_e_trocado_e_o_recibo_conta_a_troca() {
+        let mut session = managed(3);
+        let lineup = valid_lineup(&session, 3);
+        session
+            .dispatch(Command::SetLineup {
+                formation: Formation::F442,
+                starters: lineup.clone(),
+            })
+            .unwrap();
+        session.dispatch(Command::AdvanceRound).unwrap();
+        // Depois da pré-temporada (que sorteia lesões), um titular se machuca.
+        session.roster[lineup[4].as_usize()].injured = true;
+        let QueryResult::Lineup(Some(info)) = session.query(Query::Lineup) else {
+            panic!()
+        };
+        assert_eq!(info.adjustments.len(), 1);
+        assert_eq!(info.adjustments[0].0, lineup[4]);
+        assert!(info.slots.iter().all(|s| s.player != lineup[4]));
+
+        let receipt = session.dispatch(Command::AdvanceRound).unwrap();
+        assert_eq!(receipt.lineup_adjustments, 1);
+    }
+
+    #[test]
+    fn instrucoes_ofensivas_mudam_de_verdade_o_mundo_e_o_replay_reproduz() {
+        let mut observer = GameSession::new(&example_pack_path(), 42).unwrap();
+        let mut tuned = managed(0);
+        tuned
+            .dispatch(Command::SetInstructions {
+                mentality: Mentality::Attacking,
+                pressing: Pressing::High,
+            })
+            .unwrap();
+        tuned
+            .dispatch(Command::SetFormation {
+                formation: Formation::F433,
+            })
+            .unwrap();
+        for _ in 0..3 {
+            observer.dispatch(Command::AdvanceSeason).unwrap();
+            tuned.dispatch(Command::AdvanceSeason).unwrap();
+        }
+        let tables = |s: &GameSession| format!("{:?}", s.history);
+        assert_ne!(tables(&observer), tables(&tuned), "tática não é decorativa");
+
+        let reloaded = GameSession::load(&example_pack_path(), &tuned.to_save()).unwrap();
+        assert_eq!(tables(&reloaded), tables(&tuned));
+        assert_eq!(reloaded.budgets, tuned.budgets);
+    }
+
+    #[test]
+    fn escalacao_manual_no_meio_da_temporada_sobrevive_ao_save_e_load() {
+        let mut session = managed(3);
+        let lineup = valid_lineup(&session, 3);
+        session.dispatch(Command::AdvanceRound).unwrap();
+        session.dispatch(Command::AdvanceRound).unwrap();
+        session
+            .dispatch(Command::SetLineup {
+                formation: Formation::F442,
+                starters: lineup,
+            })
+            .unwrap();
+        session
+            .dispatch(Command::SetInstructions {
+                mentality: Mentality::Defensive,
+                pressing: Pressing::Normal,
+            })
+            .unwrap();
+        session.dispatch(Command::AdvanceRound).unwrap();
+
+        let mut reloaded = GameSession::load(&example_pack_path(), &session.to_save()).unwrap();
+        let a = session.dispatch(Command::AdvanceSeason).unwrap();
+        let b = reloaded.dispatch(Command::AdvanceSeason).unwrap();
+        assert_eq!(format!("{a:?}"), format!("{b:?}"));
+        assert_eq!(session.budgets, reloaded.budgets);
+        assert_eq!(session.to_save(), reloaded.to_save());
     }
 
     fn all_clubs(session: &GameSession) -> Vec<domain::ClubId> {

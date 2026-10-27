@@ -88,7 +88,7 @@ pub fn profile_from_roster_excluding_or_synthetic(
         .unwrap_or_else(|| synthetic_profile(club, world_seed))
 }
 
-fn synthetic_profile(club: ClubId, world_seed: u64) -> TeamMatchProfile {
+pub(crate) fn synthetic_profile(club: ClubId, world_seed: u64) -> TeamMatchProfile {
     TeamMatchProfile {
         strength: synthetic_strength(club, world_seed),
         finishing: FinishingQuality::new(Fixed::from_int(synthetic_quality(

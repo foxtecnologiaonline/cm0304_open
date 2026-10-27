@@ -92,6 +92,7 @@ mod progression;
 mod quality;
 mod reputation;
 mod season;
+mod setup;
 mod strength;
 
 pub use adaptation::{
@@ -116,5 +117,9 @@ pub use quality::{
 pub use reputation::generate_club_reputation;
 pub use season::{
     CareerRound, FixtureEntry, MatchdayReport, SeasonResult, SeasonRun, run_season, run_seasons,
+};
+pub use setup::{
+    ClubSetup, Mentality, Pressing, ResolvedXi, position_fit_permille, profile_for, resolve_xi,
+    tactics_for,
 };
 pub use strength::{generate_strengths, generate_strengths_from_roster, strength_of};
