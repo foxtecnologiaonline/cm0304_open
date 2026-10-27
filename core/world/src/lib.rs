@@ -86,6 +86,7 @@ mod discipline;
 mod finance;
 mod fixture_key;
 mod injuries;
+mod live;
 mod market;
 mod morale;
 mod progression;
@@ -109,6 +110,10 @@ pub use finance::{
     pay_salaries, pay_sponsorship, repay_debt, salary_per_season,
 };
 pub use injuries::{generate_injury_proneness, roll_injuries};
+pub use live::{
+    LiveGame, MAX_SUBSTITUTIONS, MatchLine, MatchLineKind, MatchReport, PlayerMatchStats,
+    SubstitutionError,
+};
 pub use market::{generate_ambition, generate_loyalty, run_market_day};
 pub use progression::{PlayerState, advance_season, generate_professionalism, initial_roster};
 pub use quality::{
