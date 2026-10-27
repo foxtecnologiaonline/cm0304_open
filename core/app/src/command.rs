@@ -9,7 +9,7 @@
 
 use ai::Formation;
 use domain::{ClubId, Money, NationId, PlayerId};
-use world::{Mentality, Pressing};
+use world::{Mentality, Pressing, Training};
 
 use crate::error::AppError;
 
@@ -114,6 +114,16 @@ pub enum Command {
     /// (só com a janela aberta e sem deixar o elenco abaixo do mínimo);
     /// recusar a descarta.
     RespondToOffer { offer: u32, accept: bool },
+    /// Define a intensidade de treino de um jogador do clube sob comando
+    /// (RF-TC-01): treino intenso acelera a evolução de CA (mais nos
+    /// jovens) ao custo de mais lesão e menos condição; o leve faz o
+    /// inverso. Vale até ser trocada e é aplicada no fim da temporada.
+    SetTraining {
+        player: PlayerId,
+        training: Training,
+    },
+    /// [`Command::SetTraining`] para o elenco inteiro do clube.
+    SetTeamTraining { training: Training },
 }
 
 const TAG_ADVANCE_SEASON: u8 = 1;
@@ -129,6 +139,8 @@ const TAG_BEGIN_SEASON: u8 = 10;
 const TAG_MAKE_OFFER: u8 = 11;
 const TAG_RENEW_CONTRACT: u8 = 12;
 const TAG_RESPOND_TO_OFFER: u8 = 13;
+const TAG_SET_TRAINING: u8 = 14;
+const TAG_SET_TEAM_TRAINING: u8 = 15;
 
 impl Command {
     /// Acrescenta a codificação deste comando ao log.
@@ -209,6 +221,15 @@ impl Command {
                 out.push(TAG_RESPOND_TO_OFFER);
                 out.extend_from_slice(&offer.to_le_bytes());
                 out.push(u8::from(*accept));
+            }
+            Command::SetTraining { player, training } => {
+                out.push(TAG_SET_TRAINING);
+                out.extend_from_slice(&player.index().to_le_bytes());
+                out.push(training.code());
+            }
+            Command::SetTeamTraining { training } => {
+                out.push(TAG_SET_TEAM_TRAINING);
+                out.push(training.code());
             }
         }
     }
@@ -314,6 +335,16 @@ impl Command {
                 };
                 Command::RespondToOffer { offer, accept }
             }
+            TAG_SET_TRAINING => {
+                let player = u32::from_le_bytes(take(4)?.try_into().map_err(|_| bad())?);
+                Command::SetTraining {
+                    player: PlayerId::new(player),
+                    training: Training::from_code(take(1)?[0]).ok_or_else(bad)?,
+                }
+            }
+            TAG_SET_TEAM_TRAINING => Command::SetTeamTraining {
+                training: Training::from_code(take(1)?[0]).ok_or_else(bad)?,
+            },
             _ => return Err(bad()),
         };
         *pos = cursor;
@@ -394,6 +425,13 @@ mod tests {
                 offer: 7,
                 accept: false,
             },
+            Command::SetTraining {
+                player: PlayerId::new(9),
+                training: Training::Intense,
+            },
+            Command::SetTeamTraining {
+                training: Training::Light,
+            },
             Command::AdvanceRound,
             Command::AdvanceSeason,
             Command::AdvanceRound,
@@ -426,6 +464,19 @@ mod tests {
                 accept: true
             }),
             13
+        );
+        assert_eq!(
+            tag_of(Command::SetTraining {
+                player: PlayerId::new(1),
+                training: Training::Normal
+            }),
+            14
+        );
+        assert_eq!(
+            tag_of(Command::SetTeamTraining {
+                training: Training::Normal
+            }),
+            15
         );
         assert_eq!(tag_of(Command::BeginSeason), 10);
         assert_eq!(

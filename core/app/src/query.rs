@@ -318,6 +318,11 @@ pub struct PlayerRow {
     pub salary_per_season: domain::Money,
     /// Ajuste negociado do salário, em milésimos (`1000` = salário-base).
     pub wage_permille: u16,
+    /// Intensidade de treino (sempre `Normal` fora do clube sob comando).
+    pub training: world::Training,
+    /// Quanto o CA mudou na última temporada concluída (envelhecimento,
+    /// minutos, profissionalismo e treino juntos); `0` antes da primeira.
+    pub ca_change_last_season: i8,
     /// Quanto o mercado paga hoje (`ai::market_value`).
     pub market_value: domain::Money,
 }

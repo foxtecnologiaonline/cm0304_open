@@ -32,4 +32,4 @@ pub use query::{
 pub use query::{MAX_SEARCH_PAGE, PlayerFilter};
 pub use session::{CommandReceipt, GameSession};
 pub use slots::{SAVE_SLOT_COUNT, autosave_path, slot_path};
-pub use world::{MatchLineKind, Mentality, OfferOutcome, Pressing, Refusal};
+pub use world::{MatchLineKind, Mentality, OfferOutcome, Pressing, Refusal, Training};

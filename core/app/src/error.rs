@@ -71,6 +71,8 @@ pub enum AppError {
     /// Aceitar deixaria o seu elenco abaixo do mínimo (14 jogadores e uma
     /// opção por linha).
     SquadTooSmall,
+    /// Comando que só vale para jogador do clube sob comando (treino, ...).
+    NotYourPlayer,
 }
 
 impl fmt::Display for AppError {
@@ -106,6 +108,7 @@ impl fmt::Display for AppError {
                     "vender deixaria o elenco abaixo do mínimo (14 jogadores)"
                 )
             }
+            AppError::NotYourPlayer => write!(f, "esse jogador não é do seu clube"),
             AppError::NoClubTaken => write!(f, "nenhum clube sob seu comando ainda"),
             AppError::InvalidLineup(reason) => write!(f, "escalação inválida: {reason}"),
             AppError::UnknownClub(club) => write!(f, "o pack não tem o clube {club}"),
@@ -147,7 +150,8 @@ impl std::error::Error for AppError {
             | AppError::SeasonAlreadyBegun
             | AppError::UnknownOffer
             | AppError::OfferNoLongerValid
-            | AppError::SquadTooSmall => None,
+            | AppError::SquadTooSmall
+            | AppError::NotYourPlayer => None,
         }
     }
 }

@@ -97,6 +97,7 @@ mod reputation;
 mod season;
 mod setup;
 mod strength;
+mod training;
 
 pub use adaptation::{
     advance_seasons_since_transfer, generate_adaptation, initial_seasons_since_transfer,
@@ -140,3 +141,7 @@ pub use setup::{
     tactics_for,
 };
 pub use strength::{generate_strengths, generate_strengths_from_roster, strength_of};
+pub use training::{
+    Training, adjusted_proneness, apply_training_condition, apply_training_growth, ca_bonus,
+    condition_delta, injury_proneness_delta,
+};

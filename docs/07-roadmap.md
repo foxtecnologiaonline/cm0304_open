@@ -468,7 +468,7 @@ completo e golden como rede de segurança):
 | F4 ✅ | Escalação/formação/instruções (RF-PA-01/02), penalidade fora de posição | Primeira decisão real |
 | F5 ✅ | Partida ao vivo em texto, substituições, estatísticas (RF-PA-05/06/07) | Precisa de F1 + F4 |
 | F6 ✅ | Mercado jogável: janelas, ofertas, negociação (RF-TR-01..04); demanda cortada | Precisa de F1 + F2 |
-| F7 | Treino básico (RF-TC-01) + moral/fadiga por jogador (RF-JG-07) | MVP exige treino com efeito mensurável |
+| F7 ✅ | Treino básico (RF-TC-01); moral/fadiga por jogador cortadas | MVP exige treino com efeito mensurável |
 | F8 | Caixa de entrada (RF-CA-07) + cliente `manage` na CLI | Valida o loop sem Flutter |
 | F9 | Gates automatizados dos critérios MVP 2-4, contrato `app` congelado pra ponte, linhas de corte | Fecha o marco |
 
@@ -620,6 +620,22 @@ mudam estado nem entram no log. `Query::Search { filter, offset, limit }`
 busca jogadores por posição, CA mínimo, idade máxima, clube excluído e valor
 máximo, do melhor pro pior, com página limitada a 50 linhas (mobile) e
 total. Tudo reproduzível por replay.
+
+**F7 feita (treino):** `world::Training` (leve/normal/intenso) por jogador
+do clube sob comando, `Command::{SetTraining, SetTeamTraining}`. O efeito é
+**mensurável e tem custo**: intenso soma +2 de CA até 23 anos e +1 até 28 à
+progressão normal (leve: -1 até 28), mas aumenta a propensão a lesão (+12
+contra -8 no leve) e reduz a condição de entrada na temporada seguinte (-5
+contra +5), então "intenso sempre" não é a escolha óbvia; o teto de PA
+continua valendo. `PlayerRow` ganhou `training` e `ca_change_last_season`
+(o "+2" que a UI mostra). Garantias testadas: intenso > normal > leve em
+evolução de CA e o inverso em condição; ganho maior nos jovens; **os outros
+clubes não mudam**; treino normal ≡ não mexer em nada (golden intacto);
+voltar a `Normal` ao vender/comprar; replay. **Cortes deliberados do
+MVP:** foco por atributo (RF-TC-01 completo/RF-TC-05: os 36 atributos
+visíveis ainda não evoluem), delegação ao auxiliar (RF-TC-03, M3), moral
+individual e fadiga acumulada de verdade (RF-JG-07 completo): fica a moral
+por clube e a condição por temporada já existentes.
 
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04

@@ -314,6 +314,12 @@ pub struct GameSession {
     /// Propostas da IA por jogadores do clube sob comando, ainda de pé.
     incoming: Vec<world::IncomingOffer>,
     next_offer_id: u32,
+    /// Intensidade de treino de cada jogador, no mesmo índice denso que
+    /// `roster`. Só vale para o clube sob comando (`world::training`); muda
+    /// só por `Command::SetTraining`/`SetTeamTraining`.
+    training: Vec<world::Training>,
+    /// Variação de CA de cada jogador na última temporada concluída.
+    ca_change: Vec<i8>,
     /// `(temporada, rodada)` para a qual já se sorteou proposta — no máximo
     /// uma geração por rodada.
     offers_generated_for: Option<(u32, u32)>,
@@ -362,6 +368,7 @@ impl GameSession {
         let ambition = world::generate_ambition(&report.pack, world_seed);
         let dirtiness = world::generate_dirtiness(&report.pack, world_seed);
         let big_game_mentality = world::generate_big_game_mentality(&report.pack, world_seed);
+        let pack_players = report.pack.players.len();
         let consistency = world::generate_consistency(&report.pack, world_seed);
         let adaptation = world::generate_adaptation(&report.pack, world_seed);
         let seasons_since_transfer = world::initial_seasons_since_transfer(&report.pack);
@@ -399,6 +406,8 @@ impl GameSession {
             last_match: None,
             incoming: Vec::new(),
             next_offer_id: 0,
+            training: vec![world::Training::Normal; pack_players],
+            ca_change: vec![0; pack_players],
             offers_generated_for: None,
             command_log: Vec::new(),
             manager: None,
@@ -493,6 +502,14 @@ impl GameSession {
             }
             Command::StartMatch => self.start_match()?,
             Command::BeginSeason => self.begin_season_command()?,
+            Command::SetTraining { player, training } => {
+                self.set_training(Some(*player), *training)?;
+                self.idle_receipt()
+            }
+            Command::SetTeamTraining { training } => {
+                self.set_training(None, *training)?;
+                self.idle_receipt()
+            }
             Command::RespondToOffer { offer, accept } => {
                 let outcome = self.respond_to_offer(*offer, *accept)?;
                 CommandReceipt {
@@ -819,6 +836,33 @@ impl GameSession {
         Ok(receipt)
     }
 
+    /// Ver [`Command::SetTraining`] (`player: Some`) e
+    /// [`Command::SetTeamTraining`] (`None`).
+    fn set_training(
+        &mut self,
+        player: Option<domain::PlayerId>,
+        training: world::Training,
+    ) -> Result<(), AppError> {
+        let club = self.manager.as_ref().ok_or(AppError::NoClubTaken)?.club;
+        match player {
+            Some(id) => {
+                let idx = id.as_usize();
+                if self.roster.get(idx).is_none_or(|p| p.club != club) {
+                    return Err(AppError::NotYourPlayer);
+                }
+                self.training[idx] = training;
+            }
+            None => {
+                for (state, slot) in self.roster.iter().zip(self.training.iter_mut()) {
+                    if state.club == club {
+                        *slot = training;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Ver [`Command::MakeOffer`].
     fn make_offer(
         &mut self,
@@ -894,6 +938,7 @@ impl GameSession {
             wage_permille,
         };
         world::mark_transferred(&mut self.seasons_since_transfer, &[player]);
+        self.training[idx] = world::Training::Normal;
         Ok(OfferOutcome::Accepted)
     }
 
@@ -1023,6 +1068,7 @@ impl GameSession {
         self.roster[idx].club = buyer;
         self.contracts[idx] = world::fresh_contract(self.roster[idx].ability.current());
         world::mark_transferred(&mut self.seasons_since_transfer, &[offer.player]);
+        self.training[idx] = world::Training::Normal;
         self.incoming.retain(|o| o.player != offer.player);
         Ok(Some(world::OfferOutcome::Accepted))
     }
@@ -1183,12 +1229,13 @@ impl GameSession {
         // recuperado não some do roster — só volta a ser elegível
         // pra escalação. Chance varia por jogador conforme
         // `self.injury_proneness` (RF-JG-02, `world::injuries`).
-        world::roll_injuries(
-            &mut self.roster,
+        let proneness = world::adjusted_proneness(
+            &self.roster,
             &self.injury_proneness,
-            self.world_seed,
-            season_index,
+            &self.training,
+            self.manager.as_ref().map(|m| m.club),
         );
+        world::roll_injuries(&mut self.roster, &proneness, self.world_seed, season_index);
         receipt.injuries = self.roster.iter().filter(|p| p.injured).count();
 
         // Recalcula o perfil a partir do roster atual — reflete
@@ -1269,12 +1316,17 @@ impl GameSession {
             .flat_map(|(_, table)| table.iter().map(|row| (row.club, row.played)))
             .collect();
         world::apply_season_fatigue(&mut self.roster, &starters, &matches_played_by_club);
+        let managed_club = self.manager.as_ref().map(|m| m.club);
+        if let Some(club) = managed_club {
+            world::apply_training_condition(&mut self.roster, &self.training, club);
+        }
         receipt.tired_players = self
             .roster
             .iter()
             .filter(|p| p.condition < world::FULL_CONDITION)
             .count();
 
+        let ca_before: Vec<u8> = self.roster.iter().map(|p| p.ability.current()).collect();
         world::advance_season(
             &mut self.roster,
             &starters,
@@ -1282,6 +1334,13 @@ impl GameSession {
             self.world_seed,
             season_index,
         );
+        if let Some(club) = managed_club {
+            world::apply_training_growth(&mut self.roster, &self.training, club);
+        }
+        for ((change, before), state) in self.ca_change.iter_mut().zip(&ca_before).zip(&self.roster)
+        {
+            *change = (i16::from(state.ability.current()) - i16::from(*before)) as i8;
+        }
 
         // Duração de contrato (`world::advance_contracts`, `docs/01
         // §2.2` RF-CL-02): decrementa a duração restante de todo
@@ -1541,6 +1600,12 @@ impl GameSession {
             contract_seasons_remaining: contract.seasons_remaining,
             salary_per_season: world::contract_salary(contract),
             wage_permille: contract.wage_permille,
+            training: if self.manager.as_ref().is_some_and(|m| m.club == state.club) {
+                self.training[idx]
+            } else {
+                world::Training::Normal
+            },
+            ca_change_last_season: self.ca_change[idx],
             market_value: ai::market_value(
                 state.ability.current(),
                 contract.seasons_remaining,
@@ -1741,7 +1806,7 @@ mod tests {
     use super::*;
     use ai::Formation;
     use std::path::PathBuf;
-    use world::{MatchLineKind, Mentality, Pressing};
+    use world::{MatchLineKind, Mentality, Pressing, Training};
 
     fn example_pack_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/core/example-two-tier")
@@ -3554,6 +3619,173 @@ mod tests {
         assert_eq!(
             search(&session, PlayerFilter::default(), 0, 0).rows.len(),
             1
+        );
+    }
+
+    fn ca_sum(session: &GameSession, club: u32, f: impl Fn(&PlayerRow) -> i32) -> i32 {
+        squad_of(session, club).iter().map(f).sum()
+    }
+
+    /// Duas carreiras idênticas, só muda a intensidade do treino do elenco.
+    fn trained(training: Training) -> GameSession {
+        let mut session = managed(3);
+        session
+            .dispatch(Command::SetTeamTraining { training })
+            .unwrap();
+        session.dispatch(Command::AdvanceSeason).unwrap();
+        session
+    }
+
+    #[test]
+    fn treino_so_vale_para_jogador_do_proprio_clube_e_exige_tecnico() {
+        let mut observer = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert!(matches!(
+            observer.dispatch(Command::SetTeamTraining {
+                training: Training::Intense
+            }),
+            Err(AppError::NoClubTaken)
+        ));
+
+        let mut session = managed(3);
+        let log = session.to_save().command_log;
+        let stranger = squad_of(&session, 4)[0].id;
+        assert!(matches!(
+            session.dispatch(Command::SetTraining {
+                player: stranger,
+                training: Training::Intense
+            }),
+            Err(AppError::NotYourPlayer)
+        ));
+        assert!(matches!(
+            session.dispatch(Command::SetTraining {
+                player: domain::PlayerId::new(99_999),
+                training: Training::Intense
+            }),
+            Err(AppError::NotYourPlayer)
+        ));
+        assert_eq!(session.to_save().command_log, log);
+
+        let own = squad_of(&session, 3)[0].id;
+        session
+            .dispatch(Command::SetTraining {
+                player: own,
+                training: Training::Intense,
+            })
+            .unwrap();
+        let rows = squad_of(&session, 3);
+        assert_eq!(
+            rows.iter().find(|r| r.id == own).unwrap().training,
+            Training::Intense
+        );
+        assert_eq!(
+            rows.iter()
+                .filter(|r| r.training != Training::Normal)
+                .count(),
+            1,
+            "só o jogador escolhido"
+        );
+        assert!(
+            squad_of(&session, 4)
+                .iter()
+                .all(|r| r.training == Training::Normal)
+        );
+    }
+
+    #[test]
+    fn treino_intenso_evolui_mais_o_ca_e_cansa_mais_que_o_leve() {
+        let intense = trained(Training::Intense);
+        let light = trained(Training::Light);
+        let normal = trained(Training::Normal);
+
+        let change = |s: &GameSession| ca_sum(s, 3, |r| i32::from(r.ca_change_last_season));
+        assert!(
+            change(&intense) > change(&normal) && change(&normal) > change(&light),
+            "CA: intenso {} > normal {} > leve {}",
+            change(&intense),
+            change(&normal),
+            change(&light)
+        );
+        let condition = |s: &GameSession| ca_sum(s, 3, |r| i32::from(r.condition));
+        assert!(
+            condition(&intense) < condition(&normal) && condition(&normal) <= condition(&light),
+            "condição: intenso {} < normal {} <= leve {}",
+            condition(&intense),
+            condition(&normal),
+            condition(&light)
+        );
+    }
+
+    #[test]
+    fn ganho_do_treino_e_maior_nos_jovens_e_o_resto_do_mundo_nao_muda() {
+        let intense = trained(Training::Intense);
+        let normal = trained(Training::Normal);
+        let young_gain = |s: &GameSession| {
+            squad_of(s, 3)
+                .iter()
+                .filter(|r| r.age <= 24)
+                .map(|r| i32::from(r.ca_change_last_season))
+                .sum::<i32>()
+        };
+        assert!(young_gain(&intense) > young_gain(&normal));
+        // Os outros clubes treinam Normal nas duas: mesmo CA depois de 1 temporada.
+        for club in [0, 4, 9, 15] {
+            let a: Vec<_> = squad_of(&intense, club)
+                .iter()
+                .map(|r| (r.id, r.current_ability))
+                .collect();
+            let b: Vec<_> = squad_of(&normal, club)
+                .iter()
+                .map(|r| (r.id, r.current_ability))
+                .collect();
+            assert_eq!(a, b, "clube {club}");
+        }
+    }
+
+    #[test]
+    fn treino_normal_e_identico_a_nao_mexer_em_nada() {
+        let mut untouched = managed(3);
+        untouched.dispatch(Command::AdvanceSeason).unwrap();
+        let normal = trained(Training::Normal);
+        assert_eq!(
+            format!("{:?}", untouched.history),
+            format!("{:?}", normal.history)
+        );
+        assert_eq!(untouched.roster, normal.roster);
+    }
+
+    #[test]
+    fn treino_sobrevive_ao_save_e_load_e_volta_ao_normal_ao_vender() {
+        let mut session = managed(3);
+        let own = squad_of(&session, 3)[1].id;
+        session
+            .dispatch(Command::SetTraining {
+                player: own,
+                training: Training::Intense,
+            })
+            .unwrap();
+        session.dispatch(Command::AdvanceSeason).unwrap();
+        let reloaded = GameSession::load(&example_pack_path(), &session.to_save()).unwrap();
+        assert_eq!(reloaded.roster, session.roster);
+        assert_eq!(reloaded.training, session.training);
+        assert_eq!(reloaded.to_save(), session.to_save());
+
+        let mut with_offer = session_with_incoming_offer();
+        let o = incoming(&with_offer).remove(0);
+        with_offer
+            .dispatch(Command::SetTraining {
+                player: o.player.id,
+                training: Training::Intense,
+            })
+            .unwrap();
+        with_offer
+            .dispatch(Command::RespondToOffer {
+                offer: o.id,
+                accept: true,
+            })
+            .unwrap();
+        assert_eq!(
+            with_offer.training[o.player.id.as_usize()],
+            Training::Normal
         );
     }
 
