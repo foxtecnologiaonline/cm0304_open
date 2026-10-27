@@ -114,5 +114,5 @@ pub use quality::{
     generate_match_profiles, generate_match_profiles_from_roster, starters_from_roster_all_clubs,
 };
 pub use reputation::generate_club_reputation;
-pub use season::{CareerRound, SeasonResult, run_season, run_seasons};
+pub use season::{CareerRound, MatchdayReport, SeasonResult, SeasonRun, run_season, run_seasons};
 pub use strength::{generate_strengths, generate_strengths_from_roster, strength_of};

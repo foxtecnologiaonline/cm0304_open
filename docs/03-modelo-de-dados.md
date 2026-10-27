@@ -273,8 +273,8 @@ e carreira entram sob demanda (RNF-04, RNF-08).
 > **Estado de implementação:** ver a nota equivalente em `docs/02 §8.1` —
 > `persist` já grava o cabeçalho (magic/schema/sim_version/seed/pack_id) com
 > checksum e escrita atômica, mas nenhum dos blocos acima existe ainda; o
-> save de hoje reconstrói o resto por replay do log de comandos (hoje só um
-> contador, já que existe um único `Command` sem parâmetros).
+> save de hoje reconstrói o resto por replay do log de comandos (schema v2:
+> `command_log` opaco, 1 byte por comando por enquanto).
 
 ### 8.2 SQLite (índices derivados, descartáveis)
 

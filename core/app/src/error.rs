@@ -28,6 +28,10 @@ pub enum AppError {
         loaded_pack_id: String,
         loaded_pack_version: String,
     },
+    /// O log de comandos do save tem um byte que não corresponde a nenhum
+    /// [`crate::Command`] conhecido — save de uma versão mais nova do jogo,
+    /// ou corrompido de um jeito que o checksum não pegou.
+    InvalidCommandLog { position: usize, tag: u8 },
 }
 
 impl fmt::Display for AppError {
@@ -49,6 +53,11 @@ impl fmt::Display for AppError {
                 "save é do pack '{save_pack_id}' v{save_pack_version}, mas foi carregado com \
                  '{loaded_pack_id}' v{loaded_pack_version}"
             ),
+            AppError::InvalidCommandLog { position, tag } => write!(
+                f,
+                "log de comandos do save inválido: comando desconhecido (código {tag}) na \
+                 posição {position}"
+            ),
         }
     }
 }
@@ -60,7 +69,8 @@ impl std::error::Error for AppError {
             AppError::Persist(err) => Some(err),
             AppError::PackInvalid { .. }
             | AppError::NoCompetitions
-            | AppError::SavePackMismatch { .. } => None,
+            | AppError::SavePackMismatch { .. }
+            | AppError::InvalidCommandLog { .. } => None,
         }
     }
 }

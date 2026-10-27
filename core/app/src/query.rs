@@ -22,6 +22,10 @@ pub enum Query {
     CupChampion { competition: CompetitionId },
     /// Em que temporada a sessão está agora (quantas já foram simuladas).
     CurrentSeason,
+    /// Onde a temporada em andamento está: quantas rodadas faltam, se já
+    /// começou — o que a UI precisa para mostrar "Rodada 5 de 14" e para
+    /// decidir entre "Iniciar temporada" e "Próxima rodada".
+    SeasonProgress,
 }
 
 /// Resposta a uma [`Query`]. Cada variante corresponde a exatamente uma
@@ -38,6 +42,23 @@ pub enum QueryResult {
     /// a competição é uma liga (sem campeão único por mata-mata).
     CupChampion(Option<CupChampionRow>),
     CurrentSeason(u32),
+    SeasonProgress(SeasonProgress),
+}
+
+/// Progresso da temporada atual (ver [`Query::SeasonProgress`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeasonProgress {
+    /// Índice (0-based) da temporada em andamento — ou da próxima a
+    /// começar, quando `in_progress` é `false`.
+    pub season_index: u32,
+    /// `false` antes da primeira rodada: a pré-temporada (folha, mercado,
+    /// lesões) só acontece quando a primeira rodada é despachada.
+    pub in_progress: bool,
+    /// Próxima rodada a jogar (0-based). `0` se `!in_progress`.
+    pub next_matchday: u32,
+    /// Total de rodadas da temporada. `0` se `!in_progress` (o calendário
+    /// só é montado ao começar a temporada, depois do mercado).
+    pub total_matchdays: u32,
 }
 
 /// O campeão de uma copa, já com o nome do clube resolvido — a UI não

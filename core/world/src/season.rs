@@ -146,7 +146,7 @@ impl SeasonResult {
 /// já cuida disso). `profiles` vem de
 /// [`crate::quality::generate_match_profiles`] (ou da versão com roster,
 /// `crate::quality::generate_match_profiles_from_roster`) — é sempre usado
-/// para copa, e para liga **apenas** quando `roster` é `None`.
+/// para copa, e para liga **apenas** quando `career` é `None`.
 ///
 /// `career`, quando `Some`, muda como toda competição `Format::RoundRobin`
 /// é simulada: rodada a rodada, recalculando o perfil de cada clube que
@@ -155,13 +155,79 @@ impl SeasonResult {
 /// bilheteria de cada partida em casa no orçamento do mandante
 /// (`crate::finance::match_day_revenue`). `None` é exatamente o
 /// comportamento de antes desta fatia (`managerfc-cli calibrate`/`bench`,
-/// via [`run_seasons`]).
+/// via [`run_seasons`]). O caminho de carreira é uma [`SeasonRun`] jogada
+/// até o fim de uma vez — quem precisa parar entre rodadas
+/// (`app::GameSession`, `Command::AdvanceRound`) usa [`SeasonRun`]
+/// diretamente; o resultado é idêntico, byte a byte.
 #[must_use]
 pub fn run_season(
     pack: &LoadedPack,
     membership: &[CompetitionId],
     profiles: &[engine::TeamMatchProfile],
-    mut career: Option<CareerRound<'_>>,
+    career: Option<CareerRound<'_>>,
+    world_seed: u64,
+    season_index: u32,
+) -> SeasonResult {
+    match career {
+        Some(mut career) => {
+            let mut run = SeasonRun::start(pack, membership, season_index);
+            while !run.is_finished() {
+                let _ = run.play_matchday(pack, &mut career, world_seed);
+            }
+            run.finish(pack, profiles, Some(&career), world_seed)
+        }
+        None => {
+            let mut leagues = Vec::new();
+            for competition in &pack.competitions {
+                let Format::RoundRobin { legs, .. } = competition.format else {
+                    continue;
+                };
+                let clubs = league_clubs(membership, competition.id);
+                let Ok(fixtures) = rules::round_robin(&clubs, legs) else {
+                    // Ver o doc de `SeasonRun::start` para o porquê de pular.
+                    continue;
+                };
+                let outcome =
+                    simulate_round_robin_static(profiles, fixtures, world_seed, season_index);
+                leagues.push(LeagueOutcome {
+                    competition: competition.id,
+                    clubs,
+                    outcome,
+                });
+            }
+            assemble_season(pack, profiles, None, leagues, world_seed, season_index)
+        }
+    }
+}
+
+/// Clubes atualmente na competição, em ordem de id denso — nunca via
+/// iteração de um `HashMap` (`ADR 0002`: calendário e tabela não podem
+/// depender de ordem não-determinística).
+fn league_clubs(membership: &[CompetitionId], competition: CompetitionId) -> Vec<ClubId> {
+    membership
+        .iter()
+        .enumerate()
+        .filter(|&(_, &comp)| comp == competition)
+        .map(|(idx, _)| ClubId::new(idx as u32))
+        .collect()
+}
+
+/// Uma liga já simulada por inteiro — entrada de [`assemble_season`].
+struct LeagueOutcome {
+    competition: CompetitionId,
+    clubs: Vec<ClubId>,
+    outcome: RoundRobinOutcome,
+}
+
+/// Fecha uma temporada: tabela, acesso/queda e totais de cada liga já
+/// simulada (`leagues`), mais a copa, na ordem de `pack.competitions` —
+/// comum ao caminho estático e ao de carreira ([`SeasonRun::finish`]), pra
+/// os dois nunca divergirem na montagem do [`SeasonResult`].
+fn assemble_season(
+    pack: &LoadedPack,
+    profiles: &[engine::TeamMatchProfile],
+    career: Option<&CareerRound<'_>>,
+    mut leagues: Vec<LeagueOutcome>,
     world_seed: u64,
     season_index: u32,
 ) -> SeasonResult {
@@ -179,41 +245,11 @@ pub fn run_season(
 
     for competition in &pack.competitions {
         match competition.format {
-            Format::RoundRobin { legs, .. } => {
-                // Clubes atualmente na competição, em ordem de id denso —
-                // nunca via iteração de um `HashMap` (`ADR 0002`: calendário
-                // e tabela não podem depender de ordem não-determinística).
-                let clubs: Vec<ClubId> = membership
-                    .iter()
-                    .enumerate()
-                    .filter(|&(_, &comp)| comp == competition.id)
-                    .map(|(idx, _)| ClubId::new(idx as u32))
-                    .collect();
-
-                let Ok(fixtures) = rules::round_robin(&clubs, legs) else {
-                    // Número de clubes ímpar ou < 2 na competição — não
-                    // deveria acontecer com um pack validado (`docs/03 §7`),
-                    // mas também pode surgir se `promotion.slots`/
-                    // `relegation.slots` de duas competições emparelhadas
-                    // não baterem entre si (validação que o `pack` ainda não
-                    // faz — dívida técnica conhecida, não um `panic!`
-                    // escondido). Pular a competição nesta temporada é mais
-                    // seguro que travar o mundo inteiro por causa de uma liga.
+            Format::RoundRobin { .. } => {
+                let Some(pos) = leagues.iter().position(|l| l.competition == competition.id) else {
                     continue;
                 };
-
-                let outcome = match career.as_mut() {
-                    None => {
-                        simulate_round_robin_static(profiles, fixtures, world_seed, season_index)
-                    }
-                    Some(career) => simulate_round_robin_for_career(
-                        pack,
-                        career,
-                        fixtures,
-                        world_seed,
-                        season_index,
-                    ),
-                };
+                let LeagueOutcome { clubs, outcome, .. } = leagues.swap_remove(pos);
                 matches_played += outcome.matches_played;
                 home_wins += outcome.home_wins;
                 away_wins += outcome.away_wins;
@@ -258,7 +294,7 @@ pub fn run_season(
                 let participants = crate::cup::cup_participants(pack, competition);
                 let cup_profiles = crate::cup::apply_big_game_bonus(
                     pack,
-                    career.as_ref().map(|c| (c.roster, c.big_game_mentality)),
+                    career.map(|c| (c.roster, c.big_game_mentality)),
                     profiles,
                 );
                 if let Some(result) = crate::cup::run_cup(
@@ -294,7 +330,7 @@ pub fn run_season(
 /// ([`simulate_round_robin_static`]/[`simulate_round_robin_for_career`]),
 /// pra `run_season` somar nos totais da temporada sem repetir seis
 /// `+=` por caminho.
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct RoundRobinOutcome {
     results: Vec<(Fixture, Score)>,
     matches_played: u32,
@@ -341,111 +377,300 @@ fn simulate_round_robin_static(
     outcome
 }
 
-/// Simula um turno/returno inteiro **rodada a rodada**: o perfil de cada
-/// clube que joga é recalculado a cada rodada a partir de `career.roster`,
-/// excluindo quem está suspenso (ver o doc do módulo) — é o que torna
-/// `crate::discipline::roll_suspensions` capaz de ter efeito de verdade na
-/// simulação, não só existir isolado. Suspensão nunca atravessa rodada de
-/// competições diferentes nem temporada (reinicia vazia a cada chamada).
-/// Cada partida credita bilheteria no orçamento do mandante
-/// (`crate::finance::match_day_revenue`, RF-CL-03).
-fn simulate_round_robin_for_career(
-    pack: &LoadedPack,
-    career: &mut CareerRound<'_>,
-    fixtures: Vec<Fixture>,
-    world_seed: u64,
+/// O que uma rodada (dia de jogos) da temporada produziu — devolvido por
+/// [`SeasonRun::play_matchday`] pra quem avança rodada a rodada
+/// (`app::GameSession`, `Command::AdvanceRound`) reportar sem esperar o fim
+/// da temporada. A soma de todos os `MatchdayReport` de uma temporada bate
+/// com os totais de [`SeasonResult`] (testado).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MatchdayReport {
+    /// Índice (0-based) da rodada que acabou de ser jogada.
+    pub matchday: u32,
+    /// Partidas de **liga** disputadas nesta rodada (copa só no fim da
+    /// temporada, ver [`SeasonRun::finish`]).
+    pub matches_played: u32,
+    pub suspensions: usize,
+    pub match_day_revenue: Money,
+    /// Placar de cada partida desta rodada, competição por competição.
+    pub results: Vec<(CompetitionId, Fixture, Score)>,
+}
+
+/// Estado de uma liga no meio da temporada (ver [`SeasonRun`]).
+#[derive(Debug)]
+struct LeagueRun {
+    competition: CompetitionId,
+    clubs: Vec<ClubId>,
+    /// Calendário agrupado por rodada, em ordem crescente de rodada.
+    rounds: Vec<(u32, Vec<Fixture>)>,
+    outcome: RoundRobinOutcome,
+    /// Suspensos **na rodada seguinte** — nunca atravessa competição nem
+    /// temporada (começa vazio a cada [`SeasonRun::start`]).
+    suspended: HashSet<PlayerId>,
+}
+
+/// Uma temporada de carreira jogada **uma rodada por vez**: é o que deixa a
+/// UI parar entre dois dias de jogo (escalar, mexer na tática, negociar) em
+/// vez de só avançar a temporada inteira. As ligas rodam em paralelo — a
+/// rodada `k` de toda liga que tem `k`-ésima rodada é jogada junta —, o que
+/// é seguro pra determinismo porque as ligas não compartilham estado
+/// (clubes pertencem a uma liga por vez, e cada partida/sorteio é derivado
+/// de `(seed, clube, rodada)`, nunca de uma sequência global), então jogar
+/// liga por liga (como antes) ou rodada por rodada dá exatamente o mesmo
+/// resultado — teste de regressão e golden master provam isso.
+///
+/// Fluxo: [`Self::start`] → [`Self::play_matchday`] até
+/// [`Self::is_finished`] → [`Self::finish`] (tabelas, acesso/queda e copa).
+#[derive(Debug)]
+pub struct SeasonRun {
     season_index: u32,
-) -> RoundRobinOutcome {
-    let mut outcome = RoundRobinOutcome::default();
-    let mut fixtures_by_round: BTreeMap<u32, Vec<Fixture>> = BTreeMap::new();
-    for fixture in fixtures {
-        fixtures_by_round
-            .entry(fixture.round)
-            .or_default()
-            .push(fixture);
+    leagues: Vec<LeagueRun>,
+    matchday: u32,
+    total_matchdays: u32,
+}
+
+impl SeasonRun {
+    /// Monta o calendário de toda liga a partir de `membership` (a
+    /// competição atual de cada clube). Uma liga cujo calendário não pode
+    /// ser gerado (número de clubes ímpar ou < 2) é pulada nesta temporada
+    /// — não deveria acontecer com um pack validado (`docs/03 §7`), mas
+    /// também pode surgir se `promotion.slots`/`relegation.slots` de duas
+    /// competições emparelhadas não baterem entre si (validação que o
+    /// `pack` ainda não faz — dívida técnica conhecida, não um `panic!`
+    /// escondido): pular uma liga é mais seguro que travar o mundo inteiro.
+    #[must_use]
+    pub fn start(pack: &LoadedPack, membership: &[CompetitionId], season_index: u32) -> Self {
+        let mut leagues = Vec::new();
+        for competition in &pack.competitions {
+            let Format::RoundRobin { legs, .. } = competition.format else {
+                continue;
+            };
+            let clubs = league_clubs(membership, competition.id);
+            let Ok(fixtures) = rules::round_robin(&clubs, legs) else {
+                continue;
+            };
+            let mut by_round: BTreeMap<u32, Vec<Fixture>> = BTreeMap::new();
+            for fixture in fixtures {
+                by_round.entry(fixture.round).or_default().push(fixture);
+            }
+            leagues.push(LeagueRun {
+                competition: competition.id,
+                clubs,
+                rounds: by_round.into_iter().collect(),
+                outcome: RoundRobinOutcome::default(),
+                suspended: HashSet::new(),
+            });
+        }
+        let total_matchdays = leagues
+            .iter()
+            .map(|l| l.rounds.len() as u32)
+            .max()
+            .unwrap_or(0);
+        Self {
+            season_index,
+            leagues,
+            matchday: 0,
+            total_matchdays,
+        }
     }
 
-    let mut suspended: HashSet<PlayerId> = HashSet::new();
-    for (round, round_fixtures) in fixtures_by_round {
-        let playing_clubs: HashSet<ClubId> = round_fixtures
-            .iter()
-            .flat_map(|f| [f.home, f.away])
-            .collect();
+    #[must_use]
+    pub fn season_index(&self) -> u32 {
+        self.season_index
+    }
 
-        let mut round_profiles: HashMap<ClubId, engine::TeamMatchProfile> = HashMap::new();
-        let mut starters_by_club: Vec<(ClubId, Vec<PlayerId>)> =
-            Vec::with_capacity(playing_clubs.len());
-        for &club in &playing_clubs {
-            let profile = crate::quality::profile_from_roster_excluding_or_synthetic(
+    /// Quantas rodadas a temporada tem (a da liga mais longa).
+    #[must_use]
+    pub fn total_matchdays(&self) -> u32 {
+        self.total_matchdays
+    }
+
+    /// Próxima rodada a jogar (0-based); igual a [`Self::total_matchdays`]
+    /// quando a temporada acabou.
+    #[must_use]
+    pub fn next_matchday(&self) -> u32 {
+        self.matchday
+    }
+
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.matchday >= self.total_matchdays
+    }
+
+    /// Joga a próxima rodada de toda liga que ainda tem uma. No-op (relatório
+    /// vazio) se a temporada já acabou.
+    pub fn play_matchday(
+        &mut self,
+        pack: &LoadedPack,
+        career: &mut CareerRound<'_>,
+        world_seed: u64,
+    ) -> MatchdayReport {
+        let mut report = MatchdayReport {
+            matchday: self.matchday,
+            ..MatchdayReport::default()
+        };
+        if self.is_finished() {
+            return report;
+        }
+        for league in &mut self.leagues {
+            let LeagueRun {
+                competition,
+                rounds,
+                outcome,
+                suspended,
+                ..
+            } = league;
+            let Some((round, fixtures)) = rounds.get(self.matchday as usize) else {
+                continue;
+            };
+            play_league_round(
                 pack,
-                career.roster,
-                club,
-                &suspended,
+                career,
+                *competition,
+                *round,
+                fixtures,
+                outcome,
+                suspended,
                 world_seed,
+                self.season_index,
+                &mut report,
             );
-            let starters =
-                crate::quality::starters_from_roster_excluding(career.roster, club, &suspended);
-            // Moral (RF-JG-07, `crate::morale`): saldo de vitórias/derrotas
-            // nas últimas partidas de liga já disputadas nesta temporada
-            // (`outcome.results`, só o que já foi simulado até aqui — a
-            // rodada atual ainda não entrou). Primeiro, antes dos malus/
-            // balanços por jogador abaixo.
-            let profile = crate::morale::apply_morale(profile, club, &outcome.results);
-            // Malus de adaptação (RF-JG-02, `crate::adaptation`): recém-
-            // chegado de adaptação baixa rende um pouco menos por até duas
-            // temporadas — antes do balanço de consistência, abaixo, pra
-            // os dois se combinarem na mesma força final.
-            let profile = crate::adaptation::apply_adaptation_penalty(
-                profile,
-                &starters,
-                career.adaptation,
-                career.seasons_since_transfer,
-            );
-            // Balanço de consistência (RF-JG-02, `crate::consistency`):
-            // ruído zero-médio por rodada, não um direcionamento como
-            // sujeira/jogo importante — ver o doc do módulo.
-            let profile = crate::consistency::apply_consistency_swing(
-                profile,
-                &starters,
-                career.consistency,
-                world_seed,
-                club,
-                crate::discipline::season_round_tick(season_index, round),
-            );
-            round_profiles.insert(club, profile);
-            starters_by_club.push((club, starters));
         }
+        self.matchday += 1;
+        report
+    }
 
-        for fixture in round_fixtures {
-            let home = round_profiles[&fixture.home];
-            let away = round_profiles[&fixture.away];
-            let (score, shots) = simulate_fixture(home, away, world_seed, season_index, &fixture);
+    /// Fecha a temporada: tabelas, acesso/queda e copa. `career` só é lido
+    /// aqui (roster e mentalidade de jogo importante, pra copa — ver o doc
+    /// do módulo). Chamar antes de [`Self::is_finished`] fecha com o que já
+    /// foi jogado (tabela parcial), sem pânico.
+    #[must_use]
+    pub fn finish(
+        self,
+        pack: &LoadedPack,
+        profiles: &[engine::TeamMatchProfile],
+        career: Option<&CareerRound<'_>>,
+        world_seed: u64,
+    ) -> SeasonResult {
+        let leagues = self
+            .leagues
+            .into_iter()
+            .map(|l| LeagueOutcome {
+                competition: l.competition,
+                clubs: l.clubs,
+                outcome: l.outcome,
+            })
+            .collect();
+        assemble_season(
+            pack,
+            profiles,
+            career,
+            leagues,
+            world_seed,
+            self.season_index,
+        )
+    }
+}
 
-            let revenue = crate::finance::match_day_revenue(
-                fixture.home,
-                career.stadium_capacities,
-                career.club_reputation,
-                world_seed,
-                season_index,
-                round,
-            );
-            let idx = fixture.home.as_usize();
-            career.budgets[idx] = career.budgets[idx] + revenue;
-            outcome.match_day_revenue = outcome.match_day_revenue + revenue;
+/// Joga uma rodada de uma liga: perfil de cada clube recalculado a partir
+/// de `career.roster` (excluindo quem está suspenso — ver o doc do módulo),
+/// moral/adaptação/consistência aplicadas nessa ordem, bilheteria de cada
+/// partida em casa creditada no orçamento do mandante
+/// (`crate::finance::match_day_revenue`, RF-CL-03) e as suspensões da
+/// próxima rodada sorteadas ao final.
+#[allow(clippy::too_many_arguments)]
+fn play_league_round(
+    pack: &LoadedPack,
+    career: &mut CareerRound<'_>,
+    competition: CompetitionId,
+    round: u32,
+    fixtures: &[Fixture],
+    outcome: &mut RoundRobinOutcome,
+    suspended: &mut HashSet<PlayerId>,
+    world_seed: u64,
+    season_index: u32,
+    report: &mut MatchdayReport,
+) {
+    // Clubes que jogam nesta rodada, em ordem de calendário (determinística;
+    // um clube joga uma vez por rodada).
+    let playing_clubs: Vec<ClubId> = fixtures.iter().flat_map(|f| [f.home, f.away]).collect();
 
-            outcome.record_match(fixture, score, shots);
-        }
+    let mut round_profiles: HashMap<ClubId, engine::TeamMatchProfile> =
+        HashMap::with_capacity(playing_clubs.len());
+    let mut starters_by_club: Vec<(ClubId, Vec<PlayerId>)> =
+        Vec::with_capacity(playing_clubs.len());
+    for &club in &playing_clubs {
+        let profile = crate::quality::profile_from_roster_excluding_or_synthetic(
+            pack,
+            career.roster,
+            club,
+            suspended,
+            world_seed,
+        );
+        let starters =
+            crate::quality::starters_from_roster_excluding(career.roster, club, suspended);
+        // Moral (RF-JG-07, `crate::morale`): saldo de vitórias/derrotas
+        // nas últimas partidas de liga já disputadas nesta temporada
+        // (`outcome.results`, só o que já foi simulado até aqui — a
+        // rodada atual ainda não entrou). Primeiro, antes dos malus/
+        // balanços por jogador abaixo.
+        let profile = crate::morale::apply_morale(profile, club, &outcome.results);
+        // Malus de adaptação (RF-JG-02, `crate::adaptation`): recém-
+        // chegado de adaptação baixa rende um pouco menos por até duas
+        // temporadas — antes do balanço de consistência, abaixo, pra
+        // os dois se combinarem na mesma força final.
+        let profile = crate::adaptation::apply_adaptation_penalty(
+            profile,
+            &starters,
+            career.adaptation,
+            career.seasons_since_transfer,
+        );
+        // Balanço de consistência (RF-JG-02, `crate::consistency`):
+        // ruído zero-médio por rodada, não um direcionamento como
+        // sujeira/jogo importante — ver o doc do módulo.
+        let profile = crate::consistency::apply_consistency_swing(
+            profile,
+            &starters,
+            career.consistency,
+            world_seed,
+            club,
+            crate::discipline::season_round_tick(season_index, round),
+        );
+        round_profiles.insert(club, profile);
+        starters_by_club.push((club, starters));
+    }
 
-        suspended = crate::discipline::roll_suspensions(
+    for &fixture in fixtures {
+        let home = round_profiles[&fixture.home];
+        let away = round_profiles[&fixture.away];
+        let (score, shots) = simulate_fixture(home, away, world_seed, season_index, &fixture);
+
+        let revenue = crate::finance::match_day_revenue(
+            fixture.home,
+            career.stadium_capacities,
+            career.club_reputation,
             world_seed,
             season_index,
             round,
-            &starters_by_club,
-            career.dirtiness,
         );
-        outcome.suspensions += suspended.len();
+        let idx = fixture.home.as_usize();
+        career.budgets[idx] = career.budgets[idx] + revenue;
+        outcome.match_day_revenue = outcome.match_day_revenue + revenue;
+        report.match_day_revenue = report.match_day_revenue + revenue;
+
+        outcome.record_match(fixture, score, shots);
+        report.matches_played += 1;
+        report.results.push((competition, fixture, score));
     }
-    outcome
+
+    *suspended = crate::discipline::roll_suspensions(
+        world_seed,
+        season_index,
+        round,
+        &starters_by_club,
+        career.dirtiness,
+    );
+    outcome.suspensions += suspended.len();
+    report.suspensions += suspended.len();
 }
 
 /// Simula uma partida e devolve o placar e as finalizações de cada lado —
@@ -638,6 +863,114 @@ mod tests {
         for (_, table) in &result.tables {
             assert_eq!(table.len(), 8);
         }
+    }
+
+    #[test]
+    fn jogar_rodada_a_rodada_e_identico_a_run_season_e_os_relatorios_somam_o_total() {
+        // Garantia central de `SeasonRun`: parar entre rodadas não muda
+        // nada — mesmo `SeasonResult`, mesmos orçamentos — e a soma dos
+        // `MatchdayReport` fecha com os totais da temporada.
+        let p = example_pack();
+        let profiles = crate::quality::generate_match_profiles(&p, 42);
+        let roster = crate::progression::initial_roster(&p);
+        let membership = initial_membership(&p);
+        let capacities = example_capacities(&p);
+        let reputation = example_reputation(&p);
+        let dirtiness = example_dirtiness(&p);
+        let big_game_mentality = example_big_game_mentality(&p);
+        let consistency = example_consistency(&p);
+        let adaptation = example_adaptation(&p);
+        let seasons_since_transfer = example_seasons_since_transfer(&p);
+
+        let mut budgets_whole = vec![Money::ZERO; p.clubs.len()];
+        let whole = run_season(
+            &p,
+            &membership,
+            &profiles,
+            Some(CareerRound {
+                roster: &roster,
+                budgets: &mut budgets_whole,
+                stadium_capacities: &capacities,
+                club_reputation: &reputation,
+                dirtiness: &dirtiness,
+                big_game_mentality: &big_game_mentality,
+                consistency: &consistency,
+                adaptation: &adaptation,
+                seasons_since_transfer: &seasons_since_transfer,
+            }),
+            42,
+            0,
+        );
+
+        let mut budgets_step = vec![Money::ZERO; p.clubs.len()];
+        let mut career = CareerRound {
+            roster: &roster,
+            budgets: &mut budgets_step,
+            stadium_capacities: &capacities,
+            club_reputation: &reputation,
+            dirtiness: &dirtiness,
+            big_game_mentality: &big_game_mentality,
+            consistency: &consistency,
+            adaptation: &adaptation,
+            seasons_since_transfer: &seasons_since_transfer,
+        };
+        let mut run = SeasonRun::start(&p, &membership, 0);
+        assert_eq!(run.total_matchdays(), 14, "8 clubes, 2 turnos = 14 rodadas");
+        let (mut matches, mut suspensions, mut revenue, mut reported_results) =
+            (0u32, 0usize, Money::ZERO, 0usize);
+        let mut expected_matchday = 0;
+        while !run.is_finished() {
+            let report = run.play_matchday(&p, &mut career, 42);
+            assert_eq!(report.matchday, expected_matchday);
+            assert_eq!(report.results.len() as u32, report.matches_played);
+            expected_matchday += 1;
+            matches += report.matches_played;
+            suspensions += report.suspensions;
+            revenue = revenue + report.match_day_revenue;
+            reported_results += report.results.len();
+        }
+        let stepped = run.finish(&p, &profiles, Some(&career), 42);
+
+        assert_eq!(stepped, whole);
+        assert_eq!(budgets_step, budgets_whole);
+        assert_eq!(matches, stepped.matches_played);
+        assert_eq!(reported_results as u32, stepped.matches_played);
+        assert_eq!(suspensions, stepped.suspensions);
+        assert_eq!(revenue, stepped.match_day_revenue);
+    }
+
+    #[test]
+    fn rodada_alem_do_fim_da_temporada_e_no_op() {
+        let p = example_pack();
+        let roster = crate::progression::initial_roster(&p);
+        let membership = initial_membership(&p);
+        let mut budgets = vec![Money::ZERO; p.clubs.len()];
+        let capacities = example_capacities(&p);
+        let reputation = example_reputation(&p);
+        let dirtiness = example_dirtiness(&p);
+        let big_game_mentality = example_big_game_mentality(&p);
+        let consistency = example_consistency(&p);
+        let adaptation = example_adaptation(&p);
+        let seasons_since_transfer = example_seasons_since_transfer(&p);
+        let mut career = CareerRound {
+            roster: &roster,
+            budgets: &mut budgets,
+            stadium_capacities: &capacities,
+            club_reputation: &reputation,
+            dirtiness: &dirtiness,
+            big_game_mentality: &big_game_mentality,
+            consistency: &consistency,
+            adaptation: &adaptation,
+            seasons_since_transfer: &seasons_since_transfer,
+        };
+        let mut run = SeasonRun::start(&p, &membership, 0);
+        while !run.is_finished() {
+            let _ = run.play_matchday(&p, &mut career, 42);
+        }
+        let extra = run.play_matchday(&p, &mut career, 42);
+        assert_eq!(extra.matches_played, 0);
+        assert!(extra.results.is_empty());
+        assert_eq!(run.next_matchday(), run.total_matchdays());
     }
 
     #[test]

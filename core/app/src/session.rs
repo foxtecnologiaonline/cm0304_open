@@ -1,38 +1,81 @@
 //! `GameSession` — o estado de uma carreira em memória, e o único lugar
 //! onde `dispatch`/`query` (`docs/02-arquitetura.md §4`) ganham corpo.
-//! Ainda não é o `dispatch`/`query` genérico e serializável que o contrato
-//! final descreve (isso pede o log de comandos de `docs/02 §4` e o formato
-//! de save de `docs/03 §8`, nenhum dos dois existe ainda — `persist`
-//! continua vazio); é a primeira fatia vertical real: **um** comando
-//! (avançar a temporada) e **três** consultas, o suficiente para uma UI
-//! carregar um pack, rodar temporadas e mostrar uma tabela.
+//! O estado da sessão é função pura de `(pack, world_seed, log de
+//! comandos)` (`ADR 0002`): cada comando despachado com sucesso entra no
+//! log (`GameSession::to_save`), e `GameSession::load` reconstrói a sessão
+//! repetindo o log. Hoje há dois comandos — avançar uma rodada
+//! ([`Command::AdvanceRound`]) ou a temporada inteira
+//! ([`Command::AdvanceSeason`]) — e as consultas de tabela/campeão/progresso.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use domain::CompetitionId;
 
 use crate::error::AppError;
 use crate::query::{
-    CompetitionKind, CompetitionSummary, CupChampionRow, Query, QueryResult, StandingsRow,
+    CompetitionKind, CompetitionSummary, CupChampionRow, Query, QueryResult, SeasonProgress,
+    StandingsRow,
 };
 
-/// Comando: muda o estado da sessão. Hoje só existe um — mais chegam junto
-/// de elenco/transferências/treino (M2, `docs/07-roadmap.md`).
-#[derive(Debug, Clone, Copy)]
+/// Comando: muda o estado da sessão. Mais chegam junto de
+/// elenco/transferências/treino (M2, `docs/07-roadmap.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
-    /// Simula a próxima temporada inteira (todas as competições do pack) e
-    /// aplica promoção/rebaixamento para a seguinte.
+    /// Simula o que falta da temporada atual (ou uma inteira, se ainda não
+    /// começou) e aplica promoção/rebaixamento para a seguinte. Equivale a
+    /// despachar [`Command::AdvanceRound`] até a temporada acabar — o
+    /// recibo é a soma dos recibos das rodadas.
     AdvanceSeason,
+    /// Joga uma rodada (dia de jogos) de todas as ligas. O primeiro
+    /// `AdvanceRound` de uma temporada faz antes a pré-temporada (dívida,
+    /// folha, mercado, lesões, calendário); o último faz depois o fechamento
+    /// (acesso/queda, copa, premiação, TV, patrocínio, fadiga, progressão,
+    /// contratos) e marca [`CommandReceipt::season_completed`].
+    AdvanceRound,
+}
+
+impl Command {
+    /// Código de 1 byte no log de comandos do save (`persist::SaveFile`).
+    /// **Nunca renumerar nem reutilizar** — saves existentes dependem disso.
+    const fn tag(self) -> u8 {
+        match self {
+            Command::AdvanceSeason => 1,
+            Command::AdvanceRound => 2,
+        }
+    }
+
+    fn from_tag(tag: u8) -> Option<Self> {
+        match tag {
+            1 => Some(Command::AdvanceSeason),
+            2 => Some(Command::AdvanceRound),
+            _ => None,
+        }
+    }
 }
 
 /// Confirmação de que um [`Command`] foi processado, com o suficiente para
 /// a UI decidir o que mostrar em seguida — nunca o estado inteiro (isso é
 /// papel de uma `Query`).
-#[derive(Debug, Clone, Copy)]
+///
+/// Cada campo reporta o que **este comando** fez: num [`Command::AdvanceRound`]
+/// do meio da temporada só `matches_played`, `suspensions` e
+/// `match_day_revenue` são não-zero; pré-temporada (`payroll_paid`,
+/// `debt_repaid`, `transfers`, `injuries`) vem no recibo da primeira rodada e
+/// fechamento (`movements`, premiação, TV, patrocínio, `tired_players`,
+/// `contracts_renewed`) no da última. [`Command::AdvanceSeason`] devolve a
+/// soma de todos.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CommandReceipt {
-    /// Índice da temporada que acabou de ser simulada (0-based).
+    /// Índice da temporada que acabou de ser (ou está sendo) simulada (0-based).
     pub season_index: u32,
+    /// Rodada (0-based) que acabou de ser jogada — a última, num
+    /// `AdvanceSeason`.
+    pub matchday: u32,
+    /// Quantas rodadas a temporada tem.
+    pub matchdays_total: u32,
+    /// `true` se este comando fechou a temporada.
+    pub season_completed: bool,
     pub matches_played: u32,
     /// Quantos clubes mudaram de competição para a próxima temporada.
     pub movements: usize,
@@ -90,6 +133,60 @@ pub struct CommandReceipt {
     /// valor absoluto por clube escalado pela reputação, não um pool
     /// dividido entre clubes (ver `tv_revenue_paid`, acima).
     pub sponsorship_paid: domain::Money,
+}
+
+impl CommandReceipt {
+    /// Soma o recibo de um comando posterior da mesma temporada: totais
+    /// somam, posição (`season_index`, `matchday`, `matchdays_total`,
+    /// `season_completed`) fica a do mais recente.
+    fn absorb(&mut self, later: CommandReceipt) {
+        self.season_index = later.season_index;
+        self.matchday = later.matchday;
+        self.matchdays_total = later.matchdays_total;
+        self.season_completed = later.season_completed;
+        self.matches_played += later.matches_played;
+        self.movements += later.movements;
+        self.transfers += later.transfers;
+        self.injuries += later.injuries;
+        self.tired_players += later.tired_players;
+        self.suspensions += later.suspensions;
+        self.payroll_paid = self.payroll_paid + later.payroll_paid;
+        self.match_day_revenue = self.match_day_revenue + later.match_day_revenue;
+        self.contracts_renewed += later.contracts_renewed;
+        self.prize_money_paid = self.prize_money_paid + later.prize_money_paid;
+        self.tv_revenue_paid = self.tv_revenue_paid + later.tv_revenue_paid;
+        self.debt_repaid = self.debt_repaid + later.debt_repaid;
+        self.sponsorship_paid = self.sponsorship_paid + later.sponsorship_paid;
+    }
+}
+
+/// Temporada que já passou da pré-temporada e está no meio das rodadas.
+#[derive(Debug)]
+struct ActiveSeason {
+    run: world::SeasonRun,
+    /// Titulares da temporada, escolhidos na pré-temporada — a mesma
+    /// seleção que `world::apply_season_fatigue`/`advance_season` precisam
+    /// no fechamento (ver `GameSession::end_season`).
+    starters: HashSet<domain::PlayerId>,
+}
+
+/// Monta o `CareerRound` a partir dos campos da sessão — macro (e não
+/// método) porque precisa emprestar campos disjuntos de `self` ao mesmo
+/// tempo que `self.pack`/`self.profiles` são lidos por quem chama.
+macro_rules! career_round {
+    ($s:expr) => {
+        world::CareerRound {
+            roster: &$s.roster,
+            budgets: &mut $s.budgets,
+            stadium_capacities: &$s.stadium_capacities,
+            club_reputation: &$s.club_reputation,
+            dirtiness: &$s.dirtiness,
+            big_game_mentality: &$s.big_game_mentality,
+            consistency: &$s.consistency,
+            adaptation: &$s.adaptation,
+            seasons_since_transfer: &$s.seasons_since_transfer,
+        }
+    };
 }
 
 /// Uma carreira carregada em memória.
@@ -210,9 +307,15 @@ pub struct GameSession {
     /// 1 no fim de cada temporada.
     seasons_since_transfer: Vec<u8>,
     world_seed: u64,
-    /// Uma entrada por temporada já simulada — a fonte de verdade para
+    /// Uma entrada por temporada já **concluída** — a fonte de verdade para
     /// toda `Query` sobre o estado atual do mundo.
     history: Vec<world::SeasonResult>,
+    /// Temporada em andamento (pré-temporada feita, rodadas em curso), se
+    /// houver. `None` entre temporadas.
+    season: Option<ActiveSeason>,
+    /// Um byte por comando despachado com sucesso (`Command::tag`), na
+    /// ordem — vira o `command_log` do save.
+    command_log: Vec<u8>,
 }
 
 impl GameSession {
@@ -273,17 +376,17 @@ impl GameSession {
             seasons_since_transfer,
             world_seed,
             history: Vec::new(),
+            season: None,
+            command_log: Vec::new(),
         })
     }
 
     /// Reabre uma carreira salva: carrega o pack do zero e **repete** cada
-    /// temporada já jogada via [`Self::dispatch`], em vez de restaurar um
+    /// comando do log via [`Self::dispatch`], em vez de restaurar um
     /// instantâneo. Funciona porque a sessão inteira é uma função pura de
-    /// `(pack, world_seed, quantos `AdvanceSeason` já rodaram)`
-    /// (`ADR 0002`) — é a mesma ideia por trás do "log de comandos" de
-    /// `docs/02 §4`, só que hoje o log é um contador porque existe um único
-    /// tipo de comando sem parâmetros (ver `persist::save` para o porquê
-    /// disso não ser um atalho, e o que muda quando `Command` crescer).
+    /// `(pack, world_seed, log de comandos)` (`ADR 0002`) — o "log de
+    /// comandos" de `docs/02 §4`. Um save feito no meio da temporada reabre
+    /// no mesmo ponto.
     pub fn load(pack_path: &Path, save: &persist::SaveFile) -> Result<Self, AppError> {
         let mut session = Self::new(pack_path, save.world_seed)?;
         if session.pack_id != save.pack_id || session.pack_version != save.pack_version {
@@ -294,8 +397,10 @@ impl GameSession {
                 loaded_pack_version: session.pack_version,
             });
         }
-        for _ in 0..save.seasons_advanced {
-            session.dispatch(Command::AdvanceSeason)?;
+        for (position, &tag) in save.command_log.iter().enumerate() {
+            let command =
+                Command::from_tag(tag).ok_or(AppError::InvalidCommandLog { position, tag })?;
+            session.dispatch(command)?;
         }
         Ok(session)
     }
@@ -318,7 +423,7 @@ impl GameSession {
             pack_id: self.pack_id.clone(),
             pack_version: self.pack_version.clone(),
             world_seed: self.world_seed,
-            seasons_advanced: self.history.len() as u32,
+            command_log: self.command_log.clone(),
         }
     }
 
@@ -327,216 +432,222 @@ impl GameSession {
         persist::save_to_path(path, &self.to_save()).map_err(AppError::Persist)
     }
 
-    /// Processa um comando, mudando o estado da sessão.
+    /// Processa um comando, mudando o estado da sessão. Todo comando que
+    /// dá certo entra no log do save (`Self::to_save`).
     pub fn dispatch(&mut self, command: Command) -> Result<CommandReceipt, AppError> {
-        match command {
+        let receipt = match command {
+            Command::AdvanceRound => self.advance_round(),
             Command::AdvanceSeason => {
-                let season_index = self.history.len() as u32;
-                // Dívida acumulada antes de qualquer outro gasto
-                // (`world::repay_debt`, `docs/01 §2.2` RF-CL-03) — o que
-                // sobrou de temporadas anteriores sem caixa pra pagar a
-                // folha (`self.debt`) é pago primeiro, igual contabilidade
-                // de verdade.
-                let debt_repaid = world::repay_debt(&mut self.budgets, &mut self.debt);
-
-                // Folha salarial: cada clube paga o elenco inteiro pelo CA
-                // travado no contrato de cada um (`world::pay_salaries`,
-                // `docs/01 §2.2` RF-CL-02) — só então o que sobrar no
-                // orçamento entra no mercado. Nunca deixa um orçamento
-                // negativo (zera); o que não coube vira dívida em
-                // `self.debt`, paga na temporada seguinte (acima).
-                let payroll_paid = world::pay_salaries(
-                    &self.roster,
-                    &self.contracts,
-                    &mut self.budgets,
-                    &mut self.debt,
-                );
-
-                // Mercado antes da temporada: clubes tentam substituir seu
-                // titular mais fraco por um reserva melhor de outro clube
-                // que caiba no orçamento (`world::run_market_day`,
-                // `docs/07-roadmap.md` M1: "primeira IA de mercado"). Feito
-                // antes de recalcular a força, pra quem comprou reforço já
-                // jogar mais forte nesta mesma temporada. Todo jogador
-                // transferido assina contrato novo no comprador (duração
-                // máxima, salário no CA do momento da venda); jogador com
-                // `self.loyalty` acima do limiar nunca é candidato a saída,
-                // e `self.ambition` recusa um passo atrás de
-                // `self.club_reputation` (RF-JG-02) — ver
-                // `world::run_market_day`.
-                let transfers = world::run_market_day(
-                    &mut self.roster,
-                    &mut self.contracts,
-                    &self.loyalty,
-                    &self.ambition,
-                    &self.club_reputation,
-                    &mut self.budgets,
-                );
-                // Quem acabou de ser transferido volta a sofrer o malus de
-                // adaptação (RF-JG-02, `world::adaptation`) por até duas
-                // temporadas, mesmo que já tivesse se adaptado a um clube
-                // anterior.
-                let transferred_players: Vec<domain::PlayerId> =
-                    transfers.iter().map(|t| t.player).collect();
-                world::mark_transferred(&mut self.seasons_since_transfer, &transferred_players);
-
-                // Lesões da temporada: substitui completamente o estado
-                // anterior (`world::roll_injuries`), então um jogador
-                // recuperado não some do roster — só volta a ser elegível
-                // pra escalação. Chance varia por jogador conforme
-                // `self.injury_proneness` (RF-JG-02, `world::injuries`).
-                world::roll_injuries(
-                    &mut self.roster,
-                    &self.injury_proneness,
-                    self.world_seed,
-                    season_index,
-                );
-                let injuries = self.roster.iter().filter(|p| p.injured).count();
-
-                // Recalcula o perfil a partir do roster atual — reflete
-                // progressão (`world::advance_season`, abaixo), as
-                // transferências que acabaram de acontecer e as lesões
-                // desta temporada (jogador machucado nunca titulariza, ver
-                // `world::strength_from_roster`/`world::profile_from_roster`).
-                // Em `season_index == 0` sem transferência nem lesão, é
-                // idêntico ao que `Self::new` já calculou.
-                self.profiles = world::generate_match_profiles_from_roster(
-                    &self.pack,
-                    &self.roster,
-                    self.world_seed,
-                );
-                // Titulares desta temporada — a mesma seleção que o cálculo
-                // de perfil acima acabou de fazer clube a clube, guardada à
-                // parte porque `world::apply_season_fatigue` (abaixo)
-                // precisa saber exatamente quem jogou, não só o perfil
-                // agregado do time.
-                let starters = world::starters_from_roster_all_clubs(&self.pack, &self.roster);
-                // `Some(CareerRound { .. })` liga o caminho de carreira
-                // (`world::season`, módulo): liga simulada rodada a
-                // rodada, perfil recalculado a cada uma a partir do
-                // roster — é o que dá a `world::discipline` (suspensões) e
-                // a `world::finance::match_day_revenue` (bilheteria) um
-                // ponto na simulação onde "fora desta rodada"/"mandante
-                // desta partida" têm efeito de verdade. Copa continua
-                // usando `self.profiles` (instantâneo do início da
-                // temporada) de qualquer jeito, e não gera bilheteria.
-                let career = world::CareerRound {
-                    roster: &self.roster,
-                    budgets: &mut self.budgets,
-                    stadium_capacities: &self.stadium_capacities,
-                    club_reputation: &self.club_reputation,
-                    dirtiness: &self.dirtiness,
-                    big_game_mentality: &self.big_game_mentality,
-                    consistency: &self.consistency,
-                    adaptation: &self.adaptation,
-                    seasons_since_transfer: &self.seasons_since_transfer,
-                };
-                let result = world::run_season(
-                    &self.pack,
-                    &self.membership,
-                    &self.profiles,
-                    Some(career),
-                    self.world_seed,
-                    season_index,
-                );
-
-                for &(club, _from, to) in &result.movements {
-                    self.membership[club.as_usize()] = to;
+                let mut total = self.advance_round();
+                while !total.season_completed {
+                    let next = self.advance_round();
+                    total.absorb(next);
                 }
-
-                // Premiação e TV de fim de temporada
-                // (`world::distribute_prize_money`/`distribute_tv_revenue`,
-                // `docs/01 §2.2` RF-CL-03, segunda e terceira fatia): dois
-                // pools fixos por competição de liga, um dividido por
-                // posição final, outro por reputação — `result.tables` só
-                // tem entrada pra competição de liga que de fato rodou
-                // (copa não tem tabela, ver `world::season::SeasonResult`).
-                let mut prize_money_paid = domain::Money::ZERO;
-                let mut tv_revenue_paid = domain::Money::ZERO;
-                for (_competition, table) in &result.tables {
-                    prize_money_paid =
-                        prize_money_paid + world::distribute_prize_money(table, &mut self.budgets);
-                    let clubs: Vec<domain::ClubId> = table.iter().map(|row| row.club).collect();
-                    tv_revenue_paid = tv_revenue_paid
-                        + world::distribute_tv_revenue(
-                            &clubs,
-                            &self.club_reputation,
-                            &mut self.budgets,
-                        );
-                }
-
-                // Patrocínio de fim de temporada (`world::pay_sponsorship`,
-                // RF-CL-03, quinta fatia): valor absoluto por clube do
-                // pack inteiro, não por competição — por isso fica fora
-                // do loop de tabelas acima.
-                let sponsorship_paid =
-                    world::pay_sponsorship(&self.club_reputation, &mut self.budgets);
-
-                // Condição de entrada na próxima temporada
-                // (`world::apply_season_fatigue`, `docs/01 §2.1` RF-JG-07,
-                // fatia mínima): titular que jogou muita partida de liga
-                // rende um pouco menos na temporada seguinte, reserva entra
-                // descansado. Só partidas de liga contam — `result.tables`
-                // nunca inclui copa (`world::cup`, `SeasonResult::cups`).
-                let matches_played_by_club: HashMap<domain::ClubId, u32> = result
-                    .tables
-                    .iter()
-                    .flat_map(|(_, table)| table.iter().map(|row| (row.club, row.played)))
-                    .collect();
-                world::apply_season_fatigue(&mut self.roster, &starters, &matches_played_by_club);
-                let tired_players = self
-                    .roster
-                    .iter()
-                    .filter(|p| p.condition < world::FULL_CONDITION)
-                    .count();
-
-                world::advance_season(
-                    &mut self.roster,
-                    &starters,
-                    &self.professionalism,
-                    self.world_seed,
-                    season_index,
-                );
-
-                // Duração de contrato (`world::advance_contracts`, `docs/01
-                // §2.2` RF-CL-02): decrementa a duração restante de todo
-                // contrato; quem chega a zero renova automaticamente com o
-                // CA pós-progressão desta temporada (por isso vem depois
-                // de `world::advance_season`, acima).
-                let contracts_renewed = world::advance_contracts(
-                    &mut self.contracts,
-                    &self.roster,
-                    self.world_seed,
-                    season_index,
-                );
-
-                // Fecha a contabilidade de adaptação da temporada: o loop
-                // por rodada acima já leu `self.seasons_since_transfer` de
-                // quem foi transferido nesta mesma temporada (contando
-                // como `0`); agora todo mundo avança 1, preparando a
-                // contagem pra próxima (`world::adaptation`, RF-JG-02).
-                world::advance_seasons_since_transfer(&mut self.seasons_since_transfer);
-
-                let receipt = CommandReceipt {
-                    season_index,
-                    matches_played: result.matches_played,
-                    movements: result.movements.len(),
-                    transfers: transfers.len(),
-                    injuries,
-                    tired_players,
-                    suspensions: result.suspensions,
-                    payroll_paid,
-                    match_day_revenue: result.match_day_revenue,
-                    contracts_renewed,
-                    prize_money_paid,
-                    tv_revenue_paid,
-                    debt_repaid,
-                    sponsorship_paid,
-                };
-                self.history.push(result);
-                Ok(receipt)
+                total
             }
+        };
+        self.command_log.push(command.tag());
+        Ok(receipt)
+    }
+
+    /// Joga uma rodada; se a temporada ainda não começou, faz a
+    /// pré-temporada antes, e se a rodada foi a última, o fechamento depois.
+    fn advance_round(&mut self) -> CommandReceipt {
+        let mut receipt = CommandReceipt::default();
+        let mut active = match self.season.take() {
+            Some(active) => active,
+            None => self.begin_season(&mut receipt),
+        };
+        receipt.season_index = active.run.season_index();
+        receipt.matchdays_total = active.run.total_matchdays();
+
+        let report = {
+            let mut career = career_round!(self);
+            active
+                .run
+                .play_matchday(&self.pack, &mut career, self.world_seed)
+        };
+        receipt.matchday = report.matchday;
+        receipt.matches_played = report.matches_played;
+        receipt.suspensions = report.suspensions;
+        receipt.match_day_revenue = report.match_day_revenue;
+
+        if active.run.is_finished() {
+            self.end_season(active, &mut receipt);
+            receipt.season_completed = true;
+        } else {
+            self.season = Some(active);
         }
+        receipt
+    }
+
+    /// Pré-temporada: tudo que acontece uma vez, antes da primeira rodada.
+    fn begin_season(&mut self, receipt: &mut CommandReceipt) -> ActiveSeason {
+        let season_index = self.history.len() as u32;
+        // Dívida acumulada antes de qualquer outro gasto
+        // (`world::repay_debt`, `docs/01 §2.2` RF-CL-03) — o que
+        // sobrou de temporadas anteriores sem caixa pra pagar a
+        // folha (`self.debt`) é pago primeiro, igual contabilidade
+        // de verdade.
+        receipt.debt_repaid = world::repay_debt(&mut self.budgets, &mut self.debt);
+
+        // Folha salarial: cada clube paga o elenco inteiro pelo CA
+        // travado no contrato de cada um (`world::pay_salaries`,
+        // `docs/01 §2.2` RF-CL-02) — só então o que sobrar no
+        // orçamento entra no mercado. Nunca deixa um orçamento
+        // negativo (zera); o que não coube vira dívida em
+        // `self.debt`, paga na temporada seguinte (acima).
+        receipt.payroll_paid = world::pay_salaries(
+            &self.roster,
+            &self.contracts,
+            &mut self.budgets,
+            &mut self.debt,
+        );
+
+        // Mercado antes da temporada: clubes tentam substituir seu
+        // titular mais fraco por um reserva melhor de outro clube
+        // que caiba no orçamento (`world::run_market_day`,
+        // `docs/07-roadmap.md` M1: "primeira IA de mercado"). Feito
+        // antes de recalcular a força, pra quem comprou reforço já
+        // jogar mais forte nesta mesma temporada. Todo jogador
+        // transferido assina contrato novo no comprador (duração
+        // máxima, salário no CA do momento da venda); jogador com
+        // `self.loyalty` acima do limiar nunca é candidato a saída,
+        // e `self.ambition` recusa um passo atrás de
+        // `self.club_reputation` (RF-JG-02) — ver
+        // `world::run_market_day`.
+        let transfers = world::run_market_day(
+            &mut self.roster,
+            &mut self.contracts,
+            &self.loyalty,
+            &self.ambition,
+            &self.club_reputation,
+            &mut self.budgets,
+        );
+        receipt.transfers = transfers.len();
+        // Quem acabou de ser transferido volta a sofrer o malus de
+        // adaptação (RF-JG-02, `world::adaptation`) por até duas
+        // temporadas, mesmo que já tivesse se adaptado a um clube
+        // anterior.
+        let transferred_players: Vec<domain::PlayerId> =
+            transfers.iter().map(|t| t.player).collect();
+        world::mark_transferred(&mut self.seasons_since_transfer, &transferred_players);
+
+        // Lesões da temporada: substitui completamente o estado
+        // anterior (`world::roll_injuries`), então um jogador
+        // recuperado não some do roster — só volta a ser elegível
+        // pra escalação. Chance varia por jogador conforme
+        // `self.injury_proneness` (RF-JG-02, `world::injuries`).
+        world::roll_injuries(
+            &mut self.roster,
+            &self.injury_proneness,
+            self.world_seed,
+            season_index,
+        );
+        receipt.injuries = self.roster.iter().filter(|p| p.injured).count();
+
+        // Recalcula o perfil a partir do roster atual — reflete
+        // progressão (`world::advance_season`), as transferências que
+        // acabaram de acontecer e as lesões desta temporada (jogador
+        // machucado nunca titulariza, ver `world::strength_from_roster`/
+        // `world::profile_from_roster`). Em `season_index == 0` sem
+        // transferência nem lesão, é idêntico ao que `Self::new` já
+        // calculou. Copa usa este instantâneo a temporada inteira.
+        self.profiles =
+            world::generate_match_profiles_from_roster(&self.pack, &self.roster, self.world_seed);
+        // Titulares desta temporada — a mesma seleção que o cálculo de
+        // perfil acima acabou de fazer clube a clube, guardada à parte
+        // porque `world::apply_season_fatigue` (no fechamento) precisa
+        // saber exatamente quem jogou, não só o perfil agregado do time.
+        let starters = world::starters_from_roster_all_clubs(&self.pack, &self.roster);
+
+        ActiveSeason {
+            run: world::SeasonRun::start(&self.pack, &self.membership, season_index),
+            starters,
+        }
+    }
+
+    /// Fechamento depois da última rodada.
+    fn end_season(&mut self, active: ActiveSeason, receipt: &mut CommandReceipt) {
+        let ActiveSeason { run, starters } = active;
+        let season_index = run.season_index();
+        let result = {
+            let career = career_round!(self);
+            run.finish(&self.pack, &self.profiles, Some(&career), self.world_seed)
+        };
+        receipt.movements = result.movements.len();
+
+        for &(club, _from, to) in &result.movements {
+            self.membership[club.as_usize()] = to;
+        }
+
+        // Premiação e TV de fim de temporada
+        // (`world::distribute_prize_money`/`distribute_tv_revenue`,
+        // `docs/01 §2.2` RF-CL-03, segunda e terceira fatia): dois
+        // pools fixos por competição de liga, um dividido por
+        // posição final, outro por reputação — `result.tables` só
+        // tem entrada pra competição de liga que de fato rodou
+        // (copa não tem tabela, ver `world::season::SeasonResult`).
+        for (_competition, table) in &result.tables {
+            receipt.prize_money_paid =
+                receipt.prize_money_paid + world::distribute_prize_money(table, &mut self.budgets);
+            let clubs: Vec<domain::ClubId> = table.iter().map(|row| row.club).collect();
+            receipt.tv_revenue_paid = receipt.tv_revenue_paid
+                + world::distribute_tv_revenue(&clubs, &self.club_reputation, &mut self.budgets);
+        }
+
+        // Patrocínio de fim de temporada (`world::pay_sponsorship`,
+        // RF-CL-03, quinta fatia): valor absoluto por clube do
+        // pack inteiro, não por competição — por isso fica fora
+        // do loop de tabelas acima.
+        receipt.sponsorship_paid = world::pay_sponsorship(&self.club_reputation, &mut self.budgets);
+
+        // Condição de entrada na próxima temporada
+        // (`world::apply_season_fatigue`, `docs/01 §2.1` RF-JG-07,
+        // fatia mínima): titular que jogou muita partida de liga
+        // rende um pouco menos na temporada seguinte, reserva entra
+        // descansado. Só partidas de liga contam — `result.tables`
+        // nunca inclui copa (`world::cup`, `SeasonResult::cups`).
+        let matches_played_by_club: HashMap<domain::ClubId, u32> = result
+            .tables
+            .iter()
+            .flat_map(|(_, table)| table.iter().map(|row| (row.club, row.played)))
+            .collect();
+        world::apply_season_fatigue(&mut self.roster, &starters, &matches_played_by_club);
+        receipt.tired_players = self
+            .roster
+            .iter()
+            .filter(|p| p.condition < world::FULL_CONDITION)
+            .count();
+
+        world::advance_season(
+            &mut self.roster,
+            &starters,
+            &self.professionalism,
+            self.world_seed,
+            season_index,
+        );
+
+        // Duração de contrato (`world::advance_contracts`, `docs/01
+        // §2.2` RF-CL-02): decrementa a duração restante de todo
+        // contrato; quem chega a zero renova automaticamente com o
+        // CA pós-progressão desta temporada (por isso vem depois
+        // de `world::advance_season`, acima).
+        receipt.contracts_renewed = world::advance_contracts(
+            &mut self.contracts,
+            &self.roster,
+            self.world_seed,
+            season_index,
+        );
+
+        // Fecha a contabilidade de adaptação da temporada: o loop
+        // por rodada já leu `self.seasons_since_transfer` de
+        // quem foi transferido nesta mesma temporada (contando
+        // como `0`); agora todo mundo avança 1, preparando a
+        // contagem pra próxima (`world::adaptation`, RF-JG-02).
+        world::advance_seasons_since_transfer(&mut self.seasons_since_transfer);
+
+        self.history.push(result);
     }
 
     /// Responde uma consulta — nunca muda estado (`docs/02 §4`).
@@ -549,6 +660,24 @@ impl GameSession {
                 QueryResult::CupChampion(self.cup_champion(competition))
             }
             Query::CurrentSeason => QueryResult::CurrentSeason(self.history.len() as u32),
+            Query::SeasonProgress => QueryResult::SeasonProgress(self.season_progress()),
+        }
+    }
+
+    fn season_progress(&self) -> SeasonProgress {
+        match &self.season {
+            Some(active) => SeasonProgress {
+                season_index: active.run.season_index(),
+                in_progress: true,
+                next_matchday: active.run.next_matchday(),
+                total_matchdays: active.run.total_matchdays(),
+            },
+            None => SeasonProgress {
+                season_index: self.history.len() as u32,
+                in_progress: false,
+                next_matchday: 0,
+                total_matchdays: 0,
+            },
         }
     }
 
@@ -849,7 +978,7 @@ mod tests {
     }
 
     #[test]
-    fn to_save_reflete_seed_e_temporadas_avancadas() {
+    fn to_save_reflete_seed_e_comandos_despachados() {
         let mut session = GameSession::new(&example_pack_path(), 99).unwrap();
         session.dispatch(Command::AdvanceSeason).unwrap();
         session.dispatch(Command::AdvanceSeason).unwrap();
@@ -857,7 +986,7 @@ mod tests {
         let save = session.to_save();
         assert_eq!(save.pack_id, "example.two-tier");
         assert_eq!(save.world_seed, 99);
-        assert_eq!(save.seasons_advanced, 2);
+        assert_eq!(save.command_log, vec![1, 1], "dois AdvanceSeason");
     }
 
     #[test]
@@ -1161,13 +1290,163 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    fn progress(session: &GameSession) -> SeasonProgress {
+        match session.query(Query::SeasonProgress) {
+            QueryResult::SeasonProgress(p) => p,
+            other => panic!("resposta inesperada: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn advance_round_joga_uma_rodada_por_vez_e_fecha_a_temporada_na_ultima() {
+        let mut session = GameSession::new(&example_pack_path(), 42).unwrap();
+        assert_eq!(
+            progress(&session),
+            SeasonProgress {
+                season_index: 0,
+                in_progress: false,
+                next_matchday: 0,
+                total_matchdays: 0
+            }
+        );
+
+        let first = session.dispatch(Command::AdvanceRound).unwrap();
+        assert_eq!(first.matchday, 0);
+        assert_eq!(first.matchdays_total, 14);
+        assert!(!first.season_completed);
+        assert_eq!(first.matches_played, 8, "4 jogos por liga, 2 ligas");
+        assert!(first.payroll_paid.cents() > 0, "pré-temporada no 1º recibo");
+        assert_eq!(first.movements, 0, "fechamento só no último recibo");
+        assert_eq!(
+            progress(&session),
+            SeasonProgress {
+                season_index: 0,
+                in_progress: true,
+                next_matchday: 1,
+                total_matchdays: 14
+            }
+        );
+        assert!(
+            matches!(
+                session.query(Query::CurrentSeason),
+                QueryResult::CurrentSeason(0)
+            ),
+            "temporada só conta como concluída no fim"
+        );
+
+        for expected in 1..13 {
+            let mid = session.dispatch(Command::AdvanceRound).unwrap();
+            assert_eq!(mid.matchday, expected);
+            assert!(!mid.season_completed);
+            assert_eq!(mid.payroll_paid, domain::Money::ZERO, "folha só no 1º");
+            assert_eq!(mid.prize_money_paid, domain::Money::ZERO);
+        }
+
+        let last = session.dispatch(Command::AdvanceRound).unwrap();
+        assert_eq!(last.matchday, 13);
+        assert!(last.season_completed);
+        assert!(last.prize_money_paid.cents() > 0, "fechamento no último");
+        assert!(last.sponsorship_paid.cents() > 0);
+        assert_eq!(last.movements, 4);
+        assert!(matches!(
+            session.query(Query::CurrentSeason),
+            QueryResult::CurrentSeason(1)
+        ));
+        assert_eq!(
+            progress(&session),
+            SeasonProgress {
+                season_index: 1,
+                in_progress: false,
+                next_matchday: 0,
+                total_matchdays: 0
+            }
+        );
+    }
+
+    #[test]
+    fn advance_season_e_a_soma_exata_de_advance_round_ate_o_fim() {
+        // Garantia central de F1: parar entre rodadas não muda o mundo nem
+        // a contabilidade — o recibo de `AdvanceSeason` é a soma dos
+        // recibos das rodadas, e o estado final é o mesmo.
+        let mut whole = GameSession::new(&example_pack_path(), 7).unwrap();
+        let mut stepped = GameSession::new(&example_pack_path(), 7).unwrap();
+        for _ in 0..3 {
+            let a = whole.dispatch(Command::AdvanceSeason).unwrap();
+            let mut sum = stepped.dispatch(Command::AdvanceRound).unwrap();
+            while !sum.season_completed {
+                let next = stepped.dispatch(Command::AdvanceRound).unwrap();
+                sum.absorb(next);
+            }
+            assert_eq!(format!("{a:?}"), format!("{sum:?}"));
+        }
+        assert_eq!(whole.budgets, stepped.budgets);
+        assert_eq!(whole.debt, stepped.debt);
+        for comp in whole.pack.competitions.iter().map(|c| c.id) {
+            assert_eq!(
+                whole.query(Query::Standings { competition: comp }),
+                stepped.query(Query::Standings { competition: comp })
+            );
+        }
+    }
+
+    #[test]
+    fn advance_season_no_meio_da_temporada_completa_so_o_que_falta() {
+        let mut session = GameSession::new(&example_pack_path(), 5).unwrap();
+        for _ in 0..4 {
+            session.dispatch(Command::AdvanceRound).unwrap();
+        }
+        let rest = session.dispatch(Command::AdvanceSeason).unwrap();
+        assert!(rest.season_completed);
+        assert_eq!(rest.matchday, 13);
+        assert_eq!(rest.matches_played, 10 * 8, "10 rodadas restantes");
+        assert_eq!(rest.payroll_paid, domain::Money::ZERO, "pré já foi paga");
+    }
+
+    #[test]
+    fn save_e_load_no_meio_da_temporada_reabrem_no_mesmo_ponto() {
+        let mut original = GameSession::new(&example_pack_path(), 11).unwrap();
+        original.dispatch(Command::AdvanceSeason).unwrap();
+        for _ in 0..6 {
+            original.dispatch(Command::AdvanceRound).unwrap();
+        }
+        let save = original.to_save();
+        let mut reloaded = GameSession::load(&example_pack_path(), &save).unwrap();
+        assert_eq!(progress(&reloaded), progress(&original));
+        assert_eq!(reloaded.budgets, original.budgets);
+
+        // E os dois continuam idênticos dali em diante.
+        let a = original.dispatch(Command::AdvanceSeason).unwrap();
+        let b = reloaded.dispatch(Command::AdvanceSeason).unwrap();
+        assert_eq!(format!("{a:?}"), format!("{b:?}"));
+        assert_eq!(reloaded.budgets, original.budgets);
+        assert_eq!(reloaded.to_save(), original.to_save());
+    }
+
+    #[test]
+    fn load_recusa_log_de_comandos_com_codigo_desconhecido() {
+        let save = persist::SaveFile {
+            pack_id: "example.two-tier".to_string(),
+            pack_version: "0.1.0".to_string(),
+            world_seed: 1,
+            command_log: vec![2, 99],
+        };
+        let err = GameSession::load(&example_pack_path(), &save).unwrap_err();
+        assert!(matches!(
+            err,
+            AppError::InvalidCommandLog {
+                position: 1,
+                tag: 99
+            }
+        ));
+    }
+
     #[test]
     fn load_recusa_save_de_outro_pack() {
         let save = persist::SaveFile {
             pack_id: "outro.pack".to_string(),
             pack_version: "9.9.9".to_string(),
             world_seed: 1,
-            seasons_advanced: 0,
+            command_log: Vec::new(),
         };
         let err = GameSession::load(&example_pack_path(), &save).unwrap_err();
         assert!(matches!(err, AppError::SavePackMismatch { .. }));

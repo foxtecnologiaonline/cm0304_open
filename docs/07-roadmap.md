@@ -454,7 +454,7 @@ aqui e volta ao design** — é para isso que o marco existe.
 Diagnóstico: o núcleo é profundo em economia e raso em **agência do
 técnico** — `app` só tem `AdvanceSeason` e 4 consultas; não há clube do
 usuário, avanço por rodada, escalação, decisão de mercado, nem log de
-comandos no save (guarda só `seasons_advanced`); o motor v0 é estatístico,
+comandos no save (guardava só `seasons_advanced`, até a F1); o motor v0 é estatístico,
 sem jogadores em campo. Parar de refinar economia e construir jogabilidade,
 nesta ordem (dependência e risco, cada fase = 1+ commits com pipeline
 completo e golden como rede de segurança):
@@ -462,7 +462,7 @@ completo e golden como rede de segurança):
 | Fase | Entrega | Por que nessa ordem |
 |---|---|---|
 | F0 | Medir em escala MVP (48 clubes, ~1.500 jogadores): tempo de temporada e RAM vs. critério MVP #2 e RNF-02/08; otimizar hotspots | Arquitetura falha cara se descoberta tarde (`00 §7`) |
-| F1 | Temporada resumível por rodada (`AdvanceRound`); `AdvanceSeason` vira loop; golden idêntico | Maior refator; tudo abaixo depende dele |
+| F1 ✅ | Temporada resumível por rodada (`AdvanceRound`); `AdvanceSeason` vira loop; golden idêntico; save v2 com log de comandos | Maior refator; tudo abaixo depende dele |
 | F2 | Clube do usuário + perfil do técnico (RF-CA-01) + save v2 com log de comandos + teste cross-platform | Critério MVP #4 |
 | F3 | Queries da UI: elenco, jogador, clube/finanças, calendário, última partida | A UI só enxerga o que `Query` expõe |
 | F4 | Escalação/formação/instruções (RF-PA-01/02), penalidade fora de posição | Primeira decisão real |
@@ -483,6 +483,20 @@ de RNF-08. Conclusão: nenhum gargalo a otimizar hoje; otimizar agora seria
 prematuro. O trabalho de "otimização" é **proteger essa folga** — gate
 automatizado de tempo/memória em F9 — porque F4-F7 vão encarecer cada
 partida (jogadores em campo, estatísticas, eventos narrados).
+
+**F1 feita:** `world::SeasonRun` joga a temporada uma rodada por vez
+(`start` → `play_matchday` → `finish`; `run_season` com carreira é só esse
+laço), `app::Command::AdvanceRound` + `Query::SeasonProgress`, e
+`AdvanceSeason` virou "`AdvanceRound` até acabar" — o recibo é a soma dos
+recibos das rodadas (testado). Rede de segurança cumprida: golden master
+(`8cf19d44332c5e61`) e `calibrate` byte-idênticos sem regravar; ligas rodam
+em paralelo por rodada, o que é seguro porque não compartilham estado.
+Save v2 (`persist::SCHEMA_VERSION` 1→2): `seasons_advanced` virou
+`command_log` (1 byte por comando, codificado por `app`); um save feito no
+meio da temporada reabre no mesmo ponto (testado). Pré-temporada
+(dívida/folha/mercado/lesões) vem no recibo da 1ª rodada, fechamento
+(acesso/queda, copa, premiação, TV, patrocínio, fadiga, progressão,
+contratos) no da última.
 
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04

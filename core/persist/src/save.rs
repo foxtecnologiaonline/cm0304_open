@@ -1,19 +1,18 @@
 //! Save binário — `docs/03-modelo-de-dados.md §8.1`.
 //!
 //! O formato aqui é deliberadamente menor do que o `[header] | [blocos] |
-//! [footer]` completo descrito em `docs/03 §8.1`: hoje uma `GameSession`
-//! (`app::GameSession`) não guarda nenhum estado mutável por entidade —
-//! sem elenco jogável, contratos, transferências ou conhecimento, não há
-//! `people | clubs | contracts | ...` para colunar. O que existe é
-//! exatamente o suficiente para reconstruir uma sessão **por replay**:
-//! qual pack, qual seed do mundo, e quantas vezes o único `Command` que
-//! existe (`app::Command::AdvanceSeason`) já foi despachado. Isso não é um
-//! atalho inventado aqui — é a estratégia que `docs/02 §4`/`§8.1` já prevê
-//! ("o log de comandos... permite, opcionalmente, reconstruir o save"), só
-//! que hoje o "log" é um contador porque só existe um tipo de comando sem
-//! parâmetros. Quando `app::Command` ganhar variantes (transferência,
-//! escalação, ...), este formato precisa crescer para um log de verdade —
-//! `seasons_advanced` deixa de bastar.
+//! [footer]` completo descrito em `docs/03 §8.1`: uma `GameSession`
+//! (`app::GameSession`) é reconstruída **por replay** — não há blocos
+//! `people | clubs | contracts | ...` para colunar, porque o estado inteiro
+//! é função pura de `(pack, world_seed, log de comandos)` (`ADR 0002`). O
+//! save guarda exatamente isso: qual pack, qual seed do mundo e o **log de
+//! comandos** já despachados, na ordem — a estratégia que `docs/02 §4`/
+//! `§8.1` já prevê ("o log de comandos... permite, opcionalmente,
+//! reconstruir o save"). O log é opaco aqui: `persist` só guarda bytes com
+//! comprimento e checksum; quem os codifica e interpreta é `app` (cada
+//! `Command` cabe em poucos bytes — uma carreira de 50 temporadas, avançada
+//! rodada a rodada, fica abaixo de 1 KB), o que mantém `persist`
+//! independente de `app` (`docs/02-arquitetura.md §2`).
 //!
 //! Layout, todos os inteiros em little-endian (`docs/02 §8.1`: "endianness
 //! fixa ⇒ o mesmo arquivo abre no Windows e no Android"):
@@ -23,9 +22,9 @@
 //! schema_version   u16
 //! sim_version      u16       // versão do motor que gerou este save (docs/02 §5, golden masters)
 //! world_seed       u64
-//! seasons_advanced u32
 //! pack_id          (u16 len, bytes utf-8)
 //! pack_version     (u16 len, bytes utf-8)
+//! command_log      (u32 len, bytes opacos)
 //! checksum         u64       // FNV-1a de tudo antes deste campo
 //! ```
 //!
@@ -41,10 +40,14 @@ use crate::error::PersistError;
 
 const MAGIC: [u8; 10] = *b"CM0304OPEN";
 
-/// Versão do formato de save em si (layout dos campos abaixo). Bump exige
-/// migração + teste com um save real da versão anterior (`docs/02 §8.3`) —
-/// nenhum dos dois existe ainda porque não há uma versão anterior.
-pub const SCHEMA_VERSION: u16 = 1;
+/// Versão do formato de save em si (layout dos campos acima). Bump exige
+/// migração + teste com um save real da versão anterior (`docs/02 §8.3`).
+/// Bump 1→2: o contador `seasons_advanced` virou `command_log` (log de
+/// comandos opaco), necessário assim que existiu mais de um tipo de comando
+/// e a sessão pôde parar no meio da temporada. Sem migração: o v1 nunca foi
+/// distribuído (formato de desenvolvimento pré-1.0), então um save v1 é
+/// recusado com `UnsupportedSchemaVersion`, que é a mensagem certa.
+pub const SCHEMA_VERSION: u16 = 2;
 
 /// Versão do motor de simulação que produziu este save. Bump 0→1: motor
 /// v0.5 recalibrado (`HOME_ADVANTAGE` 1,4→1,25 em `engine::simulate`, ver
@@ -55,8 +58,7 @@ pub const SCHEMA_VERSION: u16 = 1;
 pub const SIM_VERSION: u16 = 1;
 
 /// O conteúdo de um save — o suficiente para `app::GameSession::load`
-/// reconstruir a sessão por replay. Ver o doc do módulo para o porquê de
-/// não guardar mais do que isto ainda.
+/// reconstruir a sessão por replay. Ver o doc do módulo.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaveFile {
     /// `pack::PackManifest::id` — `load` recusa abrir contra um pack
@@ -65,7 +67,9 @@ pub struct SaveFile {
     pub pack_id: String,
     pub pack_version: String,
     pub world_seed: u64,
-    pub seasons_advanced: u32,
+    /// Comandos despachados, na ordem, codificados por `app` — opaco para
+    /// `persist` (ver o doc do módulo). Até `u32::MAX` bytes.
+    pub command_log: Vec<u8>,
 }
 
 fn fnv1a64(bytes: &[u8]) -> u64 {
@@ -95,14 +99,23 @@ fn write_str(buf: &mut Vec<u8>, field: &'static str, s: &str) -> Result<(), Pers
 
 /// Codifica um [`SaveFile`] nos bytes do formato descrito no doc do módulo.
 pub fn encode(save: &SaveFile) -> Result<Vec<u8>, PersistError> {
-    let mut buf = Vec::with_capacity(64);
+    let mut buf = Vec::with_capacity(64 + save.command_log.len());
     buf.extend_from_slice(&MAGIC);
     buf.extend_from_slice(&SCHEMA_VERSION.to_le_bytes());
     buf.extend_from_slice(&SIM_VERSION.to_le_bytes());
     buf.extend_from_slice(&save.world_seed.to_le_bytes());
-    buf.extend_from_slice(&save.seasons_advanced.to_le_bytes());
     write_str(&mut buf, "pack_id", &save.pack_id)?;
     write_str(&mut buf, "pack_version", &save.pack_version)?;
+    let log_len: u32 =
+        save.command_log
+            .len()
+            .try_into()
+            .map_err(|_| PersistError::FieldTooLong {
+                field: "command_log",
+                len: save.command_log.len(),
+            })?;
+    buf.extend_from_slice(&log_len.to_le_bytes());
+    buf.extend_from_slice(&save.command_log);
 
     let checksum = fnv1a64(&buf);
     buf.extend_from_slice(&checksum.to_le_bytes());
@@ -206,17 +219,18 @@ pub fn decode(bytes: &[u8]) -> Result<SaveFile, PersistError> {
 
     let mut r = Reader::new(payload);
     r.take(MAGIC.len() + 2)?; // magic + schema_version, já validados acima
-    let _sim_version = r.take_u16()?; // não afeta a leitura do v1; guardado p/ golden masters futuros.
+    let _sim_version = r.take_u16()?; // não afeta a leitura; guardado p/ golden masters futuros.
     let world_seed = r.take_u64()?;
-    let seasons_advanced = r.take_u32()?;
     let pack_id = r.take_str()?;
     let pack_version = r.take_str()?;
+    let log_len = r.take_u32()? as usize;
+    let command_log = r.take(log_len)?.to_vec();
 
     Ok(SaveFile {
         pack_id,
         pack_version,
         world_seed,
-        seasons_advanced,
+        command_log,
     })
 }
 
@@ -256,7 +270,7 @@ mod tests {
             pack_id: "example.two-tier".to_string(),
             pack_version: "0.1.0".to_string(),
             world_seed: 42,
-            seasons_advanced: 3,
+            command_log: vec![1, 1, 2, 2, 2],
         }
     }
 
@@ -349,7 +363,6 @@ mod tests {
         buf.extend_from_slice(&SCHEMA_VERSION.to_le_bytes());
         buf.extend_from_slice(&SIM_VERSION.to_le_bytes());
         buf.extend_from_slice(&0u64.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
         buf.extend_from_slice(&500u16.to_le_bytes()); // promete 500 bytes de pack_id...
         // ...mas não escreve nenhum: o arquivo acaba aqui.
         let checksum = fnv1a64(&buf);
@@ -390,6 +403,39 @@ mod tests {
     }
 
     #[test]
+    fn comprimento_do_log_maior_que_o_restante_da_truncado_nao_panic() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&MAGIC);
+        buf.extend_from_slice(&SCHEMA_VERSION.to_le_bytes());
+        buf.extend_from_slice(&SIM_VERSION.to_le_bytes());
+        buf.extend_from_slice(&0u64.to_le_bytes());
+        buf.extend_from_slice(&0u16.to_le_bytes()); // pack_id vazio
+        buf.extend_from_slice(&0u16.to_le_bytes()); // pack_version vazio
+        buf.extend_from_slice(&1000u32.to_le_bytes()); // promete 1000 bytes de log...
+        let checksum = fnv1a64(&buf);
+        buf.extend_from_slice(&checksum.to_le_bytes());
+        assert!(matches!(decode(&buf), Err(PersistError::Truncated)));
+    }
+
+    #[test]
+    fn log_de_comandos_vazio_e_valido() {
+        let mut save = sample();
+        save.command_log.clear();
+        assert_eq!(decode(&encode(&save).unwrap()).unwrap(), save);
+    }
+
+    #[test]
+    fn save_v1_antigo_e_recusado_com_schema_nao_suportado() {
+        let mut bytes = encode(&sample()).unwrap();
+        bytes[10] = 1;
+        bytes[11] = 0;
+        assert!(matches!(
+            decode(&bytes),
+            Err(PersistError::UnsupportedSchemaVersion { found: 1 })
+        ));
+    }
+
+    #[test]
     fn carregar_caminho_inexistente_da_erro_de_io_tipado() {
         let err = load_from_path(Path::new("/tmp/managerfc-nao-existe.cm0304save")).unwrap_err();
         assert!(matches!(err, PersistError::Io { .. }));
@@ -411,9 +457,9 @@ mod proptests {
             pack_id in "[a-z.]{1,40}",
             pack_version in "[0-9.]{1,10}",
             world_seed: u64,
-            seasons_advanced: u32,
+            command_log in prop::collection::vec(any::<u8>(), 0..64),
         ) {
-            let save = SaveFile { pack_id, pack_version, world_seed, seasons_advanced };
+            let save = SaveFile { pack_id, pack_version, world_seed, command_log };
             let bytes = encode(&save).unwrap();
             let decoded = decode(&bytes).unwrap();
             prop_assert_eq!(decoded, save);

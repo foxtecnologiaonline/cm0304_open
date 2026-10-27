@@ -89,7 +89,7 @@ cm0304_open/
 │  │                       #    docs/01 RF-CL-03)
 │  ├─ app/                 # ✅ dispatch/query (GameSession) — a fronteira que a ponte vai expor
 │  │                       #    save/load por replay determinístico (docs/03 §8.1)
-│  ├─ persist/             # ✅ save binário versionado — checksum, escrita atômica, sem blocos ainda
+│  ├─ persist/             # ✅ save binário versionado — checksum, escrita atômica, log de comandos (replay), sem blocos
 │  ├─ ai/                  # ✅ escalação automática (11 titulares por posição/CA) +
 │  │                       #    primeira IA de mercado, valor já considera contrato, idade, PA e
 │  │                       #    reputação do clube vendedor (docs/01 §2.4, RF-TR-02), jogador leal
@@ -109,7 +109,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 380 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 390 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier

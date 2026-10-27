@@ -150,8 +150,9 @@ Decisões embutidas nesse contrato:
 * **Zero lógica de jogo em Dart.** Se a UI precisa de um número, existe uma `Query`.
 
 > **Estado de implementação:** o crate `app` já tem uma primeira fatia real
-> — `GameSession::new/dispatch/query`, um `Command` (`AdvanceSeason`) e três
-> `Query` (`Competitions`, `Standings`, `CurrentSeason`), com `StandingsRow`
+> — `GameSession::new/dispatch/query`, dois `Command` (`AdvanceSeason` e
+> `AdvanceRound`, que joga uma rodada por vez) e quatro `Query`
+> (`Competitions`, `Standings`, `CurrentSeason`, `SeasonProgress`), com `StandingsRow`
 > como projeção de verdade (nome de clube já resolvido, nunca `ClubId` cru).
 > `managerfc-cli play` é o primeiro consumidor externo dessa fronteira —
 > prova que ela funciona de fora do próprio crate, não só nos testes
@@ -266,20 +267,20 @@ que torna o mercado crível.
   reconstruir o save.
 
 > **Estado de implementação:** `persist` (M2) já implementa o cabeçalho —
-> `magic | schema_version | sim_version | seed | pack_id+version` — com
+> `magic | schema_version | sim_version | seed | pack_id+version | command_log` — com
 > endianness little fixa, checksum (FNV-1a, não xxh3: ver `persist::save`
 > para o porquê) e escrita atômica de verdade (arquivo `.tmp` + `rename`),
 > tudo com testes de propriedade garantindo que `decode` nunca panica com
 > dado externo. O que falta do parágrafo acima: **os blocos** (`people |
-> clubs | contracts | ...`) — hoje não existe nenhum estado mutável por
-> entidade pra colunar (sem elenco jogável, sem contratos, sem
-> transferências), então o "save" de hoje é o cabeçalho sozinho, e
-> `GameSession::load` reconstrói o resto **por replay**
-> (`seasons_advanced` vezes o único `Command` que existe) em vez de
-> restaurar um snapshot — exatamente a estratégia que o parágrafo acima já
-> previa ("o log de comandos... permite, opcionalmente, reconstruir o
-> save"). Quando `Command` ganhar variantes com parâmetros, esse contador
-> deixa de bastar e vira um log de comandos de verdade. Compressão zstd,
+> clubs | contracts | ...`) — o estado é função pura de `(pack, seed,
+> log de comandos)`, então o save de hoje é o cabeçalho mais o **log de
+> comandos** (1 byte por comando, codificado por `app`, opaco para
+> `persist`; 61 bytes para 2 temporadas), e `GameSession::load` reconstrói
+> o resto **por replay** — inclusive um save feito no meio da temporada —
+> em vez de restaurar um snapshot, exatamente a estratégia que o parágrafo
+> acima já previa ("o log de comandos... permite, opcionalmente,
+> reconstruir o save"). Comando com parâmetros (escalação, oferta, ...)
+> estende a codificação do log, não o formato do arquivo. Compressão zstd,
 > `created_at`, hash do conteúdo do pack (para detectar packs que mudaram
 > sob os pés de uma carreira) e rotação de N gerações de autosave também
 > não existem ainda — `managerfc-cli save`/`load` e `app::slot_path`/
