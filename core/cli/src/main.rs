@@ -23,6 +23,7 @@ use clap::{Parser, Subcommand};
 
 mod calibration;
 mod golden;
+mod manage;
 
 #[derive(Parser)]
 #[command(
@@ -80,6 +81,36 @@ enum Command {
         /// `docs/04 §4.2`: "calibrate roda temporadas headless e emite CSV".
         #[arg(long)]
         csv: Option<PathBuf>,
+    },
+
+    /// Cliente de texto do ciclo jogável: assume um clube e joga (escalar,
+    /// treinar, negociar, rodadas, partida ao vivo, caixa de entrada, save)
+    /// lendo comandos da entrada padrão ou de um roteiro (`--script`). Prova
+    /// de fora do crate `app` que a fronteira `dispatch`/`query` basta para
+    /// jogar — a UI Flutter consumirá a mesma fronteira.
+    Manage {
+        /// Seed do mundo (ignorada com `--load`).
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+        /// Diretório do pack a usar. Sem isto, usa o pack de exemplo do
+        /// próprio repositório.
+        #[arg(long)]
+        pack: Option<PathBuf>,
+        /// Id do clube a comandar (ver `Query::Clubs`; padrão 0).
+        #[arg(long, default_value_t = 0)]
+        club: u32,
+        /// Nome do técnico.
+        #[arg(long, default_value = "Técnico")]
+        name: String,
+        /// Continua uma carreira gravada com `salvar` em vez de começar uma.
+        #[arg(long)]
+        load: Option<PathBuf>,
+        /// Lê os comandos deste arquivo em vez da entrada padrão.
+        #[arg(long)]
+        script: Option<PathBuf>,
+        /// Encerra com erro no primeiro comando que falhar.
+        #[arg(long)]
+        strict: bool,
     },
 
     /// Joga N temporadas via `app::GameSession` — o mesmo `dispatch`/`query`
@@ -204,6 +235,15 @@ fn main() -> ExitCode {
             check,
             csv,
         } => calibrate(seasons, seed, pack, check, csv.as_deref()),
+        Command::Manage {
+            seed,
+            pack,
+            club,
+            name,
+            load,
+            script,
+            strict,
+        } => manage_command(seed, pack, club, name, load, script, strict),
         Command::Play {
             seasons,
             seed,
@@ -231,6 +271,75 @@ fn main() -> ExitCode {
         Command::Golden {
             action: GoldenAction::Verify { seed, pack, expect },
         } => golden::verify(seed, pack, &expect),
+    }
+}
+
+/// Implementação de `manage`: monta (ou carrega) a carreira e entrega ao
+/// laço de `manage::run`.
+fn manage_command(
+    seed: u64,
+    pack: Option<PathBuf>,
+    club: u32,
+    name: String,
+    load: Option<PathBuf>,
+    script: Option<PathBuf>,
+    strict: bool,
+) -> ExitCode {
+    use std::io::{BufReader, IsTerminal};
+
+    let pack_dir = pack.unwrap_or_else(default_example_pack_path);
+    let mut session = match &load {
+        Some(path) => app::GameSession::load_from_path(&pack_dir, path),
+        None => app::GameSession::new(&pack_dir, seed).and_then(|mut s| {
+            let nation = domain::NationId::new(0);
+            s.dispatch(app::Command::TakeClub {
+                club: domain::ClubId::new(club),
+                coach: app::CoachProfile {
+                    name,
+                    nation,
+                    reputation: 30,
+                },
+            })?;
+            Ok(s)
+        }),
+    };
+    let session = match &mut session {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("managerfc-cli: não foi possível começar a carreira: {err}");
+            return ExitCode::from(2);
+        }
+    };
+
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    let result = match script {
+        Some(path) => match std::fs::File::open(&path) {
+            Ok(file) => manage::run(session, BufReader::new(file), &mut out, true, strict),
+            Err(err) => {
+                eprintln!(
+                    "managerfc-cli: falha ao abrir o roteiro {}: {err}",
+                    path.display()
+                );
+                return ExitCode::from(2);
+            }
+        },
+        None => {
+            let stdin = std::io::stdin();
+            let interactive = stdin.is_terminal();
+            if interactive {
+                println!("ManagerFC — digite `ajuda` para ver os comandos, `sair` para encerrar.");
+            }
+            manage::run(session, stdin.lock(), &mut out, !interactive, strict)
+        }
+    };
+    match result {
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::from(1),
+        Err(err) => {
+            eprintln!("managerfc-cli: erro de E/S: {err}");
+            ExitCode::from(2)
+        }
     }
 }
 

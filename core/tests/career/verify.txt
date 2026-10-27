@@ -1,0 +1,11 @@
+# Reabre a carreira gravada e imprime o estado — a saída tem que bater,
+# byte a byte, com verify.expected.txt em qualquer sistema operacional.
+status
+elenco
+escalacao
+calendario
+tabela
+rodada
+ultima
+propostas
+caixa

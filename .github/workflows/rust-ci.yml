@@ -123,6 +123,25 @@ jobs:
         run: |
           cargo run -p managerfc-cli --release -- save --seasons 3 --seed 7 save.cm0304save
           cargo run -p managerfc-cli --release -- load save.cm0304save
+      - name: manage (ciclo jogável de ponta a ponta, docs/07 M2)
+        # Roda o roteiro de uma carreira (assume clube, treina, negocia, joga
+        # ao vivo, joga a temporada, salva) pela fronteira app::GameSession;
+        # `--strict` falha no primeiro comando que der erro.
+        shell: bash
+        run: |
+          cargo run -p managerfc-cli --release -- manage --seed 42 --club 3 --name "Zé Treinador" --strict --script tests/career/play.txt
+          # O roteiro regrava o save: tem que sair idêntico ao commitado em
+          # qualquer SO (a mesma carreira, byte a byte).
+          git diff --exit-code -- tests/career/career_s42.sav
+      - name: save de carreira versionado reabre idêntico (docs/00 §7, critério 4)
+        # `career_s42.sav` é commitado (gravado uma vez); aqui cada SO reabre
+        # e a saída tem que ser igual à gravada — o teste automatizado de
+        # "save abre em outra plataforma e continua idêntico". Android
+        # compartilha o mesmo código Rust (entra com o build NDK, M2+).
+        shell: bash
+        run: |
+          cargo run -p managerfc-cli --release -- manage --load tests/career/career_s42.sav --strict --script tests/career/verify.txt > career.out
+          diff --strip-trailing-cr career.out tests/career/verify.expected.txt
       - name: golden verify (hash de estado cruzado entre plataformas, docs/08 §3/§8)
         # O arquivo é gravado uma vez (`core/tests/golden/s42.json`, commitado)
         # e verificado aqui nas 3 famílias de SO da matriz — é isso que prova

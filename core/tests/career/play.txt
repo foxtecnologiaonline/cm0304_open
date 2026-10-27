@@ -1,0 +1,25 @@
+# Roteiro que GERA tests/career/career_s42.sav (seed 42, clube 3).
+# Para regravar (só de propósito, igual ao golden — docs/08 §3), a partir de core/:
+#   cargo run --release -q -p managerfc-cli -- manage --seed 42 --club 3 --name "Zé Treinador" \
+#     --script tests/career/play.txt
+#   cargo run --release -q -p managerfc-cli -- manage --load tests/career/career_s42.sav \
+#     --script tests/career/verify.txt > tests/career/verify.expected.txt
+iniciar
+treino-time intenso
+formacao 4-3-3
+instrucoes ofensiva alta
+comprar 30 4000000.00 300 4
+ao-vivo
+jogar 45
+trocar 62 63
+jogar 45
+proximo
+proximo
+renovar 63 110 3
+proximo
+proximo
+proximo
+temporada
+iniciar
+proximo
+salvar tests/career/career_s42.sav

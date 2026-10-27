@@ -1,0 +1,144 @@
+> status
+Baía Nova FC — Primeira Divisão de Estrelônia (Estrelônia) — técnico Zé Treinador
+Temporada 2: próxima rodada 2 de 14
+Caixa 2349320.34 | dívida 0.00 | elenco 17 | folha/temporada 112200.00
+Janela de transferências: ABERTA (fecha em 3 rodada(s))
+Caixa de entrada: 31 não lida(s)
+> elenco
+ id  pos nome                  idade  CA cond  situação  contrato salário/temp  valor      treino
+ 49  GOL Xisto Abranches         23  137   67  ok        2a 6600.00  2279307.36 intenso
+ 48  GOL Cássio Brandão          22   95   95  ok        2a 4400.00  1295268.00 intenso
+ 53  DEF Gil Zambrano            28  156   67  ok        3a 7350.00  3638232.00 intenso
+ 50  DEF Quim Yepes              33  109   67  ok        2a 5700.00  841650.04 intenso
+ 54  DEF Rui Leal                30   98   67  ok        1a 5300.00  603035.16 intenso
+ 52  DEF Aurélio Nogueira        23   89   67  ok        1a 4450.00  852616.44 intenso
+ 51  DEF Otávio Siqueira         28   82   95  ok        2a 3800.00  804190.40 intenso
+ 58  MEI Gil Siqueira            26  158   67  ok        3a 7650.00  3732118.00 intenso
+ 56  MEI Gil Farias              20  150   67  ok        3a 7050.00  4036500.00 intenso
+ 59  MEI Gil Wagner              25  111   67  ok        2a 5550.00  1246885.20 intenso
+ 57  MEI Hugo Ibiapina           31  101   95  ok        3a 5200.00  903298.55 intenso
+ 55  MEI Sérgio Yepes            31   85   95  LESÃO     4a 4500.00  756096.25 intenso
+ 30  ATA Pedro Siqueira          23  152   72  ok        3a 22500.00  3507187.20 normal
+ 62  ATA Hugo Farias             32  152   67  ok        4a 7600.00  2417833.60 intenso
+ 61  ATA Bento Dutra             23  115   67  ok        2a 5400.00  1606044.00 intenso
+ 60  ATA Caio Osório             19  111   95  ok        2a 5300.00  1768309.92 intenso
+ 63  ATA Wander Zambrano         32   72   95  ok        2a 3850.00  434004.48 intenso
+> escalacao
+Formação 4-3-3 (automática) | mentalidade Attacking | pressão High
+  GOL  49 Xisto Abranches        cond 67
+  DEF  53 Gil Zambrano           cond 67
+  DEF  50 Quim Yepes             cond 67
+  DEF  54 Rui Leal               cond 67
+  DEF  52 Aurélio Nogueira       cond 67
+  MEI  58 Gil Siqueira           cond 67
+  MEI  56 Gil Farias             cond 67
+  MEI  59 Gil Wagner             cond 67
+  ATA  30 Pedro Siqueira         cond 72
+  ATA  62 Hugo Farias            cond 67
+  ATA  61 Bento Dutra            cond 67
+> calendario
+R 1  Baía Nova FC           3 x 0 Rio Claro FC
+R 2  Monte Cristal FC         -   Baía Nova FC
+R 3  Serra Alta FC            -   Baía Nova FC
+R 4  Baía Nova FC             -   Costa Azul FC
+R 5  Terra Firme FC           -   Baía Nova FC
+R 6  Baía Nova FC             -   Porto Solar FC
+R 7  Baía Nova FC             -   Ponte Alta FC
+R 8  Rio Claro FC             -   Baía Nova FC
+R 9  Baía Nova FC             -   Monte Cristal FC
+R10  Baía Nova FC             -   Serra Alta FC
+R11  Costa Azul FC            -   Baía Nova FC
+R12  Baía Nova FC             -   Terra Firme FC
+R13  Porto Solar FC           -   Baía Nova FC
+R14  Ponte Alta FC            -   Baía Nova FC
+> tabela
+== Primeira Divisão de Estrelônia ==
+ 1. Rio Claro FC             J 14 V  9 E  3 D  2  23:8    30 pts
+ 2. Serra Alta FC            J 14 V  6 E  4 D  4  23:18   22 pts
+ 3. Monte Cristal FC         J 14 V  5 E  6 D  3  15:11   21 pts
+ 4. Baía Nova FC             J 14 V  5 E  4 D  5  19:21   19 pts
+ 5. Terra Firme FC           J 14 V  5 E  3 D  6  20:24   18 pts
+ 6. Porto Solar FC           J 14 V  5 E  2 D  7  19:21   17 pts
+ 7. Vale Dourado FC          J 14 V  3 E  5 D  6  20:25   14 pts
+ 8. Campo Real FC            J 14 V  3 E  3 D  8   9:20   12 pts
+== Segunda Divisão de Estrelônia ==
+ 1. Costa Azul FC            J 14 V  7 E  4 D  3  19:13   25 pts
+ 2. Ponte Alta FC            J 14 V  6 E  4 D  4  21:18   22 pts
+ 3. Pedra Branca FC          J 14 V  5 E  6 D  3  18:15   21 pts
+ 4. Boa Vista EC FC          J 14 V  5 E  4 D  5  16:14   19 pts
+ 5. Fonte Nova FC            J 14 V  4 E  6 D  4  16:16   18 pts
+ 6. Alto Verde FC            J 14 V  4 E  5 D  5  13:14   17 pts
+ 7. Lagoa Funda FC           J 14 V  5 E  1 D  8  13:18   16 pts
+ 8. Cruz do Sul FC           J 14 V  3 E  4 D  7  14:22   13 pts
+> rodada
+Rodada 1:
+  Porto Solar FC         2 x 0 Ponte Alta FC
+  Serra Alta FC          0 x 1 Costa Azul FC
+  Baía Nova FC           3 x 0 Rio Claro FC
+  Monte Cristal FC       2 x 1 Terra Firme FC
+  Vale Dourado FC        1 x 0 Fonte Nova FC
+  Campo Real FC          1 x 0 Cruz do Sul FC
+  Alto Verde FC          1 x 2 Boa Vista EC FC
+  Pedra Branca FC        0 x 3 Lagoa Funda FC
+> ultima
+Primeira Divisão de Estrelônia — temporada 2
+Baía Nova FC 3 x 0 Rio Claro FC  | finalizações 14-18 | xG 1.51-1.94
+  Começa a partida.
+  2' Bento Dutra finaliza (Baía Nova FC).
+  9' Kaio Homem finaliza (Rio Claro FC).
+  16' Pedro Siqueira finaliza (Baía Nova FC).
+  17' Otávio Queiroga finaliza (Rio Claro FC).
+  20' Fábio Queiroga finaliza (Rio Claro FC).
+  23' Bento Dutra finaliza (Baía Nova FC).
+  25' Bento Dutra finaliza (Baía Nova FC).
+  27' Kaio Homem finaliza (Rio Claro FC).
+  30' Fábio Queiroga finaliza (Rio Claro FC).
+  33' Fábio Queiroga finaliza (Rio Claro FC).
+  35' Kaio Homem finaliza (Rio Claro FC).
+  36' Sérgio Barros finaliza (Rio Claro FC).
+  40' Sérgio Barros finaliza (Rio Claro FC).
+  Intervalo: Baía Nova FC 0 x 0 Rio Claro FC
+  48' Fábio Queiroga finaliza (Rio Claro FC).
+  50' Gil Siqueira finaliza (Baía Nova FC).
+  53' Fábio Queiroga finaliza (Rio Claro FC).
+  54' Kaio Homem finaliza (Rio Claro FC).
+  55' Bento Dutra finaliza (Baía Nova FC).
+  59' Pedro Siqueira finaliza (Baía Nova FC).
+  59' GOL! Pedro Siqueira (Baía Nova FC) — Baía Nova FC 1 x 0 Rio Claro FC
+  62' Bento Dutra finaliza (Baía Nova FC).
+  63' Fábio Queiroga finaliza (Rio Claro FC).
+  66' Kaio Homem finaliza (Rio Claro FC).
+  70' Pedro Siqueira finaliza (Baía Nova FC).
+  70' Kaio Homem finaliza (Rio Claro FC).
+  71' Bento Dutra finaliza (Baía Nova FC).
+  74' Kaio Homem finaliza (Rio Claro FC).
+  78' Hugo Farias finaliza (Baía Nova FC).
+  80' Bento Dutra finaliza (Baía Nova FC).
+  80' GOL! Bento Dutra (Baía Nova FC) — Baía Nova FC 2 x 0 Rio Claro FC
+  86' Kaio Homem finaliza (Rio Claro FC).
+  88' Hugo Farias finaliza (Baía Nova FC).
+  88' Ubiratã Maciel finaliza (Rio Claro FC).
+  89' Hugo Farias finaliza (Baía Nova FC).
+  89' GOL! Hugo Farias (Baía Nova FC) — Baía Nova FC 3 x 0 Rio Claro FC
+  Fim de jogo: Baía Nova FC 3 x 0 Rio Claro FC
+Melhores notas:
+  Pedro Siqueira         8.1
+  Bento Dutra            8.1
+  Hugo Farias            8.1
+> propostas
+proposta 3: Gil Siqueira (MEI CA 158) — Porto Solar FC oferece 3661207.75 (valor 3732118.00) — expira em 1 rodada(s)
+proposta 4: Gil Zambrano (DEF CA 156) — Porto Solar FC oferece 4111202.16 (valor 3638232.00) — expira em 2 rodada(s)
+> caixa
+31 mensagem(ns), 31 não lida(s):
+* #30  T2 R 1  Proposta 4: Porto Solar FC oferece 4111202.16 por Gil Zambrano.  <- decisão
+* #29  T2 R 0  Resultado: Baía Nova FC 3 x 0 Rio Claro FC
+* #28  T2 R 0  Proposta 3: Porto Solar FC oferece 3661207.75 por Gil Siqueira.  <- decisão
+* #27  T2 R 0  Janela de transferências aberta.
+* #26  T2 R 0  2 jogador(es) com contrato no último ano.  <- decisão
+* #25  T2 R 0  1 jogador(es) seu(s) lesionado(s).
+* #24  T2 R 0  Pré-temporada concluída.
+* #23  T1 R14  Fim de temporada: 4º de 8.
+* #22  T1 R13  Resultado: Terra Firme FC 2 x 2 Baía Nova FC
+* #21  T1 R12  Resultado: Baía Nova FC 1 x 1 Vale Dourado FC
+* #20  T1 R11  Resultado: Baía Nova FC 1 x 2 Porto Solar FC
+* #19  T1 R10  Resultado: Monte Cristal FC 0 x 2 Baía Nova FC

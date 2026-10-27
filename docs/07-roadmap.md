@@ -469,7 +469,7 @@ completo e golden como rede de segurança):
 | F5 ✅ | Partida ao vivo em texto, substituições, estatísticas (RF-PA-05/06/07) | Precisa de F1 + F4 |
 | F6 ✅ | Mercado jogável: janelas, ofertas, negociação (RF-TR-01..04); demanda cortada | Precisa de F1 + F2 |
 | F7 ✅ | Treino básico (RF-TC-01); moral/fadiga por jogador cortadas | MVP exige treino com efeito mensurável |
-| F8 | Caixa de entrada (RF-CA-07) + cliente `manage` na CLI | Valida o loop sem Flutter |
+| F8 ✅ | Caixa de entrada (RF-CA-07) + cliente `manage` na CLI | Valida o loop sem Flutter |
 | F9 | Gates automatizados dos critérios MVP 2-4, contrato `app` congelado pra ponte, linhas de corte | Fecha o marco |
 
 **F0 medida** (`packs/tools/gen_scale_pack.py`, saída não versionada;
@@ -649,6 +649,23 @@ offset, limit }` (mais novas primeiro, página ≤ 50) e
 no log do save e o replay reproduz a caixa exata, incluindo o que já foi
 lido. Limitada a 200 mensagens (as mais antigas saem; ids nunca
 reaproveitados), só existe com clube sob comando.
+
+**F8b feita (`managerfc-cli manage`):** cliente de texto do ciclo jogável,
+só apresentação — nenhuma regra de jogo mora ali, tudo passa por
+`GameSession::dispatch`/`query` (a mesma fronteira que a ponte Flutter vai
+usar). Assume um clube e joga: status, elenco, escalação, formação,
+instruções, treino, calendário, tabela, janela, busca, compra, renovação,
+propostas, caixa de entrada, partida **ao vivo** (`ao-vivo`/`jogar`/`trocar`/
+`relato`), rodada/temporada e `salvar`; lê stdin ou `--script`, com
+`--strict` para falhar no primeiro erro e `--load` para continuar uma
+carreira gravada. **Regressão de carreira versionada**
+(`core/tests/career/`): `career_s42.sav` (137 bytes, uma temporada e meia
+jogada com compra, renovação, treino, partida ao vivo e substituição),
+`play.txt` (que o regera byte a byte — testado e checado com `git diff` na
+CI) e `verify.txt` + `verify.expected.txt` (a saída ao reabri-lo). É a
+**automação do critério de MVP #4** ("save gerado numa plataforma abre em
+outra e continua idêntico"): o job `cli-gate` roda isso em Windows, macOS e
+Linux. Android usa o mesmo código Rust e entra com o build NDK.
 
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04
