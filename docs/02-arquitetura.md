@@ -149,20 +149,49 @@ Decisões embutidas nesse contrato:
 * **Paginação obrigatória** em qualquer consulta que possa retornar > 200 linhas.
 * **Zero lógica de jogo em Dart.** Se a UI precisa de um número, existe uma `Query`.
 
-> **Estado de implementação:** o crate `app` já tem uma primeira fatia real
-> — `GameSession::new/dispatch/query`, dois `Command` (`AdvanceSeason` e
-> `AdvanceRound`, que joga uma rodada por vez) e quatro `Query`
-> (`Competitions`, `Standings`, `CurrentSeason`, `SeasonProgress`, `Manager`, `Clubs`, `Club`,
-> `Squad`, `Player`, `Fixtures`, `RoundResults`), com `StandingsRow`
-> como projeção de verdade (nome de clube já resolvido, nunca `ClubId` cru).
-> `managerfc-cli play` é o primeiro consumidor externo dessa fronteira —
-> prova que ela funciona de fora do próprio crate, não só nos testes
-> internos. Ainda faltam, do contrato conceitual acima: `Command`
-> serializável em log (pré-requisito de replay e do save, `§8`), `events()`
-> como stream navegável (espera eventos de partida com jogadores, M2/M3), e
-> a própria ponte FFI (`flutter_rust_bridge`) — bloqueada neste ambiente por
-> falta do SDK Flutter/Dart para gerar e verificar o lado Dart, não por
-> falta de trabalho no lado Rust.
+> **Estado de implementação (contrato `app` v1, congelado no fim do lado Rust
+> do M2 — `app::API_VERSION`):** `GameSession::new/load/dispatch/query/
+> save_to_path` implementam os verbos `dispatch` e `query`; o fluxo
+> `events()` virou a **caixa de entrada** (`Query::Inbox`, `docs/07` F8), que
+> a UI consulta em vez de assinar um stream. A ponte FFI
+> (`flutter_rust_bridge`) segue bloqueada neste ambiente por falta do SDK
+> Flutter/Dart para gerar e verificar o lado Dart — não por falta de trabalho
+> no lado Rust: `managerfc-cli manage` consome exatamente esta fronteira e
+> joga uma carreira inteira.
+>
+> **Comandos** (todos serializáveis no log do save, `persist`; tags imutáveis em
+> `app::command`): `TakeClub`, `BeginSeason`, `AdvanceRound`, `AdvanceSeason`,
+> `SetFormation`, `SetLineup`, `SetInstructions`, `StartMatch`, `PlayMinutes`,
+> `Substitute`, `MakeOffer`, `RenewContract`, `RespondToOffer`, `SetTraining`,
+> `SetTeamTraining`, `MarkInboxRead`, `MarkAllInboxRead`.
+>
+> **Consultas:** `Competitions`, `Standings`, `CupChampion`, `CurrentSeason`,
+> `SeasonProgress`, `Manager`, `Clubs`, `Club`, `Squad`, `Player`, `Fixtures`,
+> `RoundResults`, `Lineup`, `LiveMatch`, `LastMatch`, `TransferWindow`,
+> `IncomingOffers`, `Search`, `Inbox`.
+>
+> **Regras do contrato** (o que a ponte pode assumir):
+>
+> * **DTOs planos**, sem ponteiros nem lifetimes, com `ClubId`/`PlayerId`
+>   (u32 densos) **e** nomes já resolvidos; dinheiro em centavos (`i64`);
+>   nenhum ponto flutuante (xG em milésimos de gol).
+> * **O núcleo nunca devolve texto traduzido**: o relato de partida
+>   (`MatchLineKind`), a caixa de entrada (`InboxKind`) e as recusas de
+>   negociação (`Refusal`) são enums com ids; `Attribute::key()` e
+>   `Formation::key()` são chaves de localização. A UI monta as frases.
+> * **Paginação**: `Search` e `Inbox` limitam a página a 50 linhas; o relato
+>   ao vivo pagina por `lines_from`/`total_lines`.
+> * **Erros tipados** (`AppError`); recusa de negociação **não** é erro, é um
+>   `OfferOutcome` em `CommandReceipt::offer`. Comando que falha não muda
+>   estado nem entra no log.
+> * **Potencial (PA) e atributos ocultos nunca saem** do núcleo (névoa de
+>   guerra, `docs/01` RF-SC-01, M3).
+> * **Compatibilidade**: acrescentar comando, consulta ou campo é compatível;
+>   renumerar tag do log, remover/renomear campo ou mudar significado sobe
+>   `API_VERSION` e exige migração de save (`docs/02 §8.3`).
+> * **Custo medido** (escala de MVP, 48 clubes / 1.440 jogadores,
+>   `bench-season`): elenco ≈ 5 µs, busca de 50 linhas ≈ 50 µs, caixa ≈ 1 µs
+>   por consulta — cabe numa tela sem cache.
 
 ---
 

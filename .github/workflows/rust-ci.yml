@@ -118,6 +118,13 @@ jobs:
         run: cargo run -p managerfc-cli --release -- calibrate --seasons 50 --seed 42 --check
       - name: play (fronteira app::GameSession, docs/02 §4)
         run: cargo run -p managerfc-cli --release -- play --seasons 3
+      - name: bench-season (critério de MVP #2 e RNF-08, docs/00 §7)
+        # Pack de 48 clubes / 1.440 jogadores gerado em Rust, temporadas
+        # jogadas com técnico humano; falha se uma temporada passar de 5 s
+        # ou (onde o SO deixa medir) o pico de memória passar de 600 MB.
+        # Celular de linha média (20 s) não é mensurável em CI — a folga
+        # de ~300x do desktop é o indicador.
+        run: cargo run -p managerfc-cli --release -- bench-season --seasons 3
       - name: save/load (persist — round-trip cross-platform, docs/03 §8.1)
         shell: bash
         run: |

@@ -12,6 +12,13 @@
 //! não dá para construir nem verificar sem o SDK Dart.
 #![warn(clippy::all)]
 
+/// Versão do contrato `app` que a ponte Flutter consome (comandos, consultas
+/// e DTOs). Sobe quando algo quebra a compatibilidade: renumerar uma tag do
+/// log de comandos, remover/renomear campo de um DTO ou mudar o significado
+/// de um existente. Acrescentar comando, consulta ou campo **não** sobe —
+/// é compatível. A ponte confere este número na inicialização.
+pub const API_VERSION: u32 = 1;
+
 mod command;
 mod error;
 mod inbox;

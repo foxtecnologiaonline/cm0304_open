@@ -470,7 +470,7 @@ completo e golden como rede de segurança):
 | F6 ✅ | Mercado jogável: janelas, ofertas, negociação (RF-TR-01..04); demanda cortada | Precisa de F1 + F2 |
 | F7 ✅ | Treino básico (RF-TC-01); moral/fadiga por jogador cortadas | MVP exige treino com efeito mensurável |
 | F8 ✅ | Caixa de entrada (RF-CA-07) + cliente `manage` na CLI | Valida o loop sem Flutter |
-| F9 | Gates automatizados dos critérios MVP 2-4, contrato `app` congelado pra ponte, linhas de corte | Fecha o marco |
+| F9 ✅ | Gates automatizados dos critérios MVP 2-4, contrato `app` congelado pra ponte, linhas de corte | Fecha o marco |
 
 **F0 medida** (`packs/tools/gen_scale_pack.py`, saída não versionada;
 `managerfc-cli play --pack`, release, máquina de desenvolvimento): 48 clubes /
@@ -666,6 +666,44 @@ CI) e `verify.txt` + `verify.expected.txt` (a saída ao reabri-lo). É a
 **automação do critério de MVP #4** ("save gerado numa plataforma abre em
 outra e continua idêntico"): o job `cli-gate` roda isso em Windows, macOS e
 Linux. Android usa o mesmo código Rust e entra com o build NDK.
+
+**F9 feita (fechamento do lado Rust):**
+`managerfc-cli bench-season` é o gate de desempenho do **critério de MVP
+#2** e de RNF-08: gera em Rust um pack de 48 clubes / 1.440 jogadores,
+joga temporadas **com técnico humano** (o caminho mais pesado) e falha se
+uma temporada passar de 5 s ou o pico de memória de 600 MB; está no
+`cli-gate`. Medido: 16 ms por temporada e 5,0 MB de pico em 48 clubes
+(30 ms e 5,7 MB em 64 clubes, pior caso com copa); consultas de tela: elenco
+≈ 5 µs, busca de 50 linhas ≈ 50 µs, caixa ≈ 1 µs — folga de ~300x sobre o
+orçamento de desktop, o indicador para o celular de linha média (20 s).
+`app::API_VERSION` e a seção "Contrato `app` v1" de `docs/02 §4` congelam
+o que a ponte pode assumir (DTOs planos, sem texto traduzido, sem float,
+PA oculto, paginação, erros tipados, regras de compatibilidade). O critério
+**#3** (métricas do motor) segue no gate `calibrate --check`; o **#4** (save
+cross-platform) está automatizado em `tests/career/`.
+
+##### Estado do M2 ao fim do lado Rust
+
+| Item do MVP (`00 §7`) | Estado |
+|---|---|
+| Temporada completa: calendário, rodadas, tabela, acesso/queda, copa | ✅ (M1 + F1) |
+| Elenco: escalação, atributos, condição, lesões, suspensões | ✅ (F3/F4); moral só por clube |
+| Táticas: formação, mentalidade, pressão | ✅ subconjunto honesto (2 de 6 instruções; o resto pede zonas, M3) |
+| Motor em modo texto + placar ao vivo, substituições, estatísticas | ✅ (F5); sem posse/passes/desarmes |
+| Transferências: ofertas da IA, negociação, contratos | ✅ (F6); sem demanda no preço, empréstimo, pré-contrato |
+| Treino com efeito mensurável | ✅ intensidade por jogador (F7); sem foco por atributo |
+| Save/load, autosave, 3 slots | ✅ log de comandos (`persist` v2, `app::slot_path`) |
+| Critério #2 (temporada < 5 s / 20 s) | ✅ gate automatizado; celular real não mensurável aqui |
+| Critério #3 (métricas do motor) | ✅ `calibrate --check` no `cli-gate` |
+| Critério #4 (save cross-platform) | ✅ automatizado em Windows/macOS/Linux; Android entra com o NDK |
+| UI Windows **e** Android do mesmo código, mesmo save | ⛔ **bloqueado**: sem SDK Flutter/Dart (ponte, telas, builds) |
+| Critério #1 (10 testadores querem continuar) | ⛔ **depende da UI** — é o portão que decide se o projeto continua |
+
+Cortes que viraram dívida documentada (nenhum apaga requisito, só adia):
+RF-MU-09 e múltiplos países (M4), RF-JG-04 completo, RF-JG-07 individual e
+fadiga acumulada, RF-TC-01 por atributo e RF-TC-03/05, RF-TR-02 demanda,
+RF-TR-06/07/08, RF-PA-07 completo (posse, passes), RF-MU-08 "atratividade/
+IA", saldo negativo de RF-CL-03.
 
 Linhas de corte deliberadas (o MVP tem **1 país**, `00 §7`): RF-MU-09 (ligas
 em segundo plano) vai para o M4 junto com múltiplos países; RF-JG-04

@@ -109,7 +109,7 @@ cm0304_open/
 
 ```bash
 cd core
-cargo test --workspace              # 537 testes (inclui property tests e o pack de exemplo) — docs/08 §2
+cargo test --workspace              # 540 testes (inclui property tests e o pack de exemplo) — docs/08 §2
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p managerfc-cli -- version
 cargo run -p managerfc-cli -- pack validate ../packs/core/example-two-tier
@@ -120,6 +120,9 @@ cargo run --release -p managerfc-cli -- calibrate --seasons 50 --check   # falha
 cargo run --release -p managerfc-cli -- save --seasons 3 minha-carreira.cm0304save   # persist
 cargo run --release -p managerfc-cli -- load minha-carreira.cm0304save              # replay do save
 cargo run --release -p managerfc-cli -- golden verify --seed 42 --expect tests/golden/s42.json  # docs/08 §3
+cargo run --release -p managerfc-cli -- manage --club 3 --name "Seu Nome"   # JOGAR: cliente de texto (digite `ajuda`)
+cargo run --release -p managerfc-cli -- manage --club 3 --script tests/career/play.txt --strict   # a mesma carreira por roteiro
+cargo run --release -p managerfc-cli -- bench-season   # gate de desempenho do MVP: 48 clubes, < 5 s/temporada
 cargo run -p managerfc-cli -- --help
 ```
 

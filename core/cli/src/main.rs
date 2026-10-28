@@ -24,6 +24,7 @@ use clap::{Parser, Subcommand};
 mod calibration;
 mod golden;
 mod manage;
+mod scale;
 
 #[derive(Parser)]
 #[command(
@@ -81,6 +82,26 @@ enum Command {
         /// `docs/04 §4.2`: "calibrate roda temporadas headless e emite CSV".
         #[arg(long)]
         csv: Option<PathBuf>,
+    },
+
+    /// Gate de desempenho em escala de MVP (`docs/00 §7`, critério 2):
+    /// gera um pack de 2 divisões × N clubes, joga temporadas com um
+    /// técnico humano e mede tempo por temporada, custo das consultas de
+    /// uma tela e pico de memória. Falha (código 1) se passar do orçamento.
+    BenchSeason {
+        /// Clubes por divisão (24 → 48 clubes e 1.440 jogadores, o MVP).
+        #[arg(long, default_value_t = 24)]
+        clubs_per_division: u32,
+        /// Quantas temporadas jogar.
+        #[arg(long, default_value_t = 3)]
+        seasons: u32,
+        /// Orçamento de uma temporada, em ms (critério MVP #2: 5.000).
+        #[arg(long, default_value_t = 5_000)]
+        max_season_ms: u64,
+        /// Orçamento de memória, em MB (RNF-08 mobile: 600). Só medido onde
+        /// o SO permite ler.
+        #[arg(long, default_value_t = 600)]
+        max_rss_mb: u64,
     },
 
     /// Cliente de texto do ciclo jogável: assume um clube e joga (escalar,
@@ -235,6 +256,12 @@ fn main() -> ExitCode {
             check,
             csv,
         } => calibrate(seasons, seed, pack, check, csv.as_deref()),
+        Command::BenchSeason {
+            clubs_per_division,
+            seasons,
+            max_season_ms,
+            max_rss_mb,
+        } => scale::run(clubs_per_division, seasons, max_season_ms, max_rss_mb),
         Command::Manage {
             seed,
             pack,
